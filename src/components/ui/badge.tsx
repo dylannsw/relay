@@ -4,7 +4,7 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 
 const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3.5!",
   {
     variants: {
       variant: {
@@ -21,7 +21,7 @@ const badgeVariants = cva(
         // Soft colored chip: set `--chip` (any CSS color) inline; defaults to gray.
         // The tint uses the color as-is; the text keeps its hue but is clamped in lightness
         // (darker in light mode, lighter in dark mode) so every color reads at ≥ 4.5:1.
-        tint: "h-6 gap-1.5 rounded-md px-2 [--chip:var(--chip-gray)] bg-[color-mix(in_srgb,var(--chip)_11%,transparent)] text-[oklch(from_var(--chip)_min(l,0.5)_c_h)] dark:bg-[color-mix(in_srgb,var(--chip)_20%,transparent)] dark:text-[oklch(from_var(--chip)_max(l,0.8)_c_h)] [&>svg]:size-3.5!",
+        tint: "h-6.5 gap-1.5 rounded-md px-2 text-[13px] [--chip:var(--chip-gray)] bg-[color-mix(in_srgb,var(--chip)_11%,transparent)] text-[oklch(from_var(--chip)_min(l,0.5)_c_h)] dark:bg-[color-mix(in_srgb,var(--chip)_20%,transparent)] dark:text-[oklch(from_var(--chip)_max(l,0.8)_c_h)] [&>svg]:size-4!",
       },
     },
     defaultVariants: {

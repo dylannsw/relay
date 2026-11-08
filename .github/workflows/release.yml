@@ -1,0 +1,40 @@
+# Pushing a version tag (e.g. v0.2.0) builds the signed Windows installer and publishes it,
+# with the updater's latest.json, as a release on this repo. Installed copies of Relay check
+# the latest release here for updates.
+#
+# Repository secret needed:
+#   TAURI_SIGNING_PRIVATE_KEY  contents of ~/.tauri/relay.key
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: v__VERSION__
+          releaseName: Relay v__VERSION__
+          releaseBody: See what's new in Relay v__VERSION__.
+          releaseDraft: false
+          prerelease: false

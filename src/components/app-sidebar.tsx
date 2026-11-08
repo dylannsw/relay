@@ -103,12 +103,12 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
               {!open && a.unreadCount > 0 && (
                 <span className="text-xs font-medium text-sidebar-foreground tabular-nums">{a.unreadCount}</span>
               )}
-              <IconChevronRight className="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+              <IconChevronRight className="size-4.5 text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
             </span>
           </SidebarMenuButton>
         </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SidebarMenuSub>
+        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+          <SidebarMenuSub className="border-l-0">
             {a.lastError && (
               <SidebarMenuSubItem>
                 <Tooltip>

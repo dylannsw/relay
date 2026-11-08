@@ -60,6 +60,8 @@ export interface Config {
   microsoftClientId: string;
   syncIntervalSecs: number;
   messagesPerAccount: number;
+  /** Rebound keyboard shortcuts: action id -> key ("" = unassigned). */
+  shortcuts: Record<string, string>;
 }
 
 export interface ListQuery {

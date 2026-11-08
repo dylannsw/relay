@@ -35,7 +35,11 @@ function buildDoc(body: string, allowRemote: boolean): string {
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <base target="_blank">
 <style>
-  html,body{margin:0;padding:0;background:#fff;color:#1a1a1a}
+  html,body{margin:0;padding:0;background:#fff;color:#2f2f2f}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{border-radius:9999px;background:rgba(0,0,0,.15)}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.3)}
   body{padding:20px 24px;font:14px/1.55 "Segoe UI",system-ui,sans-serif;overflow-wrap:anywhere}
   img{max-width:100%;height:auto}
   pre.plain{white-space:pre-wrap;font:inherit;margin:0}

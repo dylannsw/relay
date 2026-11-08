@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ pub struct Config {
     pub microsoft_client_id: String,
     pub sync_interval_secs: u64,
     pub messages_per_account: u32,
+    /// Keyboard shortcuts the user rebound: action id -> key ("" = unassigned).
+    /// Anything not listed uses the app's default.
+    pub shortcuts: BTreeMap<String, String>,
 }
 
 impl Default for Config {
@@ -28,6 +32,7 @@ impl Default for Config {
             microsoft_client_id: String::new(),
             sync_interval_secs: 120,
             messages_per_account: 100,
+            shortcuts: BTreeMap::new(),
         }
     }
 }

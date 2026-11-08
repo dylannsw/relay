@@ -4,13 +4,16 @@ import { api, errorText, isTauri } from "@/api";
 import type { Account, ComposeMode, Folder, MessageDetail, MessageSummary, Provider } from "@/types";
 import { addressList, dedupeAddresses, prefixSubject } from "@/format";
 import { folderLabel } from "@/folders";
+import { loadShortcuts, matchShortcut, type ShortcutId } from "@/shortcuts";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TitleBar } from "@/components/title-bar";
 import { AppSidebar, type View } from "@/components/app-sidebar";
 import { MailList, type Filter } from "@/components/mail-list";
 import { MailReader } from "@/components/mail-reader";
+import { CommandBar } from "@/components/command-bar";
 import { ComposeDialog, type Draft } from "@/components/compose-dialog";
-import { SettingsDialog } from "@/components/settings-dialog";
+import { SettingsDialog, type SettingsSection } from "@/components/settings-dialog";
+import { startAutoCheck } from "@/updater";
 import { SignInDialog } from "@/components/sign-in-dialog";
 
 const PAGE = 200;
@@ -32,15 +35,24 @@ export default function App() {
   const debouncedSearch = useDebounced(search, 200);
   const [limit, setLimit] = useState(PAGE);
   const [messages, setMessages] = useState<MessageSummary[]>([]);
+  /** Identifies which list `messages` holds; the list fades in as a whole when it changes. */
+  const [listKey, setListKey] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Rows ticked for bulk actions (separate from the highlighted row). */
+  const [checked, setChecked] = useState<Set<string>>(() => new Set());
+  const checkAnchor = useRef<string | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
+  /** Which way the reader card slides when paging: 1 = next, -1 = previous. */
+  const [navDir, setNavDir] = useState<1 | -1>(1);
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Section Settings opens on next time (cleared when it closes). */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>();
   const [syncing, setSyncing] = useState(false);
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const [commandOpen, setCommandOpen] = useState(false);
   const selectedRef = useRef<string | null>(null);
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
@@ -72,6 +84,9 @@ export default function App() {
         limit,
       });
       setMessages(list);
+      // Set together with the data (not when the view changes), so a new folder's list
+      // replaces the old one in one step instead of the old rows animating out first.
+      setListKey(`${accountKey}|${folder}|${filter}|${debouncedSearch}`);
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -84,8 +99,35 @@ export default function App() {
   };
 
   useEffect(() => void refreshAccounts(), [refreshAccounts]);
+  // The user's rebound keyboard shortcuts live in the app config.
+  useEffect(() => {
+    api.getConfig().then((c) => loadShortcuts(c.shortcuts), () => loadShortcuts({}));
+  }, []);
   useEffect(() => void refreshMessages(), [refreshMessages]);
-  useEffect(() => setLimit(PAGE), [accountKey, folder, filter, debouncedSearch]);
+  // A different list starts from the first page with nothing ticked.
+  useEffect(() => {
+    setLimit(PAGE);
+    setChecked(new Set());
+    checkAnchor.current = null;
+  }, [accountKey, folder, filter, debouncedSearch]);
+  // Look for a new version of Relay on launch and every few hours; installing waits for the user.
+  useEffect(
+    () =>
+      startAutoCheck((version) =>
+        toast(`Relay ${version} is available`, {
+          description: "Install it from Settings when you're ready.",
+          duration: 15000,
+          action: {
+            label: "View",
+            onClick: () => {
+              setSettingsSection("updates");
+              setSettingsOpen(true);
+            },
+          },
+        }),
+      ),
+    [],
+  );
   useEffect(() => {
     const unlisten = api.onMailUpdated(() => refreshAll.current());
     return () => void unlisten.then((f) => f());
@@ -129,6 +171,8 @@ export default function App() {
 
   /** Opens a message in the reader card (or swaps the card to it when already open). */
   const openMessage = async (m: MessageSummary) => {
+    const from = messages.findIndex((x) => x.id === selectedId);
+    setNavDir(messages.findIndex((x) => x.id === m.id) >= from ? 1 : -1);
     selectedRef.current = m.id;
     setSelectedId(m.id);
     setReaderOpen(true);
@@ -155,26 +199,71 @@ export default function App() {
     setSelectedId(null);
   };
 
-  /** Moves a message to another folder; it leaves the current list either way. */
-  const moveMessage = async (m: MessageSummary, to: Folder) => {
-    if (m.folder === to) return;
-    const idx = messages.findIndex((x) => x.id === m.id);
-    const next = messages[idx + 1] ?? messages[idx - 1];
-    setMessages((ms) => ms.filter((x) => x.id !== m.id));
-    const unreadDelta = (to === "inbox" ? 1 : 0) - (m.folder === "inbox" ? 1 : 0);
-    if (!m.isRead && unreadDelta) bumpUnread(m.accountId, unreadDelta);
-    if (selectedId === m.id) {
+  /** Moves messages to another folder; they leave the current list either way. */
+  const moveMessages = async (list: MessageSummary[], to: Folder) => {
+    const moving = list.filter((m) => m.folder !== to);
+    if (!moving.length) return;
+    const ids = new Set(moving.map((m) => m.id));
+    // If the highlighted row leaves, the highlight moves to the next row that stays.
+    if (selectedId && ids.has(selectedId)) {
+      const idx = messages.findIndex((x) => x.id === selectedId);
+      const next =
+        idx < 0 ? undefined :
+        messages.slice(idx + 1).find((x) => !ids.has(x.id)) ??
+        messages.slice(0, Math.max(0, idx)).reverse().find((x) => !ids.has(x.id));
       if (!next) clearSelection();
       else if (readerOpen) void openMessage(next);
       else setSelectedId(next.id);
     }
-    try {
-      await api.moveMessage(m.id, to);
-      toast.success(to === "archive" ? "Archived" : `Moved to ${folderLabel(to)}`);
-    } catch (e) {
-      toast.error(errorText(e));
-      refreshAll.current();
+    setMessages((ms) => ms.filter((x) => !ids.has(x.id)));
+    setChecked((c) => new Set([...c].filter((id) => !ids.has(id))));
+    for (const m of moving) {
+      const delta = (to === "inbox" ? 1 : 0) - (m.folder === "inbox" ? 1 : 0);
+      if (!m.isRead && delta) bumpUnread(m.accountId, delta);
     }
+    const results = await Promise.allSettled(moving.map((m) => api.moveMessage(m.id, to)));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed) {
+      toast.error(errorText(failed.reason));
+      refreshAll.current();
+      return;
+    }
+    const n = moving.length;
+    const where = folderLabel(to);
+    toast.success(
+      to === "archive" ? (n === 1 ? "Archived" : `Archived ${n} messages`) : n === 1 ? `Moved to ${where}` : `Moved ${n} messages to ${where}`,
+    );
+  };
+  const moveMessage = (m: MessageSummary, to: Folder) => moveMessages([m], to);
+
+  // ----- multi-select -----
+
+  const checkedMessages = messages.filter((m) => checked.has(m.id));
+
+  /** Ticks or unticks a row; with `range`, everything between it and the last ticked row. */
+  const toggleCheck = (m: MessageSummary, range: boolean) => {
+    const on = !checked.has(m.id);
+    const a = messages.findIndex((x) => x.id === checkAnchor.current);
+    const b = messages.findIndex((x) => x.id === m.id);
+    const span = range && a >= 0 ? messages.slice(Math.min(a, b), Math.max(a, b) + 1) : [m];
+    setChecked((c) => {
+      const next = new Set(c);
+      for (const x of span) {
+        if (on) next.add(x.id);
+        else next.delete(x.id);
+      }
+      return next;
+    });
+    checkAnchor.current = m.id;
+  };
+
+  const checkAll = (on: boolean) => {
+    setChecked(on ? new Set(messages.map((m) => m.id)) : new Set());
+    checkAnchor.current = null;
+  };
+
+  const bulkRead = (read: boolean) => {
+    for (const m of checkedMessages) void setRead(m, read);
   };
 
   // ----- compose -----
@@ -249,57 +338,100 @@ export default function App() {
     }
   };
 
+  // ----- command bar & context menu -----
+
+  const openCommandBar = () => {
+    closeReader();
+    setCommandOpen(true);
+  };
+
+  /** Searches the current view, the same way the list does. */
+  const searchMessages = (q: string) =>
+    api.listMessages({
+      accountIds: accountKey === "*" ? undefined : accountKey ? accountKey.split(",") : [],
+      folder,
+      search: q,
+      limit: 6,
+    });
+
+  /** Reply/forward from the list: loads the message first (compose quotes it). */
+  const replyTo = async (m: MessageSummary, mode: ComposeMode) => {
+    try {
+      startCompose(mode, detail?.id === m.id ? detail : await api.getMessage(m.id));
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  };
+
   // ----- keyboard shortcuts -----
 
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   keyHandler.current = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
-    if (draft || settingsOpen || signingIn || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (t.closest("input, textarea, select, [contenteditable], [role=menu], [role=listbox]")) return;
+    if (draft || settingsOpen || signingIn) return;
     if (t.closest("[role=dialog]:not([data-reader])")) return;
+    const action = matchShortcut(e, readerOpen ? "reader" : "list");
+    // While typing, only a modified command-bar shortcut (Ctrl+K) works: plain keys like "/"
+    // must type, and Ctrl+A etc. keep their usual meaning in text fields.
+    const typing = !!t.closest("input, textarea, select, [contenteditable], [role=menu], [role=listbox]");
+    if (typing && !(action === "commandBar" && (e.ctrlKey || e.metaKey || e.altKey))) return;
+
+    // Escape is built in: in the list it clears the selection, then the highlight.
+    // (The email card closes itself on Escape.)
+    if (e.key === "Escape" && !readerOpen) {
+      if (checked.size) checkAll(false);
+      else clearSelection();
+      return;
+    }
+    if (!action) return;
+    // Enter on a focused button or link must keep activating it.
+    if (e.key === "Enter" && t !== document.body && !t.closest("[data-id]")) return;
+
     const idx = messages.findIndex((m) => m.id === selectedId);
-    const current = idx >= 0 ? messages[idx] : undefined;
-    // In the list, J/K just move the highlight; in the reader card they page through messages.
+    // The highlighted row, or the open email when it came from the command bar.
+    const current = idx >= 0 ? messages[idx] : readerOpen ? selected : undefined;
+    // In the list, next/previous move the highlight; in the email card they page through messages.
     const go = (i: number) => {
+      // A message opened from the command bar isn't in the list, so there's nowhere to page to.
+      if (readerOpen && idx < 0) return;
       const m = messages[Math.max(0, i)];
       if (!m) return;
       if (readerOpen) void openMessage(m);
       else setSelectedId(m.id);
     };
-    const replyable = readerOpen ? detail : null;
-    const handlers: Record<string, () => void> = {
-      j: () => go(idx + 1),
-      k: () => go(idx - 1),
-      ...(readerOpen
-        ? { ArrowRight: () => go(idx + 1), ArrowLeft: () => go(idx - 1) }
-        : {
-            ArrowDown: () => go(idx + 1),
-            ArrowUp: () => go(idx - 1),
-            Enter: () => current && void openMessage(current),
-            o: () => current && void openMessage(current),
-            Escape: clearSelection,
-          }),
-      e: () => current && void moveMessage(current, "archive"),
-      "#": () => current && void moveMessage(current, "trash"),
-      Delete: () => current && void moveMessage(current, "trash"),
-      r: () => replyable && startCompose("reply", replyable),
-      a: () => replyable && startCompose("replyAll", replyable),
-      f: () => replyable && startCompose("forward", replyable),
-      c: () => startCompose("new"),
-      u: () => current && void setRead(current, !current.isRead),
-      s: () => current && void toggleStar(current),
-      "/": () => {
+    // With rows ticked (and the card closed), moves act on all of them.
+    const targets = () => (!readerOpen && checkedMessages.length ? checkedMessages : current ? [current] : []);
+    const write = (mode: ComposeMode) =>
+      readerOpen && detail ? startCompose(mode, detail) : current && void replyTo(current, mode);
+    const handlers: Record<ShortcutId, () => void> = {
+      next: () => go(idx + 1),
+      prev: () => go(idx - 1),
+      open: () => !readerOpen && current && void openMessage(current),
+      commandBar: openCommandBar,
+      goAll: () => {
+        setView({ kind: "all" });
+        clearSelection();
+      },
+      select: () => !readerOpen && current && toggleCheck(current, false),
+      selectAll: () => !readerOpen && messages.length > 0 && checkAll(true),
+      archive: () => void moveMessages(targets(), "archive"),
+      delete: () => void moveMessages(targets(), "trash"),
+      moveInbox: () => void moveMessages(targets(), "inbox"),
+      spam: () => void moveMessages(targets(), "spam"),
+      toggleRead: () => current && void setRead(current, !current.isRead),
+      toggleStar: () => current && void toggleStar(current),
+      reply: () => write("reply"),
+      replyAll: () => write("replyAll"),
+      forward: () => write("forward"),
+      compose: () => startCompose("new"),
+      sync: () => void syncNow(),
+      settings: () => {
         closeReader();
-        searchRef.current?.focus();
+        setSettingsOpen(true);
       },
     };
-    // Enter on a focused button or link must keep activating it.
-    if (e.key === "Enter" && t !== document.body && !t.closest("[data-id]")) return;
-    const h = handlers[e.key];
-    if (h) {
-      e.preventDefault();
-      h();
-    }
+    e.preventDefault();
+    handlers[action]();
   };
   useEffect(() => {
     const fn = (e: KeyboardEvent) => keyHandler.current(e);
@@ -314,16 +446,38 @@ export default function App() {
       ? "All inboxes"
       : view.kind === "label"
         ? view.label
-        : `${folderLabel(view.folder)} · ${accountById.get(view.id)?.email ?? ""}`;
+        : folderLabel(view.folder);
+  const viewAccount = view.kind === "account" ? accountById.get(view.id) : undefined;
   const selectedIdx = messages.findIndex((m) => m.id === selectedId);
-  const selected = selectedIdx >= 0 ? messages[selectedIdx] : undefined;
+  // The open message: from the list, or (opened from the command bar) only in `detail`.
+  const selected = selectedIdx >= 0 ? messages[selectedIdx] : detail?.id === selectedId ? (detail ?? undefined) : undefined;
 
   return (
     <SidebarProvider
       className="h-svh min-h-0 flex-col overflow-hidden bg-sidebar"
       style={{ "--titlebar-height": "2.75rem" } as React.CSSProperties}
     >
-      <TitleBar search={search} onSearch={setSearch} searchRef={searchRef} />
+      <TitleBar>
+        <CommandBar
+          open={commandOpen}
+          onOpenChange={setCommandOpen}
+          search={search}
+          onSearch={setSearch}
+          scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
+          searchMessages={searchMessages}
+          accounts={accounts}
+          accountById={accountById}
+          onOpenMessage={(m) => void openMessage(m)}
+          onNavigate={(v) => {
+            setView(v);
+            clearSelection();
+          }}
+          onCompose={() => startCompose("new")}
+          onSync={() => void syncNow()}
+          onSettings={() => setSettingsOpen(true)}
+          onFilter={setFilter}
+        />
+      </TitleBar>
       <div className="flex min-h-0 flex-1">
         <AppSidebar
           // The sidebar is position:fixed; start it below the title bar.
@@ -341,7 +495,9 @@ export default function App() {
         <SidebarInset className="min-w-0 overflow-hidden border md:peer-data-[variant=inset]:mt-0 md:peer-data-[variant=inset]:shadow-none">
           <MailList
             title={viewTitle}
+            account={viewAccount}
             folder={folder}
+            listKey={listKey}
             isDemo={!isTauri}
             syncing={syncing}
             onSync={syncNow}
@@ -353,9 +509,17 @@ export default function App() {
             accounts={accounts}
             accountById={accountById}
             selectedId={selectedId}
+            checked={checked}
             showAccount={view.kind !== "account" && accounts.length > 1}
             canLoadMore={messages.length >= limit}
             onOpen={(m) => void openMessage(m)}
+            onMove={(m, to) => void moveMessage(m, to)}
+            onToggleCheck={toggleCheck}
+            onCheckAll={checkAll}
+            onBulkMove={(to) => void moveMessages(checkedMessages, to)}
+            onBulkRead={bulkRead}
+            onReplyTo={(m, mode) => void replyTo(m, mode)}
+            onToggleRead={(m) => void setRead(m, !m.isRead)}
             onToggleStar={(m) => void toggleStar(m)}
             onLoadMore={() => setLimit((l) => l + PAGE)}
             onAddAccount={addAccount}
@@ -364,11 +528,13 @@ export default function App() {
       </div>
 
       <MailReader
-        open={readerOpen && !!selected}
+        open={readerOpen}
         onClose={closeReader}
         detail={detail}
         error={detailError}
         account={detail ? accountById.get(detail.accountId) : undefined}
+        messageId={selectedId}
+        direction={navDir}
         position={selectedIdx + 1}
         total={messages.length}
         onPrev={() => selectedIdx > 0 && void openMessage(messages[selectedIdx - 1])}
@@ -404,7 +570,11 @@ export default function App() {
       {settingsOpen && (
         <SettingsDialog
           accounts={accounts}
-          onClose={() => setSettingsOpen(false)}
+          initialSection={settingsSection}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsSection(undefined);
+          }}
           onAccountsChanged={() => refreshAll.current()}
           onReconnect={(p) => {
             setSettingsOpen(false);

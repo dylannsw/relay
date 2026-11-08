@@ -13,6 +13,7 @@ let config: Config = {
   microsoftClientId: "",
   syncIntervalSecs: 120,
   messagesPerAccount: 100,
+  shortcuts: {},
 };
 
 const accounts: Account[] = [

@@ -1,18 +1,15 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { IconCopy, IconMinus, IconSearch, IconSquare, IconX } from "@tabler/icons-react";
+import { IconCopy, IconMinus, IconSquare, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/api";
 import { Button } from "@/components/ui/button";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Kbd } from "@/components/ui/kbd";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import appIcon from "../../app-icon.svg";
 
 interface Props {
-  search: string;
-  onSearch: (s: string) => void;
-  searchRef: RefObject<HTMLInputElement | null>;
+  /** Centre of the bar: the command bar. */
+  children: ReactNode;
 }
 
 /**
@@ -21,7 +18,7 @@ interface Props {
  * Tauri only honours the attribute on the element that was clicked, so buttons and
  * the search field stay clickable.
  */
-export function TitleBar({ search, onSearch, searchRef }: Props) {
+export function TitleBar({ children }: Props) {
   return (
     <header
       data-tauri-drag-region
@@ -37,26 +34,7 @@ export function TitleBar({ search, onSearch, searchRef }: Props) {
         <SidebarTrigger className="ml-1 text-muted-foreground" />
       </div>
 
-      <InputGroup className="h-8 w-[min(36rem,44vw)] bg-background dark:bg-background">
-        <InputGroupAddon>
-          <IconSearch />
-        </InputGroupAddon>
-        <InputGroupInput
-          ref={searchRef}
-          placeholder="Search mail"
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              onSearch("");
-              e.currentTarget.blur();
-            }
-          }}
-        />
-        <InputGroupAddon align="inline-end">
-          <Kbd>/</Kbd>
-        </InputGroupAddon>
-      </InputGroup>
+      {children}
 
       <div data-tauri-drag-region className="flex flex-1 basis-0 justify-end self-stretch">
         <WindowControls />

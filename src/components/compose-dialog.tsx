@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconSend } from "@tabler/icons-react";
+import { IconEdit, IconSend, IconTrash } from "@tabler/icons-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,20 +11,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
+import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DESTRUCTIVE_ICON, DetailRow, MailWindow } from "@/components/mail-window";
 import type { Account, ComposeMode } from "@/types";
 
 export interface Draft {
@@ -52,6 +46,16 @@ const TITLES: Record<ComposeMode, string> = {
   forward: "Forward",
 };
 
+/** Borderless text field for the details list; the row itself provides the structure. */
+function BareInput(props: React.ComponentProps<"input">) {
+  return (
+    <input
+      {...props}
+      className="h-8 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+    />
+  );
+}
+
 export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Props) {
   const [sending, setSending] = useState(false);
   const [showCc, setShowCc] = useState(!!draft.cc);
@@ -76,39 +80,72 @@ export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Pr
       ? null
       : draft.mode === "forward"
         ? account?.provider === "microsoft"
-          ? "The original message and its attachments are included below your text."
-          : "The original message text is included below your text."
-        : "The original message is quoted below your reply.";
-
-  const label = (text: string) => <InputGroupText className="w-14">{text}</InputGroupText>;
+          ? "Original message and attachments included below"
+          : "Original message text included below"
+        : "Original message quoted below";
 
   return (
     <>
       <Dialog open onOpenChange={(open) => !open && requestClose()}>
-        <DialogContent
-          className="flex max-h-[90vh] flex-col sm:max-w-2xl"
-          onInteractOutside={(e) => e.preventDefault()}
+        <MailWindow
+          className="h-[min(85svh,46rem)] sm:max-w-2xl"
+          onInteractOutside={(e) => {
+            e.preventDefault();
+            requestClose();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
               void send();
             }
           }}
+          onClose={requestClose}
+          icon={<IconEdit />}
+          title={<DialogTitle className="truncate text-base font-semibold">{TITLES[draft.mode]}</DialogTitle>}
+          footer={
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" className={DESTRUCTIVE_ICON} onClick={requestClose}>
+                    <IconTrash />
+                    <span className="sr-only">Discard</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Discard</TooltipContent>
+              </Tooltip>
+              <div className="ml-auto flex min-w-0 items-center gap-3">
+                {note && <span className="truncate text-xs text-muted-foreground">{note}</span>}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button onClick={send} disabled={sending}>
+                      {sending ? <Spinner /> : <IconSend />}
+                      {sending ? "Sending…" : "Send"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Send{" "}
+                    <KbdGroup>
+                      <Kbd>Ctrl</Kbd>
+                      <Kbd>Enter</Kbd>
+                    </KbdGroup>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </>
+          }
         >
-          <DialogHeader>
-            <DialogTitle>{TITLES[draft.mode]}</DialogTitle>
-            <DialogDescription>{note ?? "Write a new message from any of your accounts."}</DialogDescription>
-          </DialogHeader>
+          <DialogDescription className="sr-only">
+            {draft.mode === "new" ? "Write a new message from any of your accounts." : `${TITLES[draft.mode]}. ${note}.`}
+          </DialogDescription>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Label className="w-14 shrink-0 pl-2.5 font-normal text-muted-foreground">From</Label>
+          <div className="shrink-0 py-2">
+            <DetailRow label="From">
               <Select
                 value={draft.accountId}
                 disabled={draft.mode !== "new"}
                 onValueChange={(accountId) => set({ accountId })}
               >
-                <SelectTrigger className="flex-1">
+                <SelectTrigger className="h-8 w-auto max-w-full rounded-full bg-background px-3 data-[size=default]:h-8 disabled:opacity-100">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -121,62 +158,43 @@ export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Pr
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <InputGroup>
-              <InputGroupAddon>{label("To")}</InputGroupAddon>
-              <InputGroupInput
+            </DetailRow>
+            <DetailRow
+              label="To"
+              end={
+                !showCc && (
+                  <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setShowCc(true)}>
+                    Cc
+                  </Button>
+                )
+              }
+            >
+              <BareInput
                 autoFocus={draft.mode === "new" || draft.mode === "forward"}
                 value={draft.to}
                 onChange={(e) => set({ to: e.target.value })}
                 placeholder="name@example.com, …"
               />
-              {!showCc && (
-                <InputGroupAddon align="inline-end">
-                  <InputGroupButton size="xs" onClick={() => setShowCc(true)}>
-                    Cc
-                  </InputGroupButton>
-                </InputGroupAddon>
-              )}
-            </InputGroup>
+            </DetailRow>
             {showCc && (
-              <InputGroup>
-                <InputGroupAddon>{label("Cc")}</InputGroupAddon>
-                <InputGroupInput value={draft.cc} onChange={(e) => set({ cc: e.target.value })} />
-              </InputGroup>
+              <DetailRow label="Cc">
+                <BareInput autoFocus={!draft.cc} value={draft.cc} onChange={(e) => set({ cc: e.target.value })} />
+              </DetailRow>
             )}
-            <InputGroup>
-              <InputGroupAddon>{label("Subject")}</InputGroupAddon>
-              <InputGroupInput value={draft.subject} onChange={(e) => set({ subject: e.target.value })} />
-            </InputGroup>
-            <Textarea
-              className="min-h-64 flex-1 resize-none"
-              autoFocus={draft.mode === "reply" || draft.mode === "replyAll"}
-              value={draft.body}
-              onChange={(e) => set({ body: e.target.value })}
-              placeholder="Write your message…"
-            />
           </div>
-
-          <DialogFooter className="items-center sm:justify-between">
-            <span className="text-xs text-muted-foreground">
-              <KbdGroup>
-                <Kbd>Ctrl</Kbd>
-                <Kbd>Enter</Kbd>
-              </KbdGroup>{" "}
-              to send
-            </span>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={requestClose}>
-                Discard
-              </Button>
-              <Button onClick={send} disabled={sending}>
-                {sending ? <Spinner /> : <IconSend />}
-                {sending ? "Sending…" : "Send"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
+          <Separator />
+          <DetailRow label="Subject" className="py-2.5">
+            <BareInput value={draft.subject} onChange={(e) => set({ subject: e.target.value })} />
+          </DetailRow>
+          <Separator />
+          <Textarea
+            className="min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-5 py-4 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+            autoFocus={draft.mode === "reply" || draft.mode === "replyAll"}
+            value={draft.body}
+            onChange={(e) => set({ body: e.target.value })}
+            placeholder="Write your message…"
+          />
+        </MailWindow>
       </Dialog>
 
       <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>

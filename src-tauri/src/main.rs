@@ -22,6 +22,10 @@ use tauri::Manager;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // Self-updates: checks the endpoint in tauri.conf.json, verifies the signature, installs.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Lets the UI restart Relay after an update is installed.
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let state = Arc::new(state::AppState::init(app.handle())?);
             app.manage(state.clone());
