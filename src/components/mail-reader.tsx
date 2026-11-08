@@ -35,7 +35,8 @@ interface Props {
   /** Id of the message being shown; changing it slides the content in `direction`. */
   messageId: string | null;
   direction: 1 | -1;
-  onClose: () => void;
+  /** `"keyboard"` when closed with Escape; otherwise it was closed with the mouse. */
+  onClose: (how?: "keyboard") => void;
   detail: MessageDetail | null;
   error: string | null;
   account: Account | undefined;
@@ -109,10 +110,14 @@ export function MailReader(p: Props) {
         // Opened from the list by mouse or keyboard; don't park focus on a toolbar button.
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        // The dialog closes itself on Escape; stop the key there so the app's list
-        // shortcut (Escape clears the highlight) doesn't also fire.
-        onEscapeKeyDown={(e) => e.stopPropagation()}
-        onClose={p.onClose}
+        // Escape closes the card here, and is stopped so the app's list shortcut (Escape
+        // clears the highlight) doesn't also fire. It's reported as a keyboard close.
+        onEscapeKeyDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          p.onClose("keyboard");
+        }}
+        onClose={() => p.onClose()}
         footer={
           <>
             <ToolButton label="Previous" shortcut="prev" disabled={p.position <= 1} onClick={p.onPrev}>
@@ -168,7 +173,7 @@ export function MailReader(p: Props) {
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* Beside the subject, outside the sliding content so it stays put while paging. */}
-          <CloseButton onClose={p.onClose} className="absolute top-4.5 right-4 z-10" />
+          <CloseButton onClose={() => p.onClose()} className="absolute top-4.5 right-4 z-10" />
           <AnimatePresence mode="popLayout" initial={false} custom={p.direction}>
             <motion.div
               key={p.messageId ?? "none"}

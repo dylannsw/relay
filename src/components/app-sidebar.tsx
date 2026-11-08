@@ -120,7 +120,7 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
                       </button>
                     </SidebarMenuSubButton>
                   </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-72">
+                  <TooltipContent className="max-w-72">
                     {a.lastError}
                   </TooltipContent>
                 </Tooltip>
@@ -223,12 +223,17 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
 
         <SidebarGroup>
           <SidebarGroupLabel>Accounts</SidebarGroupLabel>
-          {addMenu(
-            <SidebarGroupAction title="Add account">
-              <IconPlus />
-              <span className="sr-only">Add account</span>
-            </SidebarGroupAction>,
-          )}
+          <Tooltip>
+            {addMenu(
+              <TooltipTrigger asChild>
+                <SidebarGroupAction>
+                  <IconPlus />
+                  <span className="sr-only">Add account</span>
+                </SidebarGroupAction>
+              </TooltipTrigger>,
+            )}
+            <TooltipContent>Add account</TooltipContent>
+          </Tooltip>
           <SidebarGroupContent>
             <SidebarMenu>
               {accounts.length === 0 && (

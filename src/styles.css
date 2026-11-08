@@ -143,9 +143,30 @@
   html {
     @apply font-sans;
     }
-  /* Tabler icons: a slightly finer stroke so the larger sizes don't read heavy. */
+  /* Tabler icons: every line is 1.75 screen pixels whatever the icon's size. Without
+     non-scaling-stroke the width is in the icon's 24-unit grid and grows with the icon,
+     so a 14px icon would get thinner lines than a 20px one. */
   .tabler-icon {
-    stroke-width: 1.75;
+    stroke-width: 1.75px;
+  }
+  .tabler-icon * {
+    vector-effect: non-scaling-stroke;
+  }
+  /* Small icons (12–16px) get finer 1.35px lines so they don't read heavy. CSS can't see
+     an icon's rendered size, so this matches where the size is set: on the icon itself,
+     or as a parent's default for icons without their own size class (buttons, badges…). */
+  .tabler-icon:is(.size-3, .size-3\.5, .size-4),
+  :is(
+      [class~="[&_svg:not([class*='size-'])]:size-3"],
+      [class~="[&_svg:not([class*='size-'])]:size-3.5"],
+      [class~="[&_svg:not([class*='size-'])]:size-4"],
+      [class~="[&_svg]:size-3.5"],
+      [class~="[&_svg]:size-4"]
+    )
+    .tabler-icon:not([class*="size-"]),
+  /* Badges force the size on direct-child icons, overriding the icon's own class. */
+  :is([class~="[&>svg]:size-3.5!"], [class~="[&>svg]:size-4!"]) > .tabler-icon {
+    stroke-width: 1.35px;
   }
   /* Light mode: icons are never darker than mid-grey, so ones that inherit near-black
      text colour don't read as solid black. Lighter colours (muted grey, chip colours,

@@ -529,7 +529,9 @@ export default function App() {
 
       <MailReader
         open={readerOpen}
-        onClose={closeReader}
+        // Escape keeps the row highlighted so the arrow keys carry on from it; closing
+        // with the mouse (click outside, or ×) leaves the list as it was before opening.
+        onClose={(how) => (how === "keyboard" ? closeReader() : clearSelection())}
         detail={detail}
         error={detailError}
         account={detail ? accountById.get(detail.accountId) : undefined}

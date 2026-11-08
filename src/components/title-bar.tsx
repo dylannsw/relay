@@ -4,6 +4,7 @@ import { IconArrowBarToDown, IconMaximize, IconMinimize, IconX } from "@tabler/i
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import appIcon from "../../app-icon.svg";
 
 interface Props {
@@ -70,21 +71,24 @@ function WindowControls() {
   return (
     <div className="flex items-center gap-1 pr-2">
       {buttons.map(({ label, icon: Icon, tint, onClick }) => (
-        <button
-          key={label}
-          type="button"
-          aria-label={label}
-          title={label}
-          tabIndex={-1}
-          onClick={onClick}
-          className={cn(
-            "flex size-8 items-center justify-center rounded-lg text-muted-foreground outline-none",
-            "transition-[background-color,color,scale] duration-200 ease-(--ease-out-soft) active:scale-95",
-            tint,
-          )}
-        >
-          <Icon stroke={1.75} className="size-4.5" />
-        </button>
+        <Tooltip key={label}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={label}
+              tabIndex={-1}
+              onClick={onClick}
+              className={cn(
+                "flex size-8 items-center justify-center rounded-lg text-muted-foreground outline-none",
+                "transition-[background-color,color,scale] duration-200 ease-(--ease-out-soft) active:scale-95",
+                tint,
+              )}
+            >
+              <Icon className="size-4.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );

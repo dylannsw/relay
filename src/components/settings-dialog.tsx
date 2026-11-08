@@ -560,7 +560,7 @@ function ThemeCard({ id, label, selected, onSelect }: {
               exit={{ scale: 0, opacity: 0 }}
               transition={quick}
             >
-              <IconCheck stroke={2.5} />
+              <IconCheck />
             </motion.span>
           )}
         </AnimatePresence>
