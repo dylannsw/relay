@@ -157,7 +157,8 @@ export function startAutoCheck(onFound: (version: string) => void): () => void {
 
 function friendlyError(e: unknown): string {
   const text = errorText(e);
-  if (/404|not found/i.test(text)) return "No releases have been published yet.";
+  // GitHub has no latest.json yet: no release published, or the newest one is still building.
+  if (/404|not found|valid release JSON/i.test(text)) return "No published update found yet. Try again in a few minutes.";
   if (/network|dns|connect|timed out|offline/i.test(text)) return "Couldn't reach the update server. Check your connection.";
   if (/signature/i.test(text)) return "The update's signature didn't match, so it wasn't installed.";
   return text;
