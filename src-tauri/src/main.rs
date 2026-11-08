@@ -41,8 +41,7 @@ fn main() {
             commands::download_attachment,
             commands::set_read,
             commands::set_starred,
-            commands::archive,
-            commands::trash,
+            commands::move_message,
             commands::send_message,
             commands::sync_now,
         ])

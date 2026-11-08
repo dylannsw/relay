@@ -2,6 +2,8 @@
 
 export type Provider = "google" | "microsoft";
 
+export type Folder = "inbox" | "archive" | "trash" | "spam";
+
 export interface Address {
   name: string;
   email: string;
@@ -36,6 +38,7 @@ export interface MessageSummary {
   hasAttachments: boolean;
   messageIdHdr: string | null;
   referencesHdr: string | null;
+  folder: Folder;
 }
 
 export interface Attachment {
@@ -61,6 +64,8 @@ export interface Config {
 
 export interface ListQuery {
   accountIds?: string[];
+  /** Defaults to "inbox". */
+  folder?: Folder;
   unreadOnly?: boolean;
   starredOnly?: boolean;
   search?: string;

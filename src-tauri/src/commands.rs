@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::error::{msg, Result};
 use crate::mime::{self, OutgoingMime};
 use crate::models::{
-    Account, Address, ComposeMode, ListQuery, MessageDetail, MessageSummary, OutgoingMessage,
+    Account, Address, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, OutgoingMessage,
     Provider, SyncReport,
 };
 use crate::state::AppState;
@@ -21,9 +21,8 @@ use crate::{crypt, db, gmail, graph, oauth};
 
 type St<'a> = State<'a, Arc<AppState>>;
 
-const PALETTE: &[&str] = &[
-    "#2563eb", "#16a34a", "#db2777", "#ea580c", "#7c3aed", "#0891b2", "#ca8a04", "#dc2626",
-];
+/// Default account colors, assigned in turn. Keep in sync with `--chip-*` in styles.css.
+const PALETTE: &[&str] = &["#008dff", "#33c759", "#6a42e1", "#df9147", "#ee665a", "#cf9943"];
 
 /// Best guess at a group for a new account; the user can change it in Settings.
 fn guess_label(email: &str) -> String {
@@ -313,29 +312,23 @@ pub async fn set_starred(state: St<'_>, id: String, starred: bool) -> Result<()>
 }
 
 #[tauri::command]
-pub async fn archive(state: St<'_>, id: String) -> Result<()> {
+/// Moves a message to Inbox, Archive, Trash or Spam.
+pub async fn move_message(state: St<'_>, id: String, folder: Folder) -> Result<()> {
     let c = ctx(&state, &id).await?;
-    match c.account.provider {
+    let from = c.message.folder;
+    if from == folder {
+        return Ok(());
+    }
+    let new_remote_id = match c.account.provider {
         Provider::Google => {
-            gmail::modify(&state.http, &c.token, &c.message.remote_id, &[], &["INBOX"]).await?
+            gmail::move_to(&state.http, &c.token, &c.message.remote_id, from, folder).await?;
+            None
         }
         Provider::Microsoft => {
-            graph::move_to(&state.http, &c.token, &c.message.remote_id, "archive").await?
+            Some(graph::move_to(&state.http, &c.token, &c.message.remote_id, folder).await?)
         }
-    }
-    state.db(|db| db::delete_message(db, &id))
-}
-
-#[tauri::command]
-pub async fn trash(state: St<'_>, id: String) -> Result<()> {
-    let c = ctx(&state, &id).await?;
-    match c.account.provider {
-        Provider::Google => gmail::trash(&state.http, &c.token, &c.message.remote_id).await?,
-        Provider::Microsoft => {
-            graph::move_to(&state.http, &c.token, &c.message.remote_id, "deleteditems").await?
-        }
-    }
-    state.db(|db| db::delete_message(db, &id))
+    };
+    state.db(|db| db::set_folder(db, &id, folder, new_remote_id.as_deref()))
 }
 
 // ---------- sending ----------

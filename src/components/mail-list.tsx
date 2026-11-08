@@ -1,31 +1,29 @@
-import { useEffect, useRef, type RefObject } from "react";
-import { InboxIcon, PaperclipIcon, PenSquareIcon, RefreshCwIcon, SearchIcon, StarIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { IconInbox, IconPaperclip, IconEdit, IconRefresh, IconSearch, IconStar } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { Account, MessageSummary, Provider } from "@/types";
+import { AccountChip } from "@/components/account-chip";
+import type { Account, Folder, MessageSummary, Provider } from "@/types";
 import { listDate, senderName } from "@/format";
+import { folderLabel } from "@/folders";
 
 export type Filter = "all" | "unread" | "starred";
 
 interface Props {
   title: string;
+  folder: Folder;
   isDemo: boolean;
   syncing: boolean;
   onSync: () => void;
   onCompose: () => void;
   search: string;
-  onSearch: (s: string) => void;
-  searchRef: RefObject<HTMLInputElement | null>;
   filter: Filter;
   onFilter: (f: Filter) => void;
   messages: MessageSummary[];
@@ -43,16 +41,21 @@ interface Props {
 export function MailList(p: Props) {
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3">
-        <SidebarTrigger />
-        <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <h1 className="truncate text-base font-semibold">{p.title}</h1>
         {p.isDemo && <Badge variant="outline">Sample data</Badge>}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-2">
+          <Tabs value={p.filter} onValueChange={(v) => p.onFilter(v as Filter)}>
+            <TabsList>
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="unread">Unread</TabsTrigger>
+              <TabsTrigger value="starred">Starred</TabsTrigger>
+            </TabsList>
+          </Tabs>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" onClick={p.onSync} disabled={p.syncing}>
-                {p.syncing ? <Spinner /> : <RefreshCwIcon />}
+                {p.syncing ? <Spinner /> : <IconRefresh />}
                 <span className="sr-only">Check for new mail</span>
               </Button>
             </TooltipTrigger>
@@ -61,7 +64,7 @@ export function MailList(p: Props) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="sm" onClick={p.onCompose}>
-                <PenSquareIcon />
+                <IconEdit />
                 Compose
               </Button>
             </TooltipTrigger>
@@ -71,36 +74,6 @@ export function MailList(p: Props) {
           </Tooltip>
         </div>
       </header>
-
-      <div className="flex shrink-0 flex-col gap-2 p-3">
-        <InputGroup>
-          <InputGroupAddon>
-            <SearchIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            ref={p.searchRef}
-            placeholder="Search mail"
-            value={p.search}
-            onChange={(e) => p.onSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                p.onSearch("");
-                e.currentTarget.blur();
-              }
-            }}
-          />
-          <InputGroupAddon align="inline-end">
-            <Kbd>/</Kbd>
-          </InputGroupAddon>
-        </InputGroup>
-        <Tabs value={p.filter} onValueChange={(v) => p.onFilter(v as Filter)}>
-          <TabsList className="w-full">
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="unread">Unread</TabsTrigger>
-            <TabsTrigger value="starred">Starred</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
 
       {p.messages.length === 0 ? (
         <ListEmpty {...p} />
@@ -124,7 +97,7 @@ function MessageRows(p: Props) {
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div ref={listRef} className="relative flex flex-col gap-2 px-3 pb-3">
+      <div ref={listRef} className="relative flex flex-col gap-2 p-3">
         {p.messages.map((m) => {
           const account = p.accountById.get(m.accountId);
           const selected = m.id === p.selectedId;
@@ -162,14 +135,11 @@ function MessageRows(p: Props) {
               {m.snippet && <div className="line-clamp-2 text-xs text-muted-foreground">{m.snippet}</div>}
               <div className="flex w-full items-center gap-2">
                 {p.showAccount && account && (
-                  <Badge variant="outline" className="max-w-[70%]">
-                    <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: account.color }} />
-                    <span className="truncate">{account.email}</span>
-                  </Badge>
+                  <AccountChip account={account} className="max-w-[70%]" />
                 )}
                 {m.hasAttachments && (
-                  <Badge variant="secondary">
-                    <PaperclipIcon />
+                  <Badge variant="tint">
+                    <IconPaperclip />
                     Attachment
                   </Badge>
                 )}
@@ -182,7 +152,7 @@ function MessageRows(p: Props) {
                     p.onToggleStar(m);
                   }}
                 >
-                  <StarIcon className={cn(m.isStarred && "fill-yellow-400 text-yellow-400")} />
+                  <IconStar className={cn(m.isStarred && "fill-yellow-400 text-yellow-400")} />
                   <span className="sr-only">{m.isStarred ? "Unstar" : "Star"}</span>
                 </Button>
               </div>
@@ -205,7 +175,7 @@ function ListEmpty(p: Props) {
       <Empty>
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <InboxIcon />
+            <IconInbox />
           </EmptyMedia>
           <EmptyTitle>No accounts yet</EmptyTitle>
           <EmptyDescription>
@@ -227,12 +197,14 @@ function ListEmpty(p: Props) {
       ? ["All caught up", "You have no unread messages here."]
       : p.filter === "starred"
         ? ["Nothing starred", "Starred Gmail and flagged Outlook messages show up here."]
-        : ["Inbox is empty", "New mail appears here after the next sync."];
+        : p.folder === "inbox"
+          ? ["Inbox is empty", "New mail appears here after the next sync."]
+          : [`Nothing in ${folderLabel(p.folder)}`, "Messages in this folder will show up here."];
   return (
     <Empty>
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          {p.search ? <SearchIcon /> : p.filter === "starred" ? <StarIcon /> : <InboxIcon />}
+          {p.search ? <IconSearch /> : p.filter === "starred" ? <IconStar /> : <IconInbox />}
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>

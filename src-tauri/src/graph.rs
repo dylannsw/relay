@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use crate::error::Result;
 use crate::http;
-use crate::models::{local_id, Address, Attachment, FetchedBody, MessageSummary};
+use crate::models::{local_id, Address, Attachment, FetchedBody, Folder, MessageSummary};
 
 const BASE: &str = "https://graph.microsoft.com/v1.0";
 const P: &str = "Microsoft";
@@ -94,7 +94,17 @@ fn addrs(list: &Option<Vec<Recipient>>) -> Vec<Address> {
     list.as_deref().unwrap_or_default().iter().map(addr).collect()
 }
 
-pub fn to_summary(account_id: &str, m: &GraphMessage) -> MessageSummary {
+/// Outlook's well-known folder name for each Relay folder.
+pub fn well_known(folder: Folder) -> &'static str {
+    match folder {
+        Folder::Inbox => "inbox",
+        Folder::Archive => "archive",
+        Folder::Trash => "deleteditems",
+        Folder::Spam => "junkemail",
+    }
+}
+
+pub fn to_summary(account_id: &str, m: &GraphMessage, folder: Folder) -> MessageSummary {
     let date = m
         .received_date_time
         .as_deref()
@@ -123,13 +133,15 @@ pub fn to_summary(account_id: &str, m: &GraphMessage) -> MessageSummary {
         has_attachments: m.has_attachments.unwrap_or(false),
         message_id_hdr: m.internet_message_id.clone(),
         references_hdr: None,
+        folder,
     }
 }
 
-/// Newest `top` messages in the Inbox (one request).
-pub async fn list_inbox(http: &Client, token: &str, top: u32) -> Result<Vec<GraphMessage>> {
+/// Newest `top` messages in a folder (one request).
+pub async fn list_folder(http: &Client, token: &str, folder: Folder, top: u32) -> Result<Vec<GraphMessage>> {
+    let name = well_known(folder);
     let page: Page<GraphMessage> = http::json(
-        http.get(format!("{BASE}/me/mailFolders/inbox/messages"))
+        http.get(format!("{BASE}/me/mailFolders/{name}/messages"))
             .bearer_auth(token)
             .query(&[
                 ("$top", top.to_string()),
@@ -268,16 +280,22 @@ pub async fn set_flagged(http: &Client, token: &str, id: &str, flagged: bool) ->
     patch(http, token, id, json!({ "flag": { "flagStatus": status } })).await
 }
 
-/// Moves to a well-known folder such as "archive" or "deleteditems".
-pub async fn move_to(http: &Client, token: &str, id: &str, folder: &str) -> Result<()> {
-    http::send(
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Moved {
+    id: String,
+}
+
+/// Moves a message to another folder. Outlook gives the moved copy a new id, which is returned.
+pub async fn move_to(http: &Client, token: &str, id: &str, folder: Folder) -> Result<String> {
+    let moved: Moved = http::json(
         http.post(format!("{BASE}/me/messages/{id}/move"))
             .bearer_auth(token)
-            .json(&json!({ "destinationId": folder })),
+            .json(&json!({ "destinationId": well_known(folder) })),
         P,
     )
     .await?;
-    Ok(())
+    Ok(moved.id)
 }
 
 fn recipients(list: &[Address]) -> Value {
@@ -362,7 +380,7 @@ mod tests {
             "internetMessageId": "<abc@contoso.com>"
         }))
         .unwrap();
-        let s = to_summary("w1", &m);
+        let s = to_summary("w1", &m, Folder::Inbox);
         assert_eq!(s.id, "w1:AAMk1");
         assert_eq!(s.subject, "");
         assert_eq!(s.from.email, "dana@contoso.com");

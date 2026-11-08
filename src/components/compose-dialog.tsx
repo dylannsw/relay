@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SendIcon } from "lucide-react";
+import { IconSend } from "@tabler/icons-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -171,7 +171,7 @@ export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Pr
                 Discard
               </Button>
               <Button onClick={send} disabled={sending}>
-                {sending ? <Spinner /> : <SendIcon />}
+                {sending ? <Spinner /> : <IconSend />}
                 {sending ? "Sending…" : "Send"}
               </Button>
             </div>

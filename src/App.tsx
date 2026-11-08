@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, errorText, isTauri } from "@/api";
-import type { Account, ComposeMode, MessageDetail, MessageSummary, Provider } from "@/types";
+import type { Account, ComposeMode, Folder, MessageDetail, MessageSummary, Provider } from "@/types";
 import { addressList, dedupeAddresses, prefixSubject } from "@/format";
+import { folderLabel } from "@/folders";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { TitleBar } from "@/components/title-bar";
 import { AppSidebar, type View } from "@/components/app-sidebar";
 import { MailList, type Filter } from "@/components/mail-list";
 import { MailReader } from "@/components/mail-reader";
@@ -32,8 +33,8 @@ export default function App() {
   const [limit, setLimit] = useState(PAGE);
   const [messages, setMessages] = useState<MessageSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [readerOpen, setReaderOpen] = useState(false);
   const [detail, setDetail] = useState<MessageDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -50,6 +51,7 @@ export default function App() {
   }, [view, accounts]);
   // Stable key so a background account refresh doesn't refetch the list needlessly.
   const accountKey = accountIds?.join(",") ?? "*";
+  const folder: Folder = view.kind === "account" ? view.folder : "inbox";
 
   const refreshAccounts = useCallback(async () => {
     try {
@@ -63,6 +65,7 @@ export default function App() {
     try {
       const list = await api.listMessages({
         accountIds: accountKey === "*" ? undefined : accountKey ? accountKey.split(",") : [],
+        folder,
         unreadOnly: filter === "unread",
         starredOnly: filter === "starred",
         search: debouncedSearch.trim() || undefined,
@@ -72,7 +75,7 @@ export default function App() {
     } catch (e) {
       toast.error(errorText(e));
     }
-  }, [accountKey, filter, debouncedSearch, limit]);
+  }, [accountKey, folder, filter, debouncedSearch, limit]);
 
   const refreshAll = useRef(() => {});
   refreshAll.current = () => {
@@ -82,7 +85,7 @@ export default function App() {
 
   useEffect(() => void refreshAccounts(), [refreshAccounts]);
   useEffect(() => void refreshMessages(), [refreshMessages]);
-  useEffect(() => setLimit(PAGE), [accountKey, filter, debouncedSearch]);
+  useEffect(() => setLimit(PAGE), [accountKey, folder, filter, debouncedSearch]);
   useEffect(() => {
     const unlisten = api.onMailUpdated(() => refreshAll.current());
     return () => void unlisten.then((f) => f());
@@ -101,13 +104,14 @@ export default function App() {
 
   const setRead = async (m: MessageSummary, read: boolean) => {
     if (m.isRead === read) return;
+    const inInbox = m.folder === "inbox";
     patchMessage(m.id, { isRead: read });
-    bumpUnread(m.accountId, read ? -1 : 1);
+    if (inInbox) bumpUnread(m.accountId, read ? -1 : 1);
     try {
       await api.setRead(m.id, read);
     } catch (e) {
       patchMessage(m.id, { isRead: !read });
-      bumpUnread(m.accountId, read ? 1 : -1);
+      if (inInbox) bumpUnread(m.accountId, read ? 1 : -1);
       toast.error(errorText(e));
     }
   };
@@ -123,12 +127,13 @@ export default function App() {
     }
   };
 
+  /** Opens a message in the reader card (or swaps the card to it when already open). */
   const openMessage = async (m: MessageSummary) => {
     selectedRef.current = m.id;
     setSelectedId(m.id);
+    setReaderOpen(true);
     setDetail(null);
     setDetailError(null);
-    setDetailLoading(true);
     try {
       const d = await api.getMessage(m.id);
       if (selectedRef.current !== m.id) return; // user moved on
@@ -136,29 +141,36 @@ export default function App() {
       if (!d.isRead) void setRead(d, true);
     } catch (e) {
       if (selectedRef.current === m.id) setDetailError(errorText(e));
-    } finally {
-      if (selectedRef.current === m.id) setDetailLoading(false);
     }
+  };
+
+  /** Closes the card but keeps the row highlighted, so you're back where you were. */
+  const closeReader = () => {
+    selectedRef.current = null; // a load still in flight shouldn't mark it read
+    setReaderOpen(false);
   };
 
   const clearSelection = () => {
-    selectedRef.current = null;
+    closeReader();
     setSelectedId(null);
-    setDetail(null);
   };
 
-  const removeMessage = async (m: MessageSummary, action: "archive" | "trash") => {
+  /** Moves a message to another folder; it leaves the current list either way. */
+  const moveMessage = async (m: MessageSummary, to: Folder) => {
+    if (m.folder === to) return;
     const idx = messages.findIndex((x) => x.id === m.id);
     const next = messages[idx + 1] ?? messages[idx - 1];
     setMessages((ms) => ms.filter((x) => x.id !== m.id));
-    if (!m.isRead) bumpUnread(m.accountId, -1);
+    const unreadDelta = (to === "inbox" ? 1 : 0) - (m.folder === "inbox" ? 1 : 0);
+    if (!m.isRead && unreadDelta) bumpUnread(m.accountId, unreadDelta);
     if (selectedId === m.id) {
-      if (next) void openMessage(next);
-      else clearSelection();
+      if (!next) clearSelection();
+      else if (readerOpen) void openMessage(next);
+      else setSelectedId(next.id);
     }
     try {
-      await (action === "archive" ? api.archive(m.id) : api.trash(m.id));
-      toast.success(action === "archive" ? "Archived" : "Moved to trash");
+      await api.moveMessage(m.id, to);
+      toast.success(to === "archive" ? "Archived" : `Moved to ${folderLabel(to)}`);
     } catch (e) {
       toast.error(errorText(e));
       refreshAll.current();
@@ -243,27 +255,46 @@ export default function App() {
   keyHandler.current = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
     if (draft || settingsOpen || signingIn || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (t.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]")) return;
+    if (t.closest("input, textarea, select, [contenteditable], [role=menu], [role=listbox]")) return;
+    if (t.closest("[role=dialog]:not([data-reader])")) return;
     const idx = messages.findIndex((m) => m.id === selectedId);
     const current = idx >= 0 ? messages[idx] : undefined;
-    const go = (i: number) => messages[i] && void openMessage(messages[i]);
+    // In the list, J/K just move the highlight; in the reader card they page through messages.
+    const go = (i: number) => {
+      const m = messages[Math.max(0, i)];
+      if (!m) return;
+      if (readerOpen) void openMessage(m);
+      else setSelectedId(m.id);
+    };
+    const replyable = readerOpen ? detail : null;
     const handlers: Record<string, () => void> = {
       j: () => go(idx + 1),
-      ArrowDown: () => go(idx + 1),
-      k: () => go(Math.max(0, idx - 1)),
-      ArrowUp: () => go(Math.max(0, idx - 1)),
-      e: () => current && void removeMessage(current, "archive"),
-      "#": () => current && void removeMessage(current, "trash"),
-      Delete: () => current && void removeMessage(current, "trash"),
-      r: () => detail && startCompose("reply", detail),
-      a: () => detail && startCompose("replyAll", detail),
-      f: () => detail && startCompose("forward", detail),
+      k: () => go(idx - 1),
+      ...(readerOpen
+        ? { ArrowRight: () => go(idx + 1), ArrowLeft: () => go(idx - 1) }
+        : {
+            ArrowDown: () => go(idx + 1),
+            ArrowUp: () => go(idx - 1),
+            Enter: () => current && void openMessage(current),
+            o: () => current && void openMessage(current),
+            Escape: clearSelection,
+          }),
+      e: () => current && void moveMessage(current, "archive"),
+      "#": () => current && void moveMessage(current, "trash"),
+      Delete: () => current && void moveMessage(current, "trash"),
+      r: () => replyable && startCompose("reply", replyable),
+      a: () => replyable && startCompose("replyAll", replyable),
+      f: () => replyable && startCompose("forward", replyable),
       c: () => startCompose("new"),
       u: () => current && void setRead(current, !current.isRead),
       s: () => current && void toggleStar(current),
-      "/": () => searchRef.current?.focus(),
-      Escape: clearSelection,
+      "/": () => {
+        closeReader();
+        searchRef.current?.focus();
+      },
     };
+    // Enter on a focused button or link must keep activating it.
+    if (e.key === "Enter" && t !== document.body && !t.closest("[data-id]")) return;
     const h = handlers[e.key];
     if (h) {
       e.preventDefault();
@@ -279,83 +310,87 @@ export default function App() {
   // ----- render -----
 
   const viewTitle =
-    view.kind === "all" ? "All inboxes" : view.kind === "label" ? view.label : (accountById.get(view.id)?.email ?? "Inbox");
-  const selected = messages.find((m) => m.id === selectedId);
+    view.kind === "all"
+      ? "All inboxes"
+      : view.kind === "label"
+        ? view.label
+        : `${folderLabel(view.folder)} · ${accountById.get(view.id)?.email ?? ""}`;
+  const selectedIdx = messages.findIndex((m) => m.id === selectedId);
+  const selected = selectedIdx >= 0 ? messages[selectedIdx] : undefined;
 
   return (
-    <SidebarProvider className="h-svh overflow-hidden">
-      <AppSidebar
-        accounts={accounts}
-        view={view}
-        onView={(v) => {
-          setView(v);
-          clearSelection();
+    <SidebarProvider
+      className="h-svh min-h-0 flex-col overflow-hidden bg-sidebar"
+      style={{ "--titlebar-height": "2.75rem" } as React.CSSProperties}
+    >
+      <TitleBar search={search} onSearch={setSearch} searchRef={searchRef} />
+      <div className="flex min-h-0 flex-1">
+        <AppSidebar
+          // The sidebar is position:fixed; start it below the title bar.
+          className="top-(--titlebar-height) h-[calc(100svh-var(--titlebar-height))] pt-0"
+          accounts={accounts}
+          view={view}
+          onView={(v) => {
+            setView(v);
+            clearSelection();
+          }}
+          onAddAccount={addAccount}
+          onOpenSettings={() => setSettingsOpen(true)}
+          signingIn={signingIn}
+        />
+        <SidebarInset className="min-w-0 overflow-hidden border md:peer-data-[variant=inset]:mt-0 md:peer-data-[variant=inset]:shadow-none">
+          <MailList
+            title={viewTitle}
+            folder={folder}
+            isDemo={!isTauri}
+            syncing={syncing}
+            onSync={syncNow}
+            onCompose={() => startCompose("new")}
+            search={search}
+            filter={filter}
+            onFilter={setFilter}
+            messages={messages}
+            accounts={accounts}
+            accountById={accountById}
+            selectedId={selectedId}
+            showAccount={view.kind !== "account" && accounts.length > 1}
+            canLoadMore={messages.length >= limit}
+            onOpen={(m) => void openMessage(m)}
+            onToggleStar={(m) => void toggleStar(m)}
+            onLoadMore={() => setLimit((l) => l + PAGE)}
+            onAddAccount={addAccount}
+          />
+        </SidebarInset>
+      </div>
+
+      <MailReader
+        open={readerOpen && !!selected}
+        onClose={closeReader}
+        detail={detail}
+        error={detailError}
+        account={detail ? accountById.get(detail.accountId) : undefined}
+        position={selectedIdx + 1}
+        total={messages.length}
+        onPrev={() => selectedIdx > 0 && void openMessage(messages[selectedIdx - 1])}
+        onNext={() => messages[selectedIdx + 1] && void openMessage(messages[selectedIdx + 1])}
+        onReply={() => detail && startCompose("reply", detail)}
+        onReplyAll={() => detail && startCompose("replyAll", detail)}
+        onForward={() => detail && startCompose("forward", detail)}
+        folder={selected?.folder}
+        onMove={(to) => selected && void moveMessage(selected, to)}
+        onToggleRead={() => selected && void setRead(selected, !selected.isRead)}
+        onToggleStar={() => selected && void toggleStar(selected)}
+        onDownload={async (attachmentId) => {
+          if (!detail) return;
+          try {
+            const path = await api.downloadAttachment(detail.id, attachmentId);
+            toast.success("Attachment saved", { description: path });
+          } catch (e) {
+            toast.error(errorText(e));
+          }
         }}
-        onAddAccount={addAccount}
-        onOpenSettings={() => setSettingsOpen(true)}
-        signingIn={signingIn}
+        onMailto={(address) => startCompose("new", undefined, address)}
       />
-      <SidebarInset className="min-w-0 overflow-hidden">
-        <ResizablePanelGroup orientation="horizontal">
-          {/* Panels (react-resizable-panels v4) don't give children a definite height,
-              so each pane is pinned to its panel's bounds and scrolls internally. */}
-          <ResizablePanel id="list" defaultSize="42" minSize={340} className="relative">
-            <div className="absolute inset-0">
-            <MailList
-              title={viewTitle}
-              isDemo={!isTauri}
-              syncing={syncing}
-              onSync={syncNow}
-              onCompose={() => startCompose("new")}
-              search={search}
-              onSearch={setSearch}
-              searchRef={searchRef}
-              filter={filter}
-              onFilter={setFilter}
-              messages={messages}
-              accounts={accounts}
-              accountById={accountById}
-              selectedId={selectedId}
-              showAccount={view.kind !== "account" && accounts.length > 1}
-              canLoadMore={messages.length >= limit}
-              onOpen={(m) => void openMessage(m)}
-              onToggleStar={(m) => void toggleStar(m)}
-              onLoadMore={() => setLimit((l) => l + PAGE)}
-              onAddAccount={addAccount}
-            />
-            </div>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel id="reader" minSize={380} className="relative">
-            <div className="absolute inset-0">
-            <MailReader
-              detail={detail}
-              loading={detailLoading}
-              error={detailError}
-              hasSelection={!!selectedId}
-              account={detail ? accountById.get(detail.accountId) : undefined}
-              onReply={() => detail && startCompose("reply", detail)}
-              onReplyAll={() => detail && startCompose("replyAll", detail)}
-              onForward={() => detail && startCompose("forward", detail)}
-              onArchive={() => selected && void removeMessage(selected, "archive")}
-              onTrash={() => selected && void removeMessage(selected, "trash")}
-              onToggleRead={() => selected && void setRead(selected, !selected.isRead)}
-              onToggleStar={() => selected && void toggleStar(selected)}
-              onDownload={async (attachmentId) => {
-                if (!detail) return;
-                try {
-                  const path = await api.downloadAttachment(detail.id, attachmentId);
-                  toast.success("Attachment saved", { description: path });
-                } catch (e) {
-                  toast.error(errorText(e));
-                }
-              }}
-              onMailto={(address) => startCompose("new", undefined, address)}
-            />
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </SidebarInset>
 
       {draft && (
         <ComposeDialog

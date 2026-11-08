@@ -8,7 +8,8 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 
 use crate::error::Result;
 use crate::models::{
-    Account, Address, Attachment, FetchedBody, ListQuery, MessageDetail, MessageSummary, Provider,
+    local_id, Account, Address, Attachment, FetchedBody, Folder, ListQuery, MessageDetail, MessageSummary,
+    Provider,
 };
 
 const SCHEMA: &str = r#"
@@ -47,7 +48,8 @@ CREATE TABLE IF NOT EXISTS messages (
     references_hdr  TEXT,
     body_html       TEXT,
     body_text       TEXT,
-    attachments     TEXT
+    attachments     TEXT,
+    folder          TEXT NOT NULL DEFAULT 'inbox'
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC);
@@ -64,6 +66,37 @@ pub fn init(conn: &Connection) -> Result<()> {
     conn.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(()))?;
     conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;")?;
     conn.execute_batch(SCHEMA)?;
+    migrate_folders(conn)?;
+    // Accounts still on a color from the original default palette move to the nearest
+    // color in the current one. Colors picked by hand in Settings are left alone.
+    conn.execute_batch(
+        "UPDATE accounts SET color = CASE lower(color)
+            WHEN '#2563eb' THEN '#008dff' WHEN '#0891b2' THEN '#008dff'
+            WHEN '#16a34a' THEN '#33c759' WHEN '#7c3aed' THEN '#6a42e1'
+            WHEN '#ea580c' THEN '#df9147' WHEN '#ca8a04' THEN '#cf9943'
+            WHEN '#db2777' THEN '#ee665a' WHEN '#dc2626' THEN '#ee665a'
+         END
+         WHERE lower(color) IN ('#2563eb','#0891b2','#16a34a','#7c3aed','#ea580c','#ca8a04','#db2777','#dc2626');",
+    )?;
+    Ok(())
+}
+
+/// Caches created before folders existed only hold inbox mail. Add the column and
+/// forget each account's Gmail history position so the next sync is a full one that
+/// also fills Archive, Trash and Spam.
+fn migrate_folders(conn: &Connection) -> Result<()> {
+    let has_folder: bool = conn
+        .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'folder'")?
+        .exists([])?;
+    if !has_folder {
+        conn.execute_batch(
+            "ALTER TABLE messages ADD COLUMN folder TEXT NOT NULL DEFAULT 'inbox';
+             UPDATE accounts SET sync_state = NULL;",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_messages_folder ON messages(account_id, folder, date DESC);",
+    )?;
     Ok(())
 }
 
@@ -74,7 +107,7 @@ pub fn now_ms() -> i64 {
 // ---------- accounts ----------
 
 const ACCOUNT_COLS: &str = "a.id, a.provider, a.email, a.display_name, a.label, a.color, a.last_sync, a.last_error,
-     (SELECT COUNT(*) FROM messages m WHERE m.account_id = a.id AND m.is_read = 0)";
+     (SELECT COUNT(*) FROM messages m WHERE m.account_id = a.id AND m.folder = 'inbox' AND m.is_read = 0)";
 
 fn row_to_account(r: &Row) -> rusqlite::Result<Account> {
     let provider: String = r.get(1)?;
@@ -198,7 +231,7 @@ pub fn set_sync_result(c: &Connection, id: &str, error: Option<&str>) -> Result<
 // ---------- messages ----------
 
 const SUMMARY_COLS: &str = "id, account_id, remote_id, thread_id, from_name, from_email, to_list, cc_list,
-     reply_to, subject, snippet, date, is_read, is_starred, has_attachments, message_id_hdr, references_hdr";
+     reply_to, subject, snippet, date, is_read, is_starred, has_attachments, message_id_hdr, references_hdr, folder";
 
 fn addrs_to_json(list: &[Address]) -> String {
     serde_json::to_string(list).unwrap_or_else(|_| "[]".into())
@@ -229,6 +262,7 @@ fn row_to_summary(r: &Row) -> rusqlite::Result<MessageSummary> {
         has_attachments: r.get(14)?,
         message_id_hdr: r.get(15)?,
         references_hdr: r.get(16)?,
+        folder: Folder::parse(&r.get::<_, String>(17)?),
     })
 }
 
@@ -241,8 +275,8 @@ pub fn upsert_messages(c: &Connection, msgs: &[MessageSummary]) -> Result<Vec<St
         let mut upsert = tx.prepare_cached(
             "INSERT INTO messages (id, account_id, remote_id, thread_id, from_name, from_email, to_list,
                  cc_list, reply_to, subject, snippet, date, is_read, is_starred, has_attachments,
-                 message_id_hdr, references_hdr)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                 message_id_hdr, references_hdr, folder)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(id) DO UPDATE SET
                  thread_id = excluded.thread_id, from_name = excluded.from_name,
                  from_email = excluded.from_email, to_list = excluded.to_list,
@@ -250,7 +284,8 @@ pub fn upsert_messages(c: &Connection, msgs: &[MessageSummary]) -> Result<Vec<St
                  subject = excluded.subject, snippet = excluded.snippet, date = excluded.date,
                  is_read = excluded.is_read, is_starred = excluded.is_starred,
                  has_attachments = excluded.has_attachments,
-                 message_id_hdr = excluded.message_id_hdr, references_hdr = excluded.references_hdr",
+                 message_id_hdr = excluded.message_id_hdr, references_hdr = excluded.references_hdr,
+                 folder = excluded.folder",
         )?;
         for m in msgs {
             if !exists.exists([&m.id])? {
@@ -274,6 +309,7 @@ pub fn upsert_messages(c: &Connection, msgs: &[MessageSummary]) -> Result<Vec<St
                 m.has_attachments,
                 m.message_id_hdr,
                 m.references_hdr,
+                m.folder.as_str(),
             ])?;
         }
     }
@@ -281,11 +317,19 @@ pub fn upsert_messages(c: &Connection, msgs: &[MessageSummary]) -> Result<Vec<St
     Ok(new_ids)
 }
 
-/// Removes every cached message of an account whose remote id isn't in `keep`.
-pub fn retain_messages(c: &Connection, account_id: &str, keep: &HashSet<String>) -> Result<usize> {
+/// Removes cached messages of an account (optionally only those in one folder) whose
+/// remote id isn't in `keep`.
+pub fn retain_messages(
+    c: &Connection,
+    account_id: &str,
+    folder: Option<Folder>,
+    keep: &HashSet<String>,
+) -> Result<usize> {
     let existing: Vec<String> = {
-        let mut stmt = c.prepare("SELECT remote_id FROM messages WHERE account_id = ?1")?;
-        let rows = stmt.query_map([account_id], |r| r.get(0))?;
+        let mut stmt = c.prepare(
+            "SELECT remote_id FROM messages WHERE account_id = ?1 AND (?2 IS NULL OR folder = ?2)",
+        )?;
+        let rows = stmt.query_map(params![account_id, folder.map(Folder::as_str)], |r| r.get(0))?;
         rows.collect::<rusqlite::Result<_>>()?
     };
     let tx = c.unchecked_transaction()?;
@@ -315,8 +359,22 @@ pub fn delete_by_remote(c: &Connection, account_id: &str, remote_id: &str) -> Re
     Ok(())
 }
 
-pub fn delete_message(c: &Connection, id: &str) -> Result<()> {
-    c.execute("DELETE FROM messages WHERE id = ?1", [id])?;
+/// Records a move to another folder. Outlook assigns a new remote id on move; the row
+/// is re-keyed to it so the next sync recognises the message instead of duplicating it.
+pub fn set_folder(c: &Connection, id: &str, folder: Folder, new_remote_id: Option<&str>) -> Result<()> {
+    match new_remote_id {
+        Some(rid) => {
+            let account_id: String =
+                c.query_row("SELECT account_id FROM messages WHERE id = ?1", [id], |r| r.get(0))?;
+            c.execute(
+                "UPDATE messages SET id = ?2, remote_id = ?3, folder = ?4 WHERE id = ?1",
+                params![id, local_id(&account_id, rid), rid, folder.as_str()],
+            )?;
+        }
+        None => {
+            c.execute("UPDATE messages SET folder = ?2 WHERE id = ?1", params![id, folder.as_str()])?;
+        }
+    }
     Ok(())
 }
 
@@ -334,8 +392,8 @@ pub fn set_starred(c: &Connection, id: &str, starred: bool) -> Result<()> {
 }
 
 pub fn list_messages(c: &Connection, q: &ListQuery) -> Result<Vec<MessageSummary>> {
-    let mut sql = format!("SELECT {SUMMARY_COLS} FROM messages WHERE 1=1");
-    let mut args: Vec<Value> = Vec::new();
+    let mut sql = format!("SELECT {SUMMARY_COLS} FROM messages WHERE folder = ?");
+    let mut args: Vec<Value> = vec![Value::Text(q.folder.as_str().into())];
 
     if let Some(ids) = &q.account_ids {
         if ids.is_empty() {
@@ -516,11 +574,66 @@ mod tests {
         assert_eq!(accts.iter().find(|a| a.id == "a2").unwrap().unread_count, 1);
 
         let keep: HashSet<String> = ["m3".to_string()].into_iter().collect();
-        assert_eq!(retain_messages(&c, "a1", &keep).unwrap(), 1);
+        assert_eq!(retain_messages(&c, "a1", None, &keep).unwrap(), 1);
         assert_eq!(list_messages(&c, &ListQuery::default()).unwrap().len(), 2);
 
         delete_account(&c, "a1").unwrap();
         assert_eq!(list_messages(&c, &ListQuery::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn folders() {
+        let c = test_db();
+        insert_account(&c, &account("a1", "me@gmail.com"), b"x").unwrap();
+        upsert_messages(&c, &[msg("a1", "m1", 1, false, "One"), msg("a1", "m2", 2, false, "Two")]).unwrap();
+        let in_folder = |f: Folder| {
+            list_messages(&c, &ListQuery { folder: f, ..Default::default() })
+                .unwrap()
+                .into_iter()
+                .map(|m| m.id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(in_folder(Folder::Inbox).len(), 2);
+
+        // Gmail-style move: same id, new folder. Unread counts only cover the inbox.
+        set_folder(&c, "a1:m1", Folder::Archive, None).unwrap();
+        assert_eq!(in_folder(Folder::Inbox), vec!["a1:m2"]);
+        assert_eq!(in_folder(Folder::Archive), vec!["a1:m1"]);
+        assert_eq!(list_accounts(&c).unwrap()[0].unread_count, 1);
+
+        // Outlook-style move: the message comes back with a new remote id.
+        set_folder(&c, "a1:m2", Folder::Trash, Some("m2-moved")).unwrap();
+        assert_eq!(in_folder(Folder::Trash), vec!["a1:m2-moved"]);
+        assert!(remote_exists(&c, "a1", "m2-moved").unwrap());
+        assert!(!remote_exists(&c, "a1", "m2").unwrap());
+
+        // Retaining one folder leaves the others alone.
+        retain_messages(&c, "a1", Some(Folder::Trash), &HashSet::new()).unwrap();
+        assert!(in_folder(Folder::Trash).is_empty());
+        assert_eq!(in_folder(Folder::Archive), vec!["a1:m1"]);
+    }
+
+    #[test]
+    fn upgrades_cache_without_folders() {
+        let c = Connection::open_in_memory().unwrap();
+        // The pre-folder schema: no folder column, and a saved Gmail history position.
+        let old = SCHEMA.replace(",\n    folder          TEXT NOT NULL DEFAULT 'inbox'", "");
+        assert!(!old.contains("folder"));
+        c.execute_batch(&old).unwrap();
+        insert_account(&c, &account("a1", "me@gmail.com"), b"x").unwrap();
+        set_sync_state(&c, "a1", Some("12345")).unwrap();
+        c.execute(
+            "INSERT INTO messages (id, account_id, remote_id, date) VALUES ('a1:m1', 'a1', 'm1', 1)",
+            [],
+        )
+        .unwrap();
+
+        init(&c).unwrap();
+        let inbox = list_messages(&c, &ListQuery::default()).unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].folder, Folder::Inbox);
+        assert_eq!(get_sync_state(&c, "a1").unwrap(), None, "forces a full sync");
+        init(&c).unwrap(); // running again is harmless
     }
 
     #[test]

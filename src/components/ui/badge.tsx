@@ -18,6 +18,10 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // Soft colored chip: set `--chip` (any CSS color) inline; defaults to gray.
+        // The tint uses the color as-is; the text keeps its hue but is clamped in lightness
+        // (darker in light mode, lighter in dark mode) so every color reads at ≥ 4.5:1.
+        tint: "h-6 gap-1.5 rounded-md px-2 [--chip:var(--chip-gray)] bg-[color-mix(in_srgb,var(--chip)_11%,transparent)] text-[oklch(from_var(--chip)_min(l,0.5)_c_h)] dark:bg-[color-mix(in_srgb,var(--chip)_20%,transparent)] dark:text-[oklch(from_var(--chip)_max(l,0.8)_c_h)] [&>svg]:size-3.5!",
       },
     },
     defaultVariants: {

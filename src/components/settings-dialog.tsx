@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { LogInIcon, Trash2Icon } from "lucide-react";
+import { IconLogin2, IconTrash } from "@tabler/icons-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -225,13 +225,13 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
         </SelectContent>
       </Select>
       <Button variant="outline" size="sm" onClick={() => onReconnect(a.provider)}>
-        <LogInIcon />
+        <IconLogin2 />
         Sign in again
       </Button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
           <Button variant="ghost" size="icon-sm" className="text-destructive">
-            <Trash2Icon />
+            <IconTrash />
             <span className="sr-only">Remove account</span>
           </Button>
         </AlertDialogTrigger>

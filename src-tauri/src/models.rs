@@ -33,6 +33,39 @@ impl Provider {
     }
 }
 
+/// Where a message lives. Relay mirrors these four folders for every account.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Folder {
+    #[default]
+    Inbox,
+    Archive,
+    Trash,
+    Spam,
+}
+
+impl Folder {
+    pub const ALL: [Folder; 4] = [Folder::Inbox, Folder::Archive, Folder::Trash, Folder::Spam];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Folder::Inbox => "inbox",
+            Folder::Archive => "archive",
+            Folder::Trash => "trash",
+            Folder::Spam => "spam",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "archive" => Folder::Archive,
+            "trash" => Folder::Trash,
+            "spam" => Folder::Spam,
+            _ => Folder::Inbox,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Address {
     pub name: String,
@@ -75,6 +108,7 @@ pub struct MessageSummary {
     pub has_attachments: bool,
     pub message_id_hdr: Option<String>,
     pub references_hdr: Option<String>,
+    pub folder: Folder,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -114,6 +148,8 @@ pub struct FetchedBody {
 #[serde(rename_all = "camelCase", default)]
 pub struct ListQuery {
     pub account_ids: Option<Vec<String>>,
+    /// Defaults to the inbox.
+    pub folder: Folder,
     pub unread_only: bool,
     pub starred_only: bool,
     pub search: Option<String>,

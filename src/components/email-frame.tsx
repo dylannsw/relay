@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { ImageOffIcon } from "lucide-react";
+import { IconPhotoOff } from "@tabler/icons-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { api } from "@/api";
@@ -80,7 +80,7 @@ export function EmailFrame({ html, text, onMailto }: Props) {
     <div className="flex min-h-0 flex-1 flex-col">
       {hasRemote && !showImages && (
         <Alert className="rounded-none border-x-0 border-t-0">
-          <ImageOffIcon />
+          <IconPhotoOff />
           <AlertTitle>Remote images are hidden</AlertTitle>
           <AlertDescription>Senders can use them to tell when you open a message.</AlertDescription>
           <AlertAction>

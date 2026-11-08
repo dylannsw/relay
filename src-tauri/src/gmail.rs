@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::error::Result;
 use crate::http;
 use crate::mime;
-use crate::models::{local_id, Attachment, FetchedBody, MessageSummary};
+use crate::models::{local_id, Attachment, FetchedBody, Folder, MessageSummary};
 
 const BASE: &str = "https://gmail.googleapis.com/gmail/v1/users/me";
 const P: &str = "Gmail";
@@ -68,10 +68,26 @@ impl GPart {
     }
 }
 
+/// The Relay folder a set of Gmail labels puts a message in, or `None` for mail Relay
+/// doesn't mirror (drafts, chats, and messages you sent that aren't in your inbox).
+pub fn folder_of(labels: &[String]) -> Option<Folder> {
+    let has = |l: &str| labels.iter().any(|x| x == l);
+    if has("TRASH") {
+        Some(Folder::Trash)
+    } else if has("SPAM") {
+        Some(Folder::Spam)
+    } else if has("INBOX") {
+        Some(Folder::Inbox)
+    } else if has("DRAFT") || has("SENT") || has("CHAT") {
+        None
+    } else {
+        Some(Folder::Archive)
+    }
+}
+
 impl GMessage {
-    pub fn in_inbox(&self) -> bool {
-        let has = |l: &str| self.label_ids.iter().any(|x| x == l);
-        has("INBOX") && !has("TRASH") && !has("SPAM")
+    pub fn folder(&self) -> Option<Folder> {
+        folder_of(&self.label_ids)
     }
 }
 
@@ -94,14 +110,26 @@ struct IdRef {
     id: String,
 }
 
-pub async fn list_inbox_ids(http: &Client, token: &str, max: u32) -> Result<Vec<String>> {
+/// Ids of the newest `max` messages in a folder.
+pub async fn list_ids(http: &Client, token: &str, folder: Folder, max: u32) -> Result<Vec<String>> {
+    // Gmail has no archive label: "archived" is everything that isn't in another folder
+    // (spam and trash are already left out unless includeSpamTrash is set).
+    let filter = match folder {
+        Folder::Inbox => ("labelIds", "INBOX"),
+        Folder::Trash => ("labelIds", "TRASH"),
+        Folder::Spam => ("labelIds", "SPAM"),
+        Folder::Archive => ("q", "-in:inbox -in:sent -in:drafts -in:chats"),
+    };
     let mut ids = Vec::new();
     let mut page: Option<String> = None;
     loop {
         let mut query = vec![
-            ("labelIds", "INBOX".to_string()),
+            (filter.0, filter.1.to_string()),
             ("maxResults", max.min(500).to_string()),
         ];
+        if matches!(folder, Folder::Trash | Folder::Spam) {
+            query.push(("includeSpamTrash", "true".to_string()));
+        }
         if let Some(p) = &page {
             query.push(("pageToken", p.clone()));
         }
@@ -170,6 +198,7 @@ pub fn to_summary(account_id: &str, m: &GMessage) -> MessageSummary {
             || payload.mime_type.eq_ignore_ascii_case("multipart/mixed"),
         message_id_hdr: Some(h("Message-ID")).filter(|s| !s.is_empty()),
         references_hdr: Some(h("References")).filter(|s| !s.is_empty()),
+        folder: m.folder().unwrap_or_default(),
     }
 }
 
@@ -426,6 +455,31 @@ pub async fn trash(http: &Client, token: &str, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn untrash(http: &Client, token: &str, id: &str) -> Result<()> {
+    http::send(
+        http.post(format!("{BASE}/messages/{id}/untrash")).bearer_auth(token),
+        P,
+    )
+    .await?;
+    Ok(())
+}
+
+/// Moves a message between Relay folders by adjusting its labels.
+pub async fn move_to(http: &Client, token: &str, id: &str, from: Folder, to: Folder) -> Result<()> {
+    if to == Folder::Trash {
+        return trash(http, token, id).await;
+    }
+    if from == Folder::Trash {
+        untrash(http, token, id).await?;
+    }
+    match to {
+        Folder::Inbox => modify(http, token, id, &["INBOX"], &["SPAM"]).await,
+        Folder::Archive => modify(http, token, id, &[], &["INBOX", "SPAM"]).await,
+        Folder::Spam => modify(http, token, id, &["SPAM"], &["INBOX"]).await,
+        Folder::Trash => unreachable!(),
+    }
+}
+
 pub async fn send(http: &Client, token: &str, raw: &str, thread_id: Option<&str>) -> Result<()> {
     let mut body = json!({ "raw": URL_SAFE_NO_PAD.encode(raw.as_bytes()) });
     if let Some(t) = thread_id {
@@ -462,7 +516,7 @@ mod tests {
             ]}
         }))
         .unwrap();
-        assert!(m.in_inbox());
+        assert_eq!(m.folder(), Some(Folder::Inbox));
         let s = to_summary("acct", &m);
         assert_eq!(s.id, "acct:18c");
         assert_eq!(s.from.name, "Prof. Lee");
@@ -471,6 +525,18 @@ mod tests {
         assert!(s.has_attachments);
         assert_eq!(s.date, 1762600000000);
         assert_eq!(s.message_id_hdr.as_deref(), Some("<id1@mail.gmail.com>"));
+    }
+
+    #[test]
+    fn folders_from_labels() {
+        let f = |l: &[&str]| folder_of(&l.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(f(&["INBOX", "UNREAD"]), Some(Folder::Inbox));
+        assert_eq!(f(&["INBOX", "SENT"]), Some(Folder::Inbox));
+        assert_eq!(f(&["CATEGORY_UPDATES", "IMPORTANT"]), Some(Folder::Archive));
+        assert_eq!(f(&["TRASH", "INBOX"]), Some(Folder::Trash));
+        assert_eq!(f(&["SPAM", "UNREAD"]), Some(Folder::Spam));
+        assert_eq!(f(&["SENT"]), None);
+        assert_eq!(f(&["DRAFT"]), None);
     }
 
     #[test]

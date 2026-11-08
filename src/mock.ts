@@ -2,7 +2,7 @@
 // normal browser (`npm run dev`) so the interface can be worked on without
 // signing in to real accounts. The Tauri app never loads this data.
 
-import type { Account, Config, ListQuery, MessageDetail, OutgoingMessage } from "./types";
+import type { Account, Config, Folder, ListQuery, MessageDetail, OutgoingMessage } from "./types";
 
 const now = Date.now();
 const h = 3_600_000;
@@ -16,10 +16,10 @@ let config: Config = {
 };
 
 const accounts: Account[] = [
-  acct("a1", "google", "alex.personal@gmail.com", "Personal", "#2563eb"),
-  acct("a2", "google", "alex@studio-work.com", "Work", "#16a34a"),
-  acct("a3", "microsoft", "alex@contoso.com", "Work", "#db2777"),
-  acct("a4", "microsoft", "alex@university.edu", "School", "#ea580c"),
+  acct("a1", "google", "alex.personal@gmail.com", "Personal", "#008dff"),
+  acct("a2", "google", "alex@studio-work.com", "Work", "#33c759"),
+  acct("a3", "microsoft", "alex@contoso.com", "Work", "#6a42e1"),
+  acct("a4", "microsoft", "alex@university.edu", "School", "#df9147"),
 ];
 
 function acct(id: string, provider: Account["provider"], email: string, label: string, color: string): Account {
@@ -36,11 +36,17 @@ let messages: MessageDetail[] = [
   m("a3", "1:1 moved to 3pm", "Jordan Blake", "jordan@contoso.com", 26, true, "Hey, can we move our 1:1 to 3pm? Something came up."),
   m("a2", "Design review feedback", "Chris", "chris@studio-work.com", 50, true, "Loved the direction. A few notes on spacing and the color system."),
   m("a1", "Weekend photos", "Mom", "mom@example.com", 80, true, "Here are the photos from the weekend! Love you."),
+  m("a1", "Flight confirmation: SFO → JFK", "Airline", "trips@airline.example", 120, true, "Your booking is confirmed. Check in opens 24 hours before departure.", false, false, "archive"),
+  m("a3", "Lunch order", "Facilities", "facilities@contoso.com", 140, true, "Thanks for ordering lunch for the offsite. Receipt attached.", false, true, "archive"),
+  m("a1", "50% off everything this weekend", "Deals Daily", "promo@deals.example", 30, false, "Don't miss out on our biggest sale of the year.", false, false, "trash"),
+  m("a4", "Library hold expired", "Library", "library@university.edu", 60, true, "Your hold on 'Design of Everyday Things' has expired.", false, false, "trash"),
+  m("a1", "You've won a prize!!!", "Prize Center", "winner@prize.example", 4, false, "Click here to claim your reward before it expires.", false, false, "spam"),
+  m("a2", "Urgent: verify your account", "Security Team", "security@verify.example", 15, false, "We noticed unusual activity. Verify your account now.", false, false, "spam"),
 ];
 
 function m(
   accountId: string, subject: string, name: string, email: string, hoursAgo: number,
-  isRead: boolean, text: string, isStarred = false, hasAttachments = false,
+  isRead: boolean, text: string, isStarred = false, hasAttachments = false, folder: Folder = "inbox",
 ): MessageDetail {
   const remoteId = Math.random().toString(36).slice(2, 10);
   const a = accounts.find((x) => x.id === accountId)!;
@@ -48,7 +54,7 @@ function m(
     id: `${accountId}:${remoteId}`, accountId, remoteId, threadId: null,
     from: { name, email }, to: [{ name: a.displayName, email: a.email }], cc: [], replyTo: [],
     subject, snippet: text, date: now - hoursAgo * h, isRead, isStarred, hasAttachments,
-    messageIdHdr: null, referencesHdr: null,
+    messageIdHdr: null, referencesHdr: null, folder,
     bodyHtml: `<div style="font-family:Segoe UI,Arial"><p>${text}</p><p>Thanks,<br>${name}</p>
       <p><img src="https://example.com/tracker.png" width="1" height="1"></p></div>`,
     bodyText: null,
@@ -59,7 +65,7 @@ function m(
 function withCounts(): Account[] {
   return accounts.map((a) => ({
     ...a,
-    unreadCount: messages.filter((x) => x.accountId === a.id && !x.isRead).length,
+    unreadCount: messages.filter((x) => x.accountId === a.id && x.folder === "inbox" && !x.isRead).length,
   }));
 }
 
@@ -93,6 +99,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       const q = args.query as ListQuery;
       const s = q.search?.toLowerCase();
       const list = messages
+        .filter((x) => x.folder === (q.folder ?? "inbox"))
         .filter((x) => !q.accountIds || q.accountIds.includes(x.accountId))
         .filter((x) => !q.unreadOnly || !x.isRead)
         .filter((x) => !q.starredOnly || x.isStarred)
@@ -109,9 +116,8 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
     case "set_starred":
       find(args.id)!.isStarred = args.starred as boolean;
       return delay(undefined) as Promise<T>;
-    case "archive":
-    case "trash":
-      messages = messages.filter((x) => x.id !== args.id);
+    case "move_message":
+      find(args.id)!.folder = args.folder as Folder;
       return delay(undefined) as Promise<T>;
     case "send_message": {
       const out = args.message as OutgoingMessage;

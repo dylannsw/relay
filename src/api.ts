@@ -5,6 +5,7 @@ import { mockInvoke } from "./mock";
 import type {
   Account,
   Config,
+  Folder,
   ListQuery,
   MessageDetail,
   MessageSummary,
@@ -38,8 +39,7 @@ export const api = {
 
   setRead: (id: string, read: boolean) => call<void>("set_read", { id, read }),
   setStarred: (id: string, starred: boolean) => call<void>("set_starred", { id, starred }),
-  archive: (id: string) => call<void>("archive", { id }),
-  trash: (id: string) => call<void>("trash", { id }),
+  moveMessage: (id: string, folder: Folder) => call<void>("move_message", { id, folder }),
   send: (message: OutgoingMessage) => call<void>("send_message", { message }),
 
   syncNow: () => call<SyncReport[]>("sync_now"),

@@ -73,14 +73,23 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
+    --sidebar: oklch(0.955 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent: oklch(0.915 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-border: oklch(0.895 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    /* Chip palette (Badge variant="tint"). Account defaults come from the same list in
+       src-tauri/src/commands.rs. Dark mode derives its colors from these. */
+    --chip-blue: #008dff;
+    --chip-green: #33c759;
+    --chip-purple: #6a42e1;
+    --chip-orange: #df9147;
+    --chip-red: #ee665a;
+    --chip-amber: #cf9943;
+    --chip-gray: #777777;
 }
 
 .dark {

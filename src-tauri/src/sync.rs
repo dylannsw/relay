@@ -1,9 +1,9 @@
-//! Keeps the local cache in step with each account's Inbox.
+//! Keeps the local cache in step with each account's Inbox, Archive, Trash and Spam.
 //!
-//! * Gmail: first sync lists the newest N inbox messages; after that the
-//!   History API returns only what changed (new mail, read/star changes,
-//!   archives, deletes), so a typical refresh is one small request.
-//! * Microsoft: one request returns the newest N inbox messages with their
+//! * Gmail: first sync lists the newest messages in each folder; after that the
+//!   History API returns only what changed (new mail, read/star changes, moves
+//!   between folders, deletes), so a typical refresh is one small request.
+//! * Microsoft: one request per folder returns its newest messages with their
 //!   flags, which we reconcile against the cache.
 
 use std::collections::HashSet;
@@ -15,11 +15,20 @@ use tauri::{AppHandle, Emitter};
 
 use crate::error::{Error, Result};
 use crate::gmail::{self, Change, GMessage};
-use crate::models::{Account, Provider, SyncReport};
+use crate::models::{Account, Folder, Provider, SyncReport};
 use crate::state::AppState;
 use crate::{db, graph};
 
 pub const MAIL_UPDATED: &str = "mail-updated";
+
+/// Archive, Trash and Spam keep fewer messages than the inbox.
+fn folder_max(folder: Folder, max: u32) -> u32 {
+    if folder == Folder::Inbox {
+        max
+    } else {
+        max.min(50)
+    }
+}
 
 pub async fn sync_account(state: &AppState, account_id: &str) -> Result<usize> {
     let account = state.db(|c| db::get_account(c, account_id))?;
@@ -71,10 +80,8 @@ async fn sync_gmail(state: &AppState, account: &Account, token: &str, max: u32) 
                     Change::Deleted => state.db(|c| db::delete_by_remote(c, &account.id, &id))?,
                     Change::Touched(labels) => {
                         let known = state.db(|c| db::remote_exists(c, &account.id, &id))?;
-                        let maybe_inbox = labels
-                            .map(|l| l.iter().any(|x| x == "INBOX"))
-                            .unwrap_or(true);
-                        if known || maybe_inbox {
+                        let mirrored = labels.map(|l| gmail::folder_of(&l).is_some()).unwrap_or(true);
+                        if known || mirrored {
                             to_fetch.push(id);
                         }
                     }
@@ -84,8 +91,8 @@ async fn sync_gmail(state: &AppState, account: &Account, token: &str, max: u32) 
             let mut upserts = Vec::new();
             for (id, m) in fetched {
                 match m {
-                    Some(m) if m.in_inbox() => upserts.push(gmail::to_summary(&account.id, &m)),
-                    // Archived, trashed, spam or deleted: drop it from the unified inbox.
+                    Some(m) if m.folder().is_some() => upserts.push(gmail::to_summary(&account.id, &m)),
+                    // Deleted for good, or now only a draft/sent message: drop it.
                     _ => state.db(|c| db::delete_by_remote(c, &account.id, &id))?,
                 }
             }
@@ -98,18 +105,23 @@ async fn sync_gmail(state: &AppState, account: &Account, token: &str, max: u32) 
 
     // Take the history id *before* listing so no change slips between the two.
     let (_, history_id) = gmail::profile(&state.http, token).await?;
-    let ids = gmail::list_inbox_ids(&state.http, token, max).await?;
+    let mut ids = Vec::new();
+    for folder in Folder::ALL {
+        ids.extend(gmail::list_ids(&state.http, token, folder, folder_max(folder, max)).await?);
+    }
+    ids.sort_unstable();
+    ids.dedup();
     let fetched = fetch_gmail_many(&state.http, token, ids).await?;
     let upserts: Vec<_> = fetched
         .into_iter()
         .filter_map(|(_, m)| m)
-        .filter(|m| m.in_inbox())
+        .filter(|m| m.folder().is_some())
         .map(|m| gmail::to_summary(&account.id, &m))
         .collect();
     let keep: HashSet<String> = upserts.iter().map(|m| m.remote_id.clone()).collect();
     let new = state.db(|c| {
         let new = db::upsert_messages(c, &upserts)?;
-        db::retain_messages(c, &account.id, &keep)?;
+        db::retain_messages(c, &account.id, None, &keep)?;
         db::set_sync_state(c, &account.id, Some(&history_id))?;
         Ok(new)
     })?;
@@ -117,15 +129,24 @@ async fn sync_gmail(state: &AppState, account: &Account, token: &str, max: u32) 
 }
 
 async fn sync_graph(state: &AppState, account: &Account, token: &str, max: u32) -> Result<usize> {
-    let msgs = graph::list_inbox(&state.http, token, max).await?;
-    let summaries: Vec<_> = msgs.iter().map(|m| graph::to_summary(&account.id, m)).collect();
-    let keep: HashSet<String> = summaries.iter().map(|m| m.remote_id.clone()).collect();
-    let new = state.db(|c| {
-        let new = db::upsert_messages(c, &summaries)?;
-        db::retain_messages(c, &account.id, &keep)?;
-        Ok(new)
-    })?;
-    Ok(new.len())
+    let mut new = 0;
+    for folder in Folder::ALL {
+        let msgs = match graph::list_folder(&state.http, token, folder, folder_max(folder, max)).await {
+            Ok(msgs) => msgs,
+            // Some mailboxes have no Archive folder. Only a broken inbox (or an expired
+            // sign-in) fails the sync; otherwise skip the folder and keep its cache as is.
+            Err(e) if folder != Folder::Inbox && e.status() != Some(401) => continue,
+            Err(e) => return Err(e),
+        };
+        let summaries: Vec<_> = msgs.iter().map(|m| graph::to_summary(&account.id, m, folder)).collect();
+        let keep: HashSet<String> = summaries.iter().map(|m| m.remote_id.clone()).collect();
+        new += state.db(|c| {
+            let new = db::upsert_messages(c, &summaries)?;
+            db::retain_messages(c, &account.id, Some(folder), &keep)?;
+            Ok(new.len())
+        })?;
+    }
+    Ok(new)
 }
 
 /// Syncs every account in parallel. Serialized with other full syncs.
