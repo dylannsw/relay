@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Local secrets (never commit OAuth client IDs/secrets or tokens)
+.env
+.env.*
+config.json
+
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
