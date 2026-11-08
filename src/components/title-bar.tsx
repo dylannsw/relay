@@ -1,9 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { IconCopy, IconMinus, IconSquare, IconX } from "@tabler/icons-react";
+import { IconArrowBarToDown, IconMaximize, IconMinimize, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/api";
-import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import appIcon from "../../app-icon.svg";
 
@@ -58,33 +57,42 @@ function WindowControls() {
   // In the browser preview (no Tauri) the buttons render but do nothing.
   const win = isTauri ? getCurrentWindow() : null;
   const buttons = [
-    { label: "Minimize", icon: IconMinus, onClick: () => void win?.minimize() },
+    { label: "Minimize", icon: IconArrowBarToDown, tint: TINTS.amber, onClick: () => void win?.minimize() },
     {
       label: maximized ? "Restore" : "Maximize",
-      icon: maximized ? IconCopy : IconSquare,
+      icon: maximized ? IconMinimize : IconMaximize,
+      tint: TINTS.green,
       onClick: () => void win?.toggleMaximize(),
     },
-    { label: "Close", icon: IconX, onClick: () => void win?.close(), close: true },
+    { label: "Close", icon: IconX, tint: TINTS.red, onClick: () => void win?.close() },
   ];
 
   return (
-    <div className="flex h-full">
-      {buttons.map(({ label, icon: Icon, onClick, close }) => (
-        <Button
+    <div className="flex items-center gap-1 pr-2">
+      {buttons.map(({ label, icon: Icon, tint, onClick }) => (
+        <button
           key={label}
-          variant="ghost"
+          type="button"
           aria-label={label}
           title={label}
           tabIndex={-1}
           onClick={onClick}
           className={cn(
-            "h-full w-11.5 rounded-none text-sidebar-foreground/80 focus-visible:ring-0",
-            close && "hover:bg-[#c42b1c] hover:text-white dark:hover:bg-[#c42b1c]",
+            "flex size-8 items-center justify-center rounded-lg text-muted-foreground outline-none",
+            "transition-[background-color,color,scale] duration-200 ease-(--ease-out-soft) active:scale-95",
+            tint,
           )}
         >
-          <Icon stroke={1.25} className={cn("size-4", label === "Restore" && "size-3.5 -scale-x-100")} />
-        </Button>
+          <Icon stroke={1.75} className="size-4.5" />
+        </button>
       ))}
     </div>
   );
 }
+
+/** Hover colours per button: a soft tinted square behind an icon in the full colour. */
+const TINTS = {
+  amber: "hover:bg-amber-500/12 hover:text-amber-500 dark:hover:bg-amber-400/15 dark:hover:text-amber-400",
+  green: "hover:bg-emerald-500/12 hover:text-emerald-500 dark:hover:bg-emerald-400/15 dark:hover:text-emerald-400",
+  red: "hover:bg-red-500/10 hover:text-red-500 dark:hover:bg-red-400/15 dark:hover:text-red-400",
+};
