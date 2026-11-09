@@ -62,7 +62,42 @@ export interface Config {
   messagesPerAccount: number;
   /** Rebound keyboard shortcuts: action id -> key ("" = unassigned). */
   shortcuts: Record<string, string>;
+  /** Saved on its own with `saveTasksConfig`; `saveConfig` leaves it unchanged. */
+  tasks: TasksConfig;
+  /** The name Home greets you by ("" = the first account's name). Saved with `saveDisplayName`. */
+  displayName: string;
 }
+
+export interface TasksConfig {
+  /** The Obsidian vault folder holding Tick's to-do note ("" = not set up). */
+  vaultPath: string;
+  /** The Home banner: Relay's own copy of the picture ("" = none). Not synced. */
+  bannerImage: string;
+  /** Vertical focus of the banner picture: 0 shows its top, 100 its bottom. */
+  bannerPosition: number;
+  bannerDots: boolean;
+}
+
+/** A note read from the vault, with a stamp of the file so a later write can detect changes. */
+export interface NoteFile {
+  /** Vault-relative path. */
+  path: string;
+  content: string;
+  /** "" when the file doesn't exist yet. */
+  stamp: string;
+}
+
+export interface TasksSnapshot {
+  vaultPath: string;
+  /** Tick's data.json, raw. */
+  settings: string | null;
+  todo: NoteFile | null;
+  completed: NoteFile | null;
+  /** Why tasks can't be shown, if so. */
+  error: string | null;
+}
+
+export type NoteKind = "todo" | "completed";
 
 export interface ListQuery {
   accountIds?: string[];

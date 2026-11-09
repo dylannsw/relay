@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
+  IconChecklist,
   IconChevronRight,
   IconSchool,
   IconInbox,
@@ -9,6 +10,7 @@ import {
   IconMail,
   IconPlus,
   IconSettings,
+  IconSmartHome,
   IconTag,
   IconUser,
   type TablerIcon,
@@ -42,12 +44,21 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { Account, Folder, Provider } from "@/types";
 import { relativeTime } from "@/format";
 import { FOLDERS } from "@/folders";
+import { useTasks } from "@/tasks/store";
 
-/** All inboxes and groups show inbox mail; a single account can show any of its folders. */
+/**
+ * Home, or the Tasks list (optionally filtered to a section). Mail: all inboxes and groups show
+ * inbox mail; a single account can show any of its folders.
+ */
 export type View =
+  | { kind: "home" }
+  | { kind: "tasks"; section?: string }
   | { kind: "all" }
   | { kind: "label"; label: string }
   | { kind: "account"; id: string; folder: Folder };
+
+/** Home and Tasks: pages without a message list. */
+export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks";
 
 const LABEL_ORDER = ["Personal", "Work", "School"];
 const LABEL_ICONS: Record<string, TablerIcon> = {
@@ -149,6 +160,29 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
   );
 }
 
+/** Home and Tasks, at the top of the sidebar. Tasks shows how many are open. */
+function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) {
+  const t = useTasks();
+  const open = t.status === "ready" ? t.tasks.length : 0;
+  return (
+    <>
+      <SidebarMenuItem>
+        <SidebarMenuButton isActive={view.kind === "home"} onClick={() => onView({ kind: "home" })}>
+          <IconSmartHome />
+          <span>Home</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton isActive={view.kind === "tasks"} onClick={() => onView({ kind: "tasks" })}>
+          <IconChecklist />
+          <span>Tasks</span>
+        </SidebarMenuButton>
+        {open > 0 && <SidebarMenuBadge>{open}</SidebarMenuBadge>}
+      </SidebarMenuItem>
+    </>
+  );
+}
+
 export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSettings, signingIn, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = [...new Set(accounts.map((a) => a.label))].sort((a, b) => {
@@ -186,6 +220,15 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <PageItems view={view} onView={onView} />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Mail</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={sameView(view, { kind: "all" })} onClick={() => onView({ kind: "all" })}>
                   <IconInbox />
@@ -193,16 +236,7 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
                 </SidebarMenuButton>
                 {totalUnread > 0 && <SidebarMenuBadge>{totalUnread}</SidebarMenuBadge>}
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {labels.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Groups</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {labels.map((label) => {
+              {labels.map((label) => {
                   const Icon = LABEL_ICONS[label] ?? IconTag;
                   const unread = accounts.filter((a) => a.label === label).reduce((n, a) => n + a.unreadCount, 0);
                   const v: View = { kind: "label", label };
@@ -216,10 +250,9 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
                     </SidebarMenuItem>
                   );
                 })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
         <SidebarGroup>
           <SidebarGroupLabel>Accounts</SidebarGroupLabel>
@@ -237,7 +270,14 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
           <SidebarGroupContent>
             <SidebarMenu>
               {accounts.length === 0 && (
-                <p className="px-2 py-1 text-xs text-muted-foreground">No accounts yet.</p>
+                <SidebarMenuItem>
+                  {addMenu(
+                    <SidebarMenuButton disabled={!!signingIn} className="text-muted-foreground">
+                      <IconPlus />
+                      <span>{signingIn ? "Waiting for sign-in…" : "Add an account"}</span>
+                    </SidebarMenuButton>,
+                  )}
+                </SidebarMenuItem>
               )}
               {accounts.map((a) => (
                 <AccountItem
@@ -255,14 +295,6 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
 
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            {addMenu(
-              <SidebarMenuButton disabled={!!signingIn}>
-                <IconPlus />
-                <span>{signingIn ? "Waiting for sign-in…" : "Add account"}</span>
-              </SidebarMenuButton>,
-            )}
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onOpenSettings}>
               <IconSettings />

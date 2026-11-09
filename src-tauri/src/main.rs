@@ -14,6 +14,7 @@ mod models;
 mod oauth;
 mod state;
 mod sync;
+mod tasks;
 
 use std::sync::Arc;
 
@@ -26,15 +27,19 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Lets the UI restart Relay after an update is installed.
         .plugin(tauri_plugin_process::init())
+        // Folder and picture pickers (the vault folder, the Tasks banner).
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let state = Arc::new(state::AppState::init(app.handle())?);
             app.manage(state.clone());
-            sync::spawn_background(app.handle().clone(), state);
+            sync::spawn_background(app.handle().clone(), state.clone());
+            tasks::spawn_watcher(app.handle().clone(), state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
+            commands::save_display_name,
             commands::list_accounts,
             commands::add_account,
             commands::cancel_sign_in,
@@ -48,6 +53,11 @@ fn main() {
             commands::move_message,
             commands::send_message,
             commands::sync_now,
+            commands::save_tasks_config,
+            commands::tasks_load,
+            commands::tasks_write,
+            commands::set_task_banner,
+            commands::read_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Relay");

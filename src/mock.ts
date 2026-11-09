@@ -2,7 +2,8 @@
 // normal browser (`npm run dev`) so the interface can be worked on without
 // signing in to real accounts. The Tauri app never loads this data.
 
-import type { Account, Config, Folder, ListQuery, MessageDetail, OutgoingMessage } from "./types";
+import type { Account, Config, Folder, ListQuery, MessageDetail, OutgoingMessage, TasksConfig } from "./types";
+import { formatDate } from "./tasks/tick/date";
 
 const now = Date.now();
 const h = 3_600_000;
@@ -14,7 +15,86 @@ let config: Config = {
   syncIntervalSecs: 120,
   messagesPerAccount: 100,
   shortcuts: {},
+  tasks: {
+    vaultPath: "C:\\Users\\you\\Documents\\Obsidian\\notes",
+    bannerImage: "mock-banner.png",
+    bannerPosition: 40,
+    bannerDots: true,
+  },
+  displayName: "",
 };
+
+// ----- a pretend Obsidian vault for the Tasks pages -----
+
+const tickSettings = JSON.stringify({
+  todoNotePath: "00-tasklist.md",
+  completedNotePath: "01-completed.md",
+  dateFormat: "DD MMM YY",
+  uppercaseDate: true,
+  defaultSection: "No Category",
+  heatmapColor: "#18cd91",
+});
+
+let todoNote = `## Relay
+- [ ] Tasks page in Relay
+  Banner, quick add and the overview card.
+- [ ] Hook up Google Calendar
+## Errands
+- [ ] Renew passport
+- [ ] Buy climbing shoes
+  Size 42, try them on first.
+## No Category
+- [ ] Reply to Sam about Saturday
+`;
+
+/** About a month of finished tasks, newest day first, like the Completed note. */
+function completedNote(): string {
+  const days: string[] = [];
+  const counts = [1, 4, 2, 0, 3, 5, 1, 2, 0, 0, 3, 1, 4, 2, 0, 1, 2, 3, 0, 1, 1, 0, 2];
+  counts.forEach((n, ago) => {
+    if (!n) return;
+    const d = new Date(now - ago * 24 * h);
+    const title = formatDate(d, "DD MMM YY", true);
+    const tasks = Array.from({ length: n }, (_, i) => `- [x] Finished thing ${ago}.${i + 1} (${i % 2 ? "Errands" : "Relay"})`);
+    days.push([`## ${title}`, ...tasks].join("\n"));
+  });
+  return days.join("\n\n") + "\n";
+}
+
+let doneNote = completedNote();
+let todoStamp = 1;
+let doneStamp = 1;
+
+/** A made-up landscape (sky, sun, hills), as PNG bytes, standing in for a banner picture. */
+async function mockBanner(): Promise<ArrayBuffer> {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1600;
+  canvas.height = 900;
+  const ctx = canvas.getContext("2d")!;
+  const sky = ctx.createLinearGradient(0, 0, 0, 900);
+  sky.addColorStop(0, "#3b6fb6");
+  sky.addColorStop(0.6, "#9cc3e6");
+  sky.addColorStop(1, "#e8d9b0");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 1600, 900);
+  ctx.fillStyle = "#fff4c2";
+  ctx.beginPath();
+  ctx.arc(1180, 260, 90, 0, Math.PI * 2);
+  ctx.fill();
+  const hill = (y: number, color: string, amp: number, freq: number) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, 900);
+    for (let x = 0; x <= 1600; x += 20) ctx.lineTo(x, y + Math.sin(x * freq) * amp + Math.sin(x * freq * 2.7) * amp * 0.4);
+    ctx.lineTo(1600, 900);
+    ctx.fill();
+  };
+  hill(560, "#4f7a3a", 50, 0.004);
+  hill(650, "#2f5a2a", 60, 0.006);
+  hill(760, "#1d3b1c", 40, 0.009);
+  const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
+  return blob.arrayBuffer();
+}
 
 const accounts: Account[] = [
   acct("a1", "google", "alex.personal@gmail.com", "Personal", "#008dff"),
@@ -78,8 +158,39 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
     case "get_config":
       return delay(config) as Promise<T>;
     case "save_config":
-      config = args.config as Config;
+      config = { ...(args.config as Config), tasks: config.tasks, displayName: config.displayName };
       return delay(config) as Promise<T>;
+    case "save_display_name":
+      config = { ...config, displayName: (args.name as string).trim().replace(/\s+/g, " ") };
+      return delay(config) as Promise<T>;
+    case "save_tasks_config":
+      config = { ...config, tasks: args.tasks as TasksConfig };
+      return delay(config) as Promise<T>;
+    case "set_task_banner":
+      config = { ...config, tasks: { ...config.tasks, bannerImage: "mock-banner.png", bannerPosition: 50 } };
+      return delay(config) as Promise<T>;
+    case "read_image":
+      return mockBanner() as Promise<T>;
+    case "tasks_load":
+      return delay({
+        vaultPath: config.tasks.vaultPath,
+        settings: config.tasks.vaultPath ? tickSettings : null,
+        todo: config.tasks.vaultPath ? { path: "00-tasklist.md", content: todoNote, stamp: String(todoStamp) } : null,
+        completed: config.tasks.vaultPath ? { path: "01-completed.md", content: doneNote, stamp: String(doneStamp) } : null,
+        error: config.tasks.vaultPath ? null : "Choose your Obsidian vault folder to see your tasks.",
+      }) as Promise<T>;
+    case "tasks_write": {
+      const isTodo = args.note === "todo";
+      if (args.expected !== String(isTodo ? todoStamp : doneStamp)) return Promise.reject("The note changed while saving. Try again.");
+      if (isTodo) {
+        todoNote = args.content as string;
+        todoStamp++;
+      } else {
+        doneNote = args.content as string;
+        doneStamp++;
+      }
+      return delay(String(isTodo ? todoStamp : doneStamp), 40) as Promise<T>;
+    }
     case "list_accounts":
       return delay(withCounts()) as Promise<T>;
     case "add_account":

@@ -8,7 +8,8 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use crate::config::Config;
+use crate::config::{Config, TasksConfig};
+use crate::tasks::{self, Note, TasksSnapshot};
 use crate::error::{msg, Result};
 use crate::mime::{self, OutgoingMime};
 use crate::models::{
@@ -56,6 +57,12 @@ pub fn get_config(state: St<'_>) -> Config {
 #[tauri::command]
 pub fn save_config(state: St<'_>, config: Config) -> Result<Config> {
     state.save_config(config)
+}
+
+/// The name Home greets you by ("" = the first account's name).
+#[tauri::command]
+pub fn save_display_name(state: St<'_>, name: String) -> Result<Config> {
+    state.save_display_name(name)
 }
 
 // ---------- accounts ----------
@@ -444,6 +451,52 @@ pub async fn sync_now(app: AppHandle, state: St<'_>) -> Result<Vec<SyncReport>> 
     let reports = sync::sync_all(&state).await;
     let _ = app.emit(MAIL_UPDATED, &reports);
     Ok(reports)
+}
+
+// ---------- tasks ----------
+
+#[tauri::command]
+pub fn save_tasks_config(state: St<'_>, tasks: TasksConfig) -> Result<Config> {
+    // Removing the banner also deletes Relay's copy of the picture.
+    if tasks.banner_image.is_empty() {
+        tasks::clear_banner(state.data_dir());
+    }
+    state.save_tasks_config(tasks)
+}
+
+/// The vault's to-do note, Completed note and Tick settings, read fresh from disk.
+#[tauri::command]
+pub async fn tasks_load(state: St<'_>) -> Result<TasksSnapshot> {
+    let vault = state.config().tasks.vault_path;
+    Ok(tauri::async_runtime::spawn_blocking(move || tasks::snapshot(&vault))
+        .await
+        .map_err(|e| msg(e.to_string()))?)
+}
+
+/// Saves a note if it's unchanged since it was read (`expected` = its stamp then). Returns the
+/// new stamp; fails with "changed" otherwise, so the caller can re-read and try again.
+#[tauri::command]
+pub fn tasks_write(state: St<'_>, note: Note, content: String, expected: String) -> Result<String> {
+    tasks::write(&state.config().tasks.vault_path, note, &content, &expected)
+}
+
+/// Copies a picture into Relay's data folder and makes it the Tasks banner.
+#[tauri::command]
+pub fn set_task_banner(state: St<'_>, source: String) -> Result<Config> {
+    let image = tasks::store_banner(state.data_dir(), &source)?;
+    let mut t = state.config().tasks;
+    t.banner_image = image;
+    t.banner_position = 50.0;
+    state.save_tasks_config(t)
+}
+
+/// Raw bytes of an image (the banner), sent to the page without JSON encoding.
+#[tauri::command]
+pub async fn read_image(path: String) -> Result<tauri::ipc::Response> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || tasks::read_image(&path))
+        .await
+        .map_err(|e| msg(e.to_string()))??;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[cfg(test)]

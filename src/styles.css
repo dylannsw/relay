@@ -93,6 +93,11 @@
     --chip-red: #ee665a;
     --chip-amber: #cf9943;
     --chip-gray: #777777;
+    /* Task section chips (and the Home overview's down badge). */
+    --chip-sky: #0ea5e9;
+    --chip-teal: #0f9f8c;
+    --chip-pink: #e6287a;
+    --chip-tangerine: #f5760f;
     /* The app-wide easing curve (matches `ease` in src/lib/motion.ts). */
     --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }

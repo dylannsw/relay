@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import {
   IconArrowBackUp,
   IconCheck,
+  IconChecklist,
+  IconFolderOpen,
+  IconPhoto,
   IconKeyboard,
   IconLogin2,
   IconPalette,
@@ -16,6 +19,7 @@ import {
   IconRefreshDot,
   IconRestore,
   IconSettings,
+  IconSmartHome,
   IconTrash,
   IconUsers,
 } from "@tabler/icons-react";
@@ -77,6 +81,11 @@ import {
   type ShortcutDef,
 } from "@/shortcuts";
 import type { Account, Config, Provider } from "@/types";
+import { saveDisplayName, saveTasksConfig, useTasksState } from "@/tasks/store";
+import { greetingName } from "@/components/home/home-welcome";
+import { chooseVault } from "@/components/tasks/tasks-setup";
+import { chooseBanner } from "@/components/home/home-banner";
+import { DESTRUCTIVE_ICON } from "@/components/mail-window";
 
 interface Props {
   accounts: Account[];
@@ -88,11 +97,13 @@ interface Props {
 }
 
 const SECTIONS = [
-  { id: "connections", label: "Connections", icon: IconPlugConnected, note: "Save to apply connection changes." },
-  { id: "accounts", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
-  { id: "appearance", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
-  { id: "shortcuts", label: "Shortcuts", icon: IconKeyboard, note: "Shortcut changes save automatically." },
-  { id: "updates", label: "Updates", icon: IconRefreshDot, note: "Updates download from GitHub Releases." },
+  { id: "home", group: "General", label: "Home", icon: IconSmartHome, note: "Home settings save automatically." },
+  { id: "tasks", group: "General", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
+  { id: "accounts", group: "Mail", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
+  { id: "connections", group: "Mail", label: "Connections", icon: IconPlugConnected, note: "Save to apply connection changes." },
+  { id: "appearance", group: "App", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
+  { id: "shortcuts", group: "App", label: "Shortcuts", icon: IconKeyboard, note: "Shortcut changes save automatically." },
+  { id: "updates", group: "App", label: "Updates", icon: IconRefreshDot, note: "Updates download from GitHub Releases." },
 ] as const;
 export type SettingsSection = (typeof SECTIONS)[number]["id"];
 type Section = SettingsSection;
@@ -120,7 +131,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
           </>
         }
       >
-        <DialogDescription className="sr-only">Connections, accounts, appearance, keyboard shortcuts and updates.</DialogDescription>
+        <DialogDescription className="sr-only">Home, tasks, mail accounts and connections, appearance, keyboard shortcuts and updates.</DialogDescription>
         <Tabs
           value={section}
           onValueChange={(v) => setSection(v as Section)}
@@ -128,19 +139,34 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
           className="min-h-0 flex-1 gap-0"
         >
           <TabsList className="h-full w-48 shrink-0 items-stretch justify-start gap-0.5 rounded-none border-r bg-transparent p-2 group-data-vertical/tabs:h-full">
-            {SECTIONS.map((x) => (
-              <TabsTrigger
-                key={x.id}
-                value={x.id}
-                className="h-9 flex-none justify-start gap-2.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-foreground/[0.03] hover:text-foreground data-active:bg-foreground/[0.05] data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:hover:bg-foreground/[0.05] dark:data-active:border-transparent dark:data-active:bg-foreground/[0.08]"
-              >
-                <x.icon />
-                {x.label}
-              </TabsTrigger>
+            {SECTIONS.map((x, i) => (
+              <Fragment key={x.id}>
+                {/* A small heading where each group (Tasks, Mail, App) starts. */}
+                {SECTIONS[i - 1]?.group !== x.group && (
+                  <span className={cn("px-3 pb-1 text-xs font-medium text-muted-foreground", i > 0 ? "pt-4" : "pt-1")}>
+                    {x.group}
+                  </span>
+                )}
+                <TabsTrigger
+                  value={x.id}
+                  className="h-9 flex-none justify-start gap-2.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-foreground/[0.03] hover:text-foreground data-active:bg-foreground/[0.05] data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:hover:bg-foreground/[0.05] dark:data-active:border-transparent dark:data-active:bg-foreground/[0.08]"
+                >
+                  <x.icon />
+                  {x.label}
+                </TabsTrigger>
+              </Fragment>
             ))}
           </TabsList>
           <ScrollArea className="min-h-0 min-w-0 flex-1">
           <div className="px-8 py-6">
+            <TabsContent value="home">
+              <SectionTitle>{SECTIONS.find((x) => x.id === "home")!.label}</SectionTitle>
+              <HomeTab accounts={accounts} />
+            </TabsContent>
+            <TabsContent value="tasks">
+              <SectionTitle>{SECTIONS.find((x) => x.id === "tasks")!.label}</SectionTitle>
+              <TasksTab />
+            </TabsContent>
             <TabsContent value="connections">
               <SectionTitle>{SECTIONS.find((x) => x.id === "connections")!.label}</SectionTitle>
               <ConnectionsTab />
@@ -166,6 +192,130 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
         </Tabs>
       </MailWindow>
     </Dialog>
+  );
+}
+
+/** The banner across the top of Home. */
+/** The name Home greets you by; saved when the field loses focus or on Enter. */
+function DisplayNameField({ accounts }: { accounts: Account[] }) {
+  const { displayName } = useTasksState();
+  const [value, setValue] = useState(displayName);
+  useEffect(() => setValue(displayName), [displayName]);
+  const fallback = greetingName("", accounts.map((a) => a.displayName));
+  const commit = () => {
+    if (value.trim() === displayName) return;
+    saveDisplayName(value).catch((e) => toast.error(errorText(e)));
+  };
+  return (
+    <Input
+      aria-label="Display name"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+      placeholder={fallback || "Your name"}
+      className="w-56 shrink-0"
+    />
+  );
+}
+
+function HomeTab({ accounts }: { accounts: Account[] }) {
+  const t = useTasksState();
+  const cfg = t.config;
+  const save = (patch: Parameters<typeof saveTasksConfig>[0]) =>
+    saveTasksConfig(patch).catch((e) => toast.error(errorText(e)));
+
+  if (!cfg) {
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col divide-y">
+      <SettingRow
+        title="Display name"
+        description="Home greets you with “Welcome back” and this name. Leave it empty to use your first mail account's name."
+      >
+        <DisplayNameField accounts={accounts} />
+      </SettingRow>
+      <SettingRow
+        title="Banner picture"
+        description={
+          cfg.bannerImage
+            ? "Relay keeps its own copy in its data folder on this PC (not synced). Hover the banner on Home to reposition it."
+            : "Shown across the top of Home. Relay keeps its own copy in its data folder on this PC (not synced)."
+        }
+      >
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" onClick={() => void chooseBanner(t.vaultPath)}>
+            <IconPhoto />
+            {cfg.bannerImage ? "Change…" : "Choose…"}
+          </Button>
+          {cfg.bannerImage && (
+            <Button variant="ghost" className={DESTRUCTIVE_ICON} onClick={() => void save({ bannerImage: "" })}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </SettingRow>
+      <SettingRow title="Dotted banner" description="Draw the banner as a matrix of dots in the picture's colours.">
+        <Switch checked={cfg.bannerDots} onCheckedChange={(on) => void save({ bannerDots: on })} aria-label="Dotted banner" />
+      </SettingRow>
+    </div>
+  );
+}
+
+/** Where the tasks come from: the Obsidian vault and the Tick plugin's notes. */
+function TasksTab() {
+  const t = useTasksState();
+  const cfg = t.config;
+
+  if (!cfg) {
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col divide-y">
+      <SettingRow
+        title="Obsidian vault"
+        description="Relay shows and edits the to-do note from the Tick plugin in this vault. The vault syncs between your devices on its own."
+        stacked
+      >
+        <div className="flex gap-2">
+          <Input readOnly value={cfg.vaultPath} placeholder="No vault chosen" className="flex-1 font-mono text-xs" />
+          <Button variant="outline" onClick={() => void chooseVault(cfg.vaultPath)}>
+            <IconFolderOpen />
+            {cfg.vaultPath ? "Change…" : "Choose…"}
+          </Button>
+        </div>
+        {cfg.vaultPath &&
+          (t.status === "error" ? (
+            <p className="flex items-start gap-2 text-sm text-destructive">
+              <IconAlertCircle className="mt-0.5 size-4 shrink-0" />
+              {t.error}
+            </p>
+          ) : (
+            <dl className="grid grid-cols-[auto_1fr] items-center gap-x-6 gap-y-1.5 rounded-lg border px-4 py-3 text-sm">
+              <dt className="text-muted-foreground">To-do note</dt>
+              <dd className="truncate font-mono text-xs">{t.todo?.path}</dd>
+              <dt className="text-muted-foreground">Completed note</dt>
+              <dd className="truncate font-mono text-xs">{t.completed?.path || "Not set"}</dd>
+              <dt className="text-muted-foreground">Default section</dt>
+              <dd className="truncate">{t.settings.defaultSection}</dd>
+              <dd className="col-span-2 pt-1 text-xs text-muted-foreground">
+                These come from the Tick plugin's settings in Obsidian.
+              </dd>
+            </dl>
+          ))}
+      </SettingRow>
+    </div>
   );
 }
 

@@ -22,6 +22,37 @@ pub struct Config {
     /// Keyboard shortcuts the user rebound: action id -> key ("" = unassigned).
     /// Anything not listed uses the app's default.
     pub shortcuts: BTreeMap<String, String>,
+    /// Tasks (the Tick to-do note in an Obsidian vault). Saved on its own with
+    /// `save_tasks_config`; `save_config` leaves it as it is.
+    pub tasks: TasksConfig,
+    /// The name Home greets you by ("" = the first account's name). Saved on its own with
+    /// `save_display_name`; `save_config` leaves it as it is.
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TasksConfig {
+    /// The Obsidian vault folder holding Tick's to-do note ("" = not set up).
+    pub vault_path: String,
+    /// The Home banner: Relay's own copy of the picture, in its data folder ("" = none).
+    /// Not synced, and separate from the Tick plugin's banner in Obsidian.
+    pub banner_image: String,
+    /// Vertical focus of the banner picture: 0 shows its top, 100 its bottom.
+    pub banner_position: f64,
+    /// Draw the banner as dots rather than the plain picture.
+    pub banner_dots: bool,
+}
+
+impl Default for TasksConfig {
+    fn default() -> Self {
+        Self {
+            vault_path: String::new(),
+            banner_image: String::new(),
+            banner_position: 50.0,
+            banner_dots: true,
+        }
+    }
 }
 
 impl Default for Config {
@@ -33,6 +64,8 @@ impl Default for Config {
             sync_interval_secs: 120,
             messages_per_account: 100,
             shortcuts: BTreeMap::new(),
+            tasks: TasksConfig::default(),
+            display_name: String::new(),
         }
     }
 }
@@ -61,6 +94,13 @@ impl Config {
         self.microsoft_client_id = self.microsoft_client_id.trim().to_string();
         self.sync_interval_secs = self.sync_interval_secs.clamp(30, 3600);
         self.messages_per_account = self.messages_per_account.clamp(10, 500);
+        self.tasks.vault_path = self.tasks.vault_path.trim().to_string();
+        self.display_name = self.display_name.split_whitespace().collect::<Vec<_>>().join(" ");
+        self.tasks.banner_position = if self.tasks.banner_position.is_finite() {
+            self.tasks.banner_position.clamp(0.0, 100.0)
+        } else {
+            50.0
+        };
         self
     }
 }

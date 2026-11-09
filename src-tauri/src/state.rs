@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
-use crate::config::Config;
+use crate::config::{Config, TasksConfig};
 use crate::error::{msg, Error, Result};
 use crate::models::Account;
 use crate::{crypt, db, oauth};
@@ -22,6 +22,7 @@ pub struct AppState {
     pub http: reqwest::Client,
     config: RwLock<Config>,
     config_path: PathBuf,
+    data_dir: PathBuf,
     tokens: Mutex<HashMap<String, CachedToken>>,
     refresh_lock: tokio::sync::Mutex<()>,
     pub sync_lock: tokio::sync::Mutex<()>,
@@ -53,6 +54,7 @@ impl AppState {
             http,
             config: RwLock::new(config),
             config_path,
+            data_dir,
             tokens: Mutex::new(HashMap::new()),
             refresh_lock: tokio::sync::Mutex::new(()),
             sync_lock: tokio::sync::Mutex::new(()),
@@ -70,11 +72,40 @@ impl AppState {
         self.config.read().expect("config lock").clone()
     }
 
-    pub fn save_config(&self, cfg: Config) -> Result<Config> {
+    /// Saves the mail settings and shortcuts. The tasks settings and display name are kept as
+    /// they are: they have their own commands, so a stale copy from an open form can't undo them.
+    pub fn save_config(&self, mut cfg: Config) -> Result<Config> {
+        let mut current = self.config.write().expect("config lock");
+        cfg.tasks = current.tasks.clone();
+        cfg.display_name = current.display_name.clone();
         let cfg = cfg.normalized();
         cfg.save(&self.config_path)?;
-        *self.config.write().expect("config lock") = cfg.clone();
+        *current = cfg.clone();
         Ok(cfg)
+    }
+
+    pub fn save_tasks_config(&self, tasks: TasksConfig) -> Result<Config> {
+        let mut current = self.config.write().expect("config lock");
+        let mut cfg = current.clone();
+        cfg.tasks = tasks;
+        let cfg = cfg.normalized();
+        cfg.save(&self.config_path)?;
+        *current = cfg.clone();
+        Ok(cfg)
+    }
+
+    pub fn save_display_name(&self, name: String) -> Result<Config> {
+        let mut current = self.config.write().expect("config lock");
+        let mut cfg = current.clone();
+        cfg.display_name = name;
+        let cfg = cfg.normalized();
+        cfg.save(&self.config_path)?;
+        *current = cfg.clone();
+        Ok(cfg)
+    }
+
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
     }
 
     fn cached_token(&self, account_id: &str) -> Option<String> {

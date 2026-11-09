@@ -7,7 +7,9 @@ import { folderLabel } from "@/folders";
 import { loadShortcuts, matchShortcut, type ShortcutId } from "@/shortcuts";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TitleBar } from "@/components/title-bar";
-import { AppSidebar, type View } from "@/components/app-sidebar";
+import { AppSidebar, isPageView, type View } from "@/components/app-sidebar";
+import { HomePage } from "@/components/home/home-page";
+import { TasksPage } from "@/components/tasks/tasks-page";
 import { MailList, type Filter } from "@/components/mail-list";
 import { MailReader } from "@/components/mail-reader";
 import { CommandBar } from "@/components/command-bar";
@@ -17,6 +19,9 @@ import { startAutoCheck } from "@/updater";
 import { SignInDialog } from "@/components/sign-in-dialog";
 
 const PAGE = 200;
+
+/** Shortcuts that work on every page, not just the message list. */
+const APP_WIDE = new Set<ShortcutId>(["commandBar", "goAll", "compose", "sync", "settings"]);
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -29,7 +34,7 @@ function useDebounced<T>(value: T, ms: number): T {
 
 export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [view, setView] = useState<View>({ kind: "all" });
+  const [view, setView] = useState<View>({ kind: "home" });
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 200);
@@ -56,10 +61,11 @@ export default function App() {
   const selectedRef = useRef<string | null>(null);
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+  const pageView = isPageView(view);
   const accountIds = useMemo(() => {
-    if (view.kind === "all") return undefined;
     if (view.kind === "account") return [view.id];
-    return accounts.filter((a) => a.label === view.label).map((a) => a.id);
+    if (view.kind === "label") return accounts.filter((a) => a.label === view.label).map((a) => a.id);
+    return undefined; // all inboxes (the Tasks pages keep the mail list on all inboxes too)
   }, [view, accounts]);
   // Stable key so a background account refresh doesn't refetch the list needlessly.
   const accountKey = accountIds?.join(",") ?? "*";
@@ -369,8 +375,10 @@ export default function App() {
   keyHandler.current = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
     if (draft || settingsOpen || signingIn) return;
-    if (t.closest("[role=dialog]:not([data-reader])")) return;
+    if (t.closest("[role=dialog]:not([data-reader]), [role=alertdialog]")) return;
     const action = matchShortcut(e, readerOpen ? "reader" : "list");
+    // Home and Tasks have no message list: only the app-wide shortcuts apply there.
+    if (pageView && !readerOpen && !(action && APP_WIDE.has(action))) return;
     // While typing, only a modified command-bar shortcut (Ctrl+K) works: plain keys like "/"
     // must type, and Ctrl+A etc. keep their usual meaning in text fields.
     const typing = !!t.closest("input, textarea, select, [contenteditable], [role=menu], [role=listbox]");
@@ -425,10 +433,7 @@ export default function App() {
       forward: () => write("forward"),
       compose: () => startCompose("new"),
       sync: () => void syncNow(),
-      settings: () => {
-        closeReader();
-        setSettingsOpen(true);
-      },
+      settings: () => openSettings(),
     };
     e.preventDefault();
     handlers[action]();
@@ -442,11 +447,16 @@ export default function App() {
   // ----- render -----
 
   const viewTitle =
-    view.kind === "all"
+    view.kind === "all" || pageView
       ? "All inboxes"
       : view.kind === "label"
         ? view.label
         : folderLabel(view.folder);
+  const openSettings = (section?: SettingsSection) => {
+    closeReader();
+    setSettingsSection(section ?? (view.kind === "home" ? "home" : view.kind === "tasks" ? "tasks" : undefined));
+    setSettingsOpen(true);
+  };
   const viewAccount = view.kind === "account" ? accountById.get(view.id) : undefined;
   const selectedIdx = messages.findIndex((m) => m.id === selectedId);
   // The open message: from the list, or (opened from the command bar) only in `detail`.
@@ -474,7 +484,7 @@ export default function App() {
           }}
           onCompose={() => startCompose("new")}
           onSync={() => void syncNow()}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => openSettings()}
           onFilter={setFilter}
         />
       </TitleBar>
@@ -489,10 +499,22 @@ export default function App() {
             clearSelection();
           }}
           onAddAccount={addAccount}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettings()}
           signingIn={signingIn}
         />
         <SidebarInset className="min-w-0 overflow-hidden border md:peer-data-[variant=inset]:mt-0 md:peer-data-[variant=inset]:shadow-none">
+          {view.kind === "home" ? (
+            <HomePage
+              accounts={accounts}
+              onOpenTasks={() => setView({ kind: "tasks" })}
+              onOpenMail={() => {
+                setView({ kind: "all" });
+                clearSelection();
+              }}
+            />
+          ) : view.kind === "tasks" ? (
+            <TasksPage section={view.section} onOpenSettings={() => openSettings("tasks")} />
+          ) : (
           <MailList
             title={viewTitle}
             account={viewAccount}
@@ -524,6 +546,7 @@ export default function App() {
             onLoadMore={() => setLimit((l) => l + PAGE)}
             onAddAccount={addAccount}
           />
+          )}
         </SidebarInset>
       </div>
 
