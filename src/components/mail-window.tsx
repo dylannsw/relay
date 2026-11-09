@@ -57,7 +57,7 @@ export function MailWindow({
       {/* Without a header, the content shows its own CloseButton (the email card puts it beside the subject). */}
       <div
         className={cn(
-          "mx-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background text-foreground shadow-xs",
+          "mx-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background text-foreground smooth-shadow-ring-xs",
           !(title || icon) && "mt-2",
         )}
       >
@@ -84,10 +84,6 @@ export function CloseButton({ onClose, className }: { onClose: () => void; class
     </Tooltip>
   );
 }
-
-/** Red icon buttons for anything that deletes. */
-export const DESTRUCTIVE_ICON =
-  "text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20";
 
 /** One labelled line in a message's details list (From, To, Subject…). */
 export function DetailRow({ label, children, end, className }: {
@@ -122,7 +118,7 @@ export function PersonChip({ person, className }: { person: Address; className?:
       )}
     >
       <Avatar size="sm" className="size-5.5">
-        <AvatarFallback className="text-[10px]">{initials(person.name, person.email)}</AvatarFallback>
+        <AvatarFallback className="text-[11px]">{initials(person.name, person.email)}</AvatarFallback>
       </Avatar>
       <span className="truncate">{person.name || person.email}</span>
     </span>

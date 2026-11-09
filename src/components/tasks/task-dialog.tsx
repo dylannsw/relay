@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { DESTRUCTIVE_ICON } from "@/components/mail-window";
 import { errorText } from "@/api";
 import { addTask, editTask } from "@/tasks/store";
 import { sectionKey, type ParsedTask } from "@/tasks/tick";
@@ -123,7 +122,7 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
           </FieldGroup>
           <DialogFooter className="items-center sm:justify-between">
             {task && onDelete ? (
-              <Button type="button" variant="ghost" className={DESTRUCTIVE_ICON} onClick={onDelete}>
+              <Button type="button" variant="destructive" onClick={onDelete}>
                 <IconTrash />
                 Delete
               </Button>

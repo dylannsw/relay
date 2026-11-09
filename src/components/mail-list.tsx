@@ -45,7 +45,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AccountChip } from "@/components/account-chip";
-import { DESTRUCTIVE_ICON } from "@/components/mail-window";
 import { ShortcutKbd, ShortcutText } from "@/components/shortcut-kbd";
 import type { ShortcutId } from "@/shortcuts";
 import type { Account, ComposeMode, Folder, MessageSummary, Provider } from "@/types";
@@ -119,9 +118,10 @@ function IconAction(props: {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant={props.variant ?? "ghost"}
+          // Anything that deletes is a filled red button, even among ghost ones.
+          variant={props.destructive ? "destructive" : (props.variant ?? "ghost")}
           size={props.size ?? "icon-sm"}
-          className={cn(props.size === "icon-xs" && "[&_svg:not([class*='size-'])]:size-4.5", props.destructive && DESTRUCTIVE_ICON)}
+          className={cn(props.size === "icon-xs" && "[&_svg:not([class*='size-'])]:size-4.5")}
           onClick={(e) => {
             e.stopPropagation();
             props.onClick();
@@ -197,6 +197,18 @@ export function MailList(p: Props) {
               >
                 <h1 className="truncate text-lg font-semibold">{p.title}</h1>
                 {p.account && <AccountChip account={p.account} className="min-w-0" />}
+                {/* Beside what it refreshes; muted grey like the window controls. */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground" onClick={p.onSync} disabled={p.syncing}>
+                      {p.syncing ? <Spinner /> : <IconRefresh />}
+                      <span className="sr-only">Check for new mail</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Check for new mail <ShortcutKbd id="sync" />
+                  </TooltipContent>
+                </Tooltip>
                 {p.isDemo && <Badge variant="outline">Sample data</Badge>}
               </motion.div>
             )}
@@ -217,7 +229,7 @@ export function MailList(p: Props) {
                       <motion.span
                         layoutId="pill"
                         transition={glide}
-                        className="absolute inset-0 rounded-md bg-background shadow-sm dark:border dark:border-input dark:bg-input/30"
+                        className="absolute inset-0 rounded-md bg-background smooth-shadow-ring-xs dark:bg-input/40"
                       />
                     )}
                     <span className="relative">{f.label}</span>
@@ -226,15 +238,6 @@ export function MailList(p: Props) {
               </TabsList>
             </LayoutGroup>
           </Tabs>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm" onClick={p.onSync} disabled={p.syncing}>
-                {p.syncing ? <Spinner /> : <IconRefresh />}
-                <span className="sr-only">Check for new mail</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Check for new mail</TooltipContent>
-          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="sm" onClick={p.onCompose}>
@@ -349,7 +352,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
         }
       }}
       className={cn(
-        "group/row flex cursor-default rounded-xl border bg-background p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 data-[state=open]:border-foreground/15 data-[state=open]:bg-accent/60",
+        "group/row flex cursor-default rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 data-[state=open]:border-foreground/15 data-[state=open]:bg-accent/60",
         highlighted && "bg-muted hover:bg-muted",
         checked && "border-foreground/20 bg-muted hover:bg-muted",
       )}
@@ -366,7 +369,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
-          <span className={cn("truncate text-[15px]", m.isRead ? "font-medium" : "font-semibold")}>
+          <span className={cn("truncate text-[16px]", m.isRead ? "font-medium" : "font-semibold")}>
             {senderName(m.from)}
           </span>
           <AnimatePresence initial={false}>
@@ -385,7 +388,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
             {/* The date gives way to the row's actions on hover, or when the row is highlighted. */}
             <span
               className={cn(
-                "text-[13px] whitespace-nowrap tabular-nums transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
+                "text-[14px] whitespace-nowrap tabular-nums transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
                 highlighted ? "-translate-x-1 opacity-0" : "text-muted-foreground",
               )}
             >

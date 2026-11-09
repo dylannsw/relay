@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { DESTRUCTIVE_ICON, DetailRow, MailWindow } from "@/components/mail-window";
+import { DetailRow, MailWindow } from "@/components/mail-window";
 import type { Account, ComposeMode } from "@/types";
 
 export interface Draft {
@@ -106,7 +106,7 @@ export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Pr
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" className={DESTRUCTIVE_ICON} onClick={requestClose}>
+                  <Button variant="destructive" size="icon-sm" onClick={requestClose}>
                     <IconTrash />
                     <span className="sr-only">Discard</span>
                   </Button>

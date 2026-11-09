@@ -26,13 +26,13 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarCount,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarRail,
 } from "@/components/ui/sidebar";
 import {
   DropdownMenu,
@@ -110,19 +110,18 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             {a.lastError ? (
               <IconAlertCircle className="text-destructive" />
             ) : (
-              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
+              // The dot sits in an icon-sized slot so the address lines up with the labels above.
+              <span className="flex size-4.5 shrink-0 items-center justify-center">
+                <span className="size-2 rounded-full" style={{ backgroundColor: a.color }} />
+              </span>
             )}
-            <span className="truncate">{a.email}</span>
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              {!open && a.unreadCount > 0 && (
-                <span className="text-xs font-medium text-sidebar-foreground tabular-nums">{a.unreadCount}</span>
-              )}
-              <IconChevronRight className="size-4.5 text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-            </span>
+            <span className="min-w-0 flex-1 truncate">{a.email}</span>
+            {!open && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
+            <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-          <SidebarMenuSub className="border-l-0">
+          <SidebarMenuSub>
             {a.lastError && (
               <SidebarMenuSubItem>
                 <Tooltip>
@@ -147,10 +146,8 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
                   <SidebarMenuSubButton asChild isActive={sameView(view, v)}>
                     <button type="button" className="w-full" onClick={() => onView(v)}>
                       <f.icon />
-                      <span>{f.label}</span>
-                      {f.id === "inbox" && a.unreadCount > 0 && (
-                        <span className="ml-auto text-xs font-medium tabular-nums">{a.unreadCount}</span>
-                      )}
+                      <span className="min-w-0 flex-1 truncate">{f.label}</span>
+                      {f.id === "inbox" && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
                     </button>
                   </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
@@ -314,7 +311,6 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   );
 }

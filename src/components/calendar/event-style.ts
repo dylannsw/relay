@@ -62,6 +62,23 @@ export function eventStyle(e: CalendarEvent, cal: CalendarInfo | undefined, dark
   }
 }
 
+/**
+ * A new event that isn't saved yet: a see-through wash of the calendar's colour with a dashed
+ * edge, so it reads as "not there yet" next to real events.
+ */
+export function draftStyle(cal: CalendarInfo | undefined, dark: boolean): CSSProperties {
+  const c = cal?.colors ?? GREY;
+  return {
+    "--event-bar": c.base,
+    "--event-muted": dark ? c.darkMuted : c.lightMuted,
+    backgroundColor: `color-mix(in srgb, ${c.base} ${dark ? 24 : 16}%, transparent)`,
+    border: `1px dashed ${c.base}`,
+    boxShadow: "none",
+    color: dark ? c.darkText : c.lightText,
+    zIndex: 5,
+  } as CSSProperties;
+}
+
 const clock = (t: number) => clockTime(t);
 
 /** "10:00 AM – 11:30 AM", or just the start when `short`. */

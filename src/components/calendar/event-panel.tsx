@@ -6,7 +6,6 @@ import { ButtonGroup } from "@/components/ui/button-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { DESTRUCTIVE_ICON } from "@/components/mail-window";
 import { deleteEvent, reply, type Rsvp } from "@/calendar/edit";
 import { plainText } from "@/calendar/layout";
 import type { CalendarEvent, CalendarInfo } from "@/types";
@@ -44,7 +43,7 @@ export function EventPanel(props: {
           </IconButton>
         )}
         {e && editable && (
-          <IconButton label="Delete event" className={DESTRUCTIVE_ICON} onClick={() => void deleteEvent(e).then((ok) => ok && onClose())}>
+          <IconButton label="Delete event" variant="destructive" onClick={() => void deleteEvent(e).then((ok) => ok && onClose())}>
             <IconTrash />
           </IconButton>
         )}
@@ -108,16 +107,16 @@ export function EventPanel(props: {
 const editorKey = (e: CalendarEvent) =>
   [e.id, e.title, e.location, e.start, e.end, e.allDay, e.startDate, e.endDate, e.calendarId, e.attendees.map((a) => a.email).join()].join("|");
 
-function IconButton({ label, onClick, className, children }: {
+function IconButton({ label, onClick, variant = "ghost", children }: {
   label: string;
   onClick: () => void;
-  className?: string;
+  variant?: "ghost" | "destructive";
   children: React.ReactNode;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className={className} onClick={onClick}>
+        <Button variant={variant} size="icon-sm" onClick={onClick}>
           {children}
           <span className="sr-only">{label}</span>
         </Button>

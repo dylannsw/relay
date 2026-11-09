@@ -28,7 +28,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { DESTRUCTIVE_ICON } from "@/components/mail-window";
 import { errorText } from "@/api";
 import { completeTask, deleteTask, useTasks } from "@/tasks/store";
 import { sectionKey, type ParsedTask } from "@/tasks/tick";
@@ -305,7 +304,7 @@ const Pill = () => (
   <motion.span
     layoutId="pill"
     transition={glide}
-    className="absolute inset-0 rounded-md bg-background shadow-sm dark:border dark:border-input dark:bg-input/30"
+    className="absolute inset-0 rounded-md bg-background smooth-shadow-ring-xs dark:bg-input/40"
   />
 );
 
@@ -349,7 +348,7 @@ function TaskRow({ task, done, onToggle, onEdit, onDelete }: {
       role="button"
       tabIndex={-1}
       onClick={onEdit}
-      className="group/row flex cursor-default gap-3 rounded-xl border bg-background p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50"
+      className="group/row flex cursor-default gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50"
     >
       <div className="flex h-6 shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
         <Checkbox
@@ -363,7 +362,7 @@ function TaskRow({ task, done, onToggle, onEdit, onDelete }: {
         <div className="flex h-6 items-center gap-2">
           <span
             className={cn(
-              "truncate text-[15px] font-medium transition-colors duration-150",
+              "truncate text-[16px] font-medium transition-colors duration-150",
               done && "text-muted-foreground line-through decoration-muted-foreground/60",
             )}
           >
@@ -394,9 +393,9 @@ function RowAction({ label, onClick, destructive, children }: {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="ghost"
+          variant={destructive ? "destructive" : "ghost"}
           size="icon-xs"
-          className={cn("[&_svg:not([class*='size-'])]:size-4.5", destructive && DESTRUCTIVE_ICON)}
+          className="[&_svg:not([class*='size-'])]:size-4.5"
           onClick={(e) => {
             e.stopPropagation();
             onClick();

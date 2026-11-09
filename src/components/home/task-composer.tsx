@@ -79,7 +79,7 @@ export function TaskComposer({ sections, ready, vaultPath, className }: {
               placeholder="Add a task…"
               aria-label="New task"
               enterKeyHint="done"
-              className="pl-4 text-[15px]"
+              className="pl-4 text-[16px]"
             />
             <InputGroupAddon align="inline-end" className="pr-2.5">
               <Tooltip>

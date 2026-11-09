@@ -503,7 +503,7 @@ export default function App() {
           onOpenSettings={() => openSettings()}
           signingIn={signingIn}
         />
-        <SidebarInset className="min-w-0 overflow-hidden border md:peer-data-[variant=inset]:mt-0 md:peer-data-[variant=inset]:shadow-none">
+        <SidebarInset className="min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0">
           {view.kind === "home" ? (
             <HomePage
               accounts={accounts}

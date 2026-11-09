@@ -52,7 +52,7 @@ export function HomeOverview(p: OverviewProps) {
       <CardHeader className="border-b py-3.5">
         <CardTitle className="flex h-6 items-center">Overview</CardTitle>
         <CardAction>
-          <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-[13px] font-normal text-muted-foreground tabular-nums">
+          <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-[14px] font-normal text-muted-foreground tabular-nums">
             <IconCalendarEvent />
             {date(new Date())}
           </Badge>
@@ -107,15 +107,16 @@ function Stat({ icon, label, value, onClick, children }: {
 }) {
   const body = (
     <>
-      <span className="flex h-5 items-center gap-2 text-sm text-muted-foreground [&_svg]:size-4.5 [&_svg]:shrink-0">
+      <span className="flex h-5 w-full min-w-0 items-center gap-2 text-sm text-muted-foreground [&_svg]:size-4.5 [&_svg]:shrink-0">
         {icon}
         <span className="truncate">{label}</span>
       </span>
       <span className="text-3xl leading-9 font-semibold tracking-tight tabular-nums">{value}</span>
-      <span className="flex h-6 min-w-0 items-center gap-2 text-sm text-muted-foreground">{children}</span>
+      {/* Full width so long lines (the next event's name) end in an ellipsis at the tile's padding. */}
+      <span className="flex h-6 w-full min-w-0 items-center gap-2 text-sm text-muted-foreground">{children}</span>
     </>
   );
-  const tile = "flex min-w-0 flex-col items-start gap-1.5 bg-card px-5 py-4 text-left";
+  const tile = "flex min-w-0 flex-col items-start gap-1.5 overflow-hidden bg-card px-5 py-4 text-left";
   return onClick ? (
     <button type="button" onClick={onClick} className={cn(tile, "outline-none transition-colors duration-150 hover:bg-muted/40 focus-visible:bg-muted/60")}>
       {body}
@@ -125,22 +126,27 @@ function Stat({ icon, label, value, onClick, children }: {
   );
 }
 
-/** A green up / red down / grey level badge, then what it's compared with. */
+/** Up is green, down is red, no change is grey. */
+const DELTA_COLORS = { up: "#2aa250", down: "#f23c47", level: "#8a8a8a" };
+
+/**
+ * The change since last time: the arrow in a small solid square of its own, then the number in
+ * the same colour as plain text, then what it's compared with ("▾ −25 vs last week").
+ */
 function Delta({ change, versus }: { change: number; versus: string }) {
   const Icon = change > 0 ? IconArrowUpRight : change < 0 ? IconArrowDownRight : IconMinus;
+  const color = change > 0 ? DELTA_COLORS.up : change < 0 ? DELTA_COLORS.down : DELTA_COLORS.level;
   return (
-    <>
-      <Badge
-        variant="tint"
-        className="h-6 shrink-0 gap-1 tabular-nums"
-        style={{ "--chip": change > 0 ? "var(--chip-green)" : change < 0 ? "var(--chip-pink)" : "var(--chip-gray)" } as React.CSSProperties}
-      >
-        {/* Heavier than the app's 1.35px small-icon line, to match the badge's bolder number. */}
-        <Icon className="stroke-[length:2px]!" />
+    <span className="flex min-w-0 items-center gap-2" style={{ "--delta": color } as React.CSSProperties}>
+      <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-(--delta)">
+        {/* White on the colour in light mode; a dark arrow on it in dark mode, as in the reference. */}
+        <Icon className="size-3.5 stroke-[length:2.25px]! text-white dark:text-black/75" />
+      </span>
+      <span className="shrink-0 font-medium tabular-nums text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
         {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "0"}
-      </Badge>
+      </span>
       <span className="truncate">{versus}</span>
-    </>
+    </span>
   );
 }
 

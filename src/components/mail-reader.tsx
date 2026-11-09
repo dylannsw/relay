@@ -26,7 +26,7 @@ import { EmailFrame } from "@/components/email-frame";
 import { AccountChip } from "@/components/account-chip";
 import { ShortcutKbd } from "@/components/shortcut-kbd";
 import type { ShortcutId } from "@/shortcuts";
-import { CloseButton, DESTRUCTIVE_ICON, DetailRow, MailWindow, PersonChip } from "@/components/mail-window";
+import { CloseButton, DetailRow, MailWindow, PersonChip } from "@/components/mail-window";
 import type { Account, Folder, MessageDetail } from "@/types";
 import { fileSize, fullDate, senderName } from "@/format";
 
@@ -79,9 +79,8 @@ function ToolButton(props: {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant={props.variant ?? "ghost"}
+          variant={props.destructive ? "destructive" : (props.variant ?? "ghost")}
           size={props.text ? "default" : "icon-sm"}
-          className={props.destructive ? DESTRUCTIVE_ICON : undefined}
           disabled={props.disabled}
           onClick={props.onClick}
         >

@@ -138,7 +138,7 @@ export function ColorPicker({ value, onChange, label, presets, className }: {
           type="button"
           aria-label={label}
           className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-full border bg-background p-[3px] transition-[border-color,box-shadow] duration-150 outline-none hover:border-foreground/25 focus-visible:ring-2 focus-visible:ring-ring aria-expanded:border-foreground/25",
+            "flex size-7 shrink-0 items-center justify-center rounded-full border bg-background p-[3px] transition-[border-color,box-shadow] duration-150 outline-none hover:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring aria-expanded:border-foreground/25",
             className,
           )}
         >
@@ -214,7 +214,7 @@ export function ColorPicker({ value, onChange, label, presets, className }: {
                 aria-label={`Use ${p}`}
                 onClick={() => setHex(p)}
                 className={cn(
-                  "size-5 rounded-full shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)] outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "size-5 rounded-full shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)] outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   p.toLowerCase() === hex.toLowerCase() && "ring-2 ring-foreground/60 ring-offset-1 ring-offset-popover",
                 )}
                 style={{ backgroundColor: p }}
@@ -261,7 +261,7 @@ function SaturationArea({ hsv, onChange }: { hsv: Hsv; onChange: (s: number, v: 
       aria-label="Saturation and brightness"
       aria-valuetext={`Saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`}
       onKeyDown={key}
-      className="relative h-36 cursor-crosshair touch-none rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative h-36 cursor-crosshair touch-none rounded-lg outline-none focus-visible:ring-1 focus-visible:ring-ring"
       style={{
         backgroundColor: `hsl(${hsv.h} 100% 50%)`,
         backgroundImage: "linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)",
@@ -292,7 +292,7 @@ function HueSlider({ hue, onChange }: { hue: number; onChange: (h: number) => vo
         e.preventDefault();
         onChange((hue + d * (e.shiftKey ? 10 : 1) + 360) % 360);
       }}
-      className="relative h-3 cursor-pointer touch-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative h-3 cursor-pointer touch-none rounded-full outline-none focus-visible:ring-1 focus-visible:ring-ring"
       style={{ background: "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)" }}
     >
       <span

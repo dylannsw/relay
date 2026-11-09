@@ -79,7 +79,7 @@ const Dot = ({ color }: { color: string }) => (
 );
 const Ico = ({ icon: I }: { icon: TablerIcon }) => <I />;
 
-const ROW = "h-11 gap-3 rounded-lg px-3 text-[15px] [&_svg]:text-muted-foreground";
+const ROW = "h-11 gap-3 rounded-lg px-3 text-[16px] [&_svg]:text-muted-foreground";
 
 /**
  * The command bar: a centred panel over a dimmed window (Raycast-style). Search mail,
@@ -212,7 +212,7 @@ export function CommandBar(p: Props) {
         <button
           type="button"
           onClick={() => p.onOpenChange(true)}
-          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground/70 shadow-xs transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-ring"
         >
           <IconSearch className="size-4 shrink-0" />
           <span className="flex-1 truncate text-left">
@@ -235,7 +235,7 @@ export function CommandBar(p: Props) {
       <Dialog open={p.open} onOpenChange={p.onOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="gap-0 overflow-hidden rounded-2xl border p-0 shadow-2xl ring-0 sm:max-w-2xl"
+          className="gap-0 overflow-hidden rounded-2xl p-0 smooth-shadow-ring-2xl sm:max-w-2xl"
         >
           <DialogTitle className="sr-only">Command bar</DialogTitle>
           <DialogDescription className="sr-only">Search mail, run a command, or jump to a folder.</DialogDescription>
@@ -286,10 +286,10 @@ export function CommandBar(p: Props) {
                         className="gap-3 rounded-lg px-3 py-2"
                       >
                         <Avatar size="sm">
-                          <AvatarFallback className="text-[10px]">{initials(m.from.name, m.from.email)}</AvatarFallback>
+                          <AvatarFallback className="text-[11px]">{initials(m.from.name, m.from.email)}</AvatarFallback>
                         </Avatar>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px]">{m.subject || "(no subject)"}</span>
+                          <span className="block truncate text-[16px]">{m.subject || "(no subject)"}</span>
                           <span className="block truncate text-xs text-muted-foreground">
                             {senderName(m.from)} · {m.snippet}
                           </span>

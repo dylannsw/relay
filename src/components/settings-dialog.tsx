@@ -9,6 +9,8 @@ import {
   IconCheck,
   IconChecklist,
   IconFolderOpen,
+  IconKey,
+  IconMail,
   IconPhoto,
   IconKeyboard,
   IconLogin2,
@@ -18,7 +20,6 @@ import {
   IconAlertCircle,
   IconCircleCheck,
   IconDownload,
-  IconPlugConnected,
   IconRefresh,
   IconRefreshDot,
   IconRestore,
@@ -72,7 +73,6 @@ import { quick } from "@/lib/motion";
 import { ACCENTS, FONTS, isFontInstalled, setAppearance, useAppearance } from "@/appearance";
 import { ShortcutKbd } from "@/components/shortcut-kbd";
 import { ColorPicker } from "@/components/color-picker";
-import { EventBar } from "@/components/calendar/event-bar";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/updater";
@@ -112,7 +112,6 @@ import { saveDisplayName, saveTasksConfig, useTasksState } from "@/tasks/store";
 import { greetingName } from "@/components/home/home-welcome";
 import { chooseVault } from "@/components/tasks/tasks-setup";
 import { chooseBanner } from "@/components/home/home-banner";
-import { DESTRUCTIVE_ICON } from "@/components/mail-window";
 
 interface Props {
   accounts: Account[];
@@ -123,15 +122,21 @@ interface Props {
   initialSection?: SettingsSection;
 }
 
+/**
+ * Settings pages, grouped by what they're about: the accounts everything else builds on; each
+ * part of the app (Home, Mail, Calendar, Tasks, in sidebar order); Relay itself; and, last, the
+ * one-time sign-in setup most people only visit once.
+ */
 const SECTIONS = [
-  { id: "home", group: "General", label: "Home", icon: IconSmartHome, note: "Home settings save automatically." },
-  { id: "tasks", group: "General", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
-  { id: "calendar", group: "General", label: "Calendar", icon: IconCalendar, note: "Calendar settings save automatically." },
-  { id: "accounts", group: "Mail", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
-  { id: "connections", group: "Mail", label: "Connections", icon: IconPlugConnected, note: "Save to apply connection changes." },
-  { id: "appearance", group: "App", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
-  { id: "shortcuts", group: "App", label: "Shortcuts", icon: IconKeyboard, note: "Shortcut changes save automatically." },
-  { id: "updates", group: "App", label: "Updates", icon: IconRefreshDot, note: "Updates download from GitHub Releases." },
+  { id: "accounts", group: "Accounts", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
+  { id: "home", group: "Features", label: "Home", icon: IconSmartHome, note: "Home settings save automatically." },
+  { id: "mail", group: "Features", label: "Mail", icon: IconMail, note: "Mail settings save automatically." },
+  { id: "calendar", group: "Features", label: "Calendar", icon: IconCalendar, note: "Calendar settings save automatically." },
+  { id: "tasks", group: "Features", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
+  { id: "appearance", group: "Relay", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
+  { id: "shortcuts", group: "Relay", label: "Shortcuts", icon: IconKeyboard, note: "Shortcut changes save automatically." },
+  { id: "updates", group: "Relay", label: "Updates", icon: IconRefreshDot, note: "Updates download from GitHub Releases." },
+  { id: "connections", group: "Advanced", label: "Sign-in setup", icon: IconKey, note: "Save to apply sign-in changes." },
 ] as const;
 export type SettingsSection = (typeof SECTIONS)[number]["id"];
 type Section = SettingsSection;
@@ -159,7 +164,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
           </>
         }
       >
-        <DialogDescription className="sr-only">Home, tasks, calendars, mail accounts and connections, appearance, keyboard shortcuts and updates.</DialogDescription>
+        <DialogDescription className="sr-only">Accounts; Home, Mail, Calendar and Tasks; appearance, keyboard shortcuts and updates; and sign-in setup.</DialogDescription>
         <Tabs
           value={section}
           onValueChange={(v) => setSection(v as Section)}
@@ -198,6 +203,10 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
             <TabsContent value="calendar">
               <SectionTitle>{SECTIONS.find((x) => x.id === "calendar")!.label}</SectionTitle>
               <CalendarTab accounts={accounts} onAccountsChanged={onAccountsChanged} />
+            </TabsContent>
+            <TabsContent value="mail">
+              <SectionTitle>{SECTIONS.find((x) => x.id === "mail")!.label}</SectionTitle>
+              <MailTab />
             </TabsContent>
             <TabsContent value="connections">
               <SectionTitle>{SECTIONS.find((x) => x.id === "connections")!.label}</SectionTitle>
@@ -287,7 +296,7 @@ function HomeTab({ accounts }: { accounts: Account[] }) {
             {cfg.bannerImage ? "Change…" : "Choose…"}
           </Button>
           {cfg.bannerImage && (
-            <Button variant="ghost" className={DESTRUCTIVE_ICON} onClick={() => void save({ bannerImage: "" })}>
+            <Button variant="destructive" onClick={() => void save({ bannerImage: "" })}>
               Remove
             </Button>
           )}
@@ -422,20 +431,24 @@ function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onA
           {cal.error}
         </p>
       )}
-      {google.length === 0 ? (
-        <p className="rounded-lg border px-4 py-3.5 text-sm text-muted-foreground">
-          Add a Gmail account to see its Google calendars here, or subscribe to a calendar by its address below.
-        </p>
-      ) : (
-        google.map((a) => (
-          <AccountCalendars
-            key={a.id}
-            account={a}
-            calendars={cal.calendars.filter((c) => c.accountId === a.id)}
-            onAccountsChanged={onAccountsChanged}
-          />
-        ))
-      )}
+      <Subsection title="Google calendars" description="Tick the calendars to show on the Calendar page and choose each one's color.">
+        {google.length === 0 ? (
+          <p className="rounded-lg border border-dashed px-4 py-3.5 text-sm text-muted-foreground">
+            Add a Gmail account to see its Google calendars here, or subscribe to a calendar by its address below.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-5">
+            {google.map((a) => (
+              <AccountCalendars
+                key={a.id}
+                account={a}
+                calendars={cal.calendars.filter((c) => c.accountId === a.id)}
+                onAccountsChanged={onAccountsChanged}
+              />
+            ))}
+          </div>
+        )}
+      </Subsection>
       <FeedCalendars feeds={feeds} />
     </div>
   );
@@ -444,21 +457,18 @@ function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onA
 /** Calendars subscribed by an .ics address: view-only, for accounts Relay can't sign in to. */
 function FeedCalendars({ feeds }: { feeds: CalendarInfo[] }) {
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium">Subscribed by URL</h3>
-          <p className="text-xs text-muted-foreground">
-            View-only calendars from an iCal address, for when your organization won't let Relay connect to the account.
-          </p>
-        </div>
+    <Subsection
+      title="Subscribed by URL"
+      description="View-only calendars from an iCal address, for when your organization won't let Relay connect to the account."
+      action={
         <FeedDialog>
           <Button variant="outline" size="sm" className="shrink-0">
             <IconPlus />
             Add by URL
           </Button>
         </FeedDialog>
-      </div>
+      }
+    >
       {feeds.length === 0 ? (
         <p className="rounded-lg border border-dashed px-4 py-3.5 text-sm text-muted-foreground">No subscribed calendars yet.</p>
       ) : (
@@ -468,6 +478,27 @@ function FeedCalendars({ feeds }: { feeds: CalendarInfo[] }) {
           ))}
         </div>
       )}
+    </Subsection>
+  );
+}
+
+/** A heading for a group of settings within a page, with an optional button on the right. */
+function Subsection({ title, description, action, children }: {
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium">{title}</h3>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
     </section>
   );
 }
@@ -585,17 +616,27 @@ function FeedActions({ calendar: c }: { calendar: CalendarInfo }) {
       .catch((e) => toast.error(errorText(e)));
   return (
     <>
-      <FeedDialog feed={c}>
-        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${c.name}`}>
-          <IconPencil />
-        </Button>
-      </FeedDialog>
+      <Tooltip>
+        <FeedDialog feed={c}>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="icon-sm" aria-label={`Edit ${c.name}`}>
+              <IconPencil />
+            </Button>
+          </TooltipTrigger>
+        </FeedDialog>
+        <TooltipContent>Rename or change address</TooltipContent>
+      </Tooltip>
       <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="text-destructive" aria-label={`Unsubscribe from ${c.name}`}>
-            <IconTrash />
-          </Button>
-        </AlertDialogTrigger>
+        <Tooltip>
+          <AlertDialogTrigger asChild>
+            <TooltipTrigger asChild>
+              <Button variant="destructive" size="icon-sm" aria-label={`Unsubscribe from ${c.name}`}>
+                <IconTrash />
+              </Button>
+            </TooltipTrigger>
+          </AlertDialogTrigger>
+          <TooltipContent>Unsubscribe</TooltipContent>
+        </Tooltip>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
             <AlertDialogTitle>Unsubscribe from {c.name}?</AlertDialogTitle>
@@ -650,9 +691,9 @@ function AccountCalendars({ account: a, calendars, onAccountsChanged }: {
   };
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="truncate text-sm font-medium">{a.email}</h3>
+        <h4 className="truncate text-sm text-muted-foreground">{a.email}</h4>
         {a.calendarAccess && (
           <span className={cn("shrink-0 text-xs", a.calendarError ? "text-destructive" : "text-muted-foreground")}>
             {a.calendarError ? "Couldn't sync" : a.calendarSync ? `Synced ${relativeTime(a.calendarSync)}` : "Not synced yet"}
@@ -750,19 +791,24 @@ function CalendarRow({ calendar: c, actions }: { calendar: CalendarInfo; actions
           {c.lastError && <span className="text-destructive"> · {c.lastError}</span>}
         </div>
       </div>
-      {c.customColor && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={() => void setCalendarColor(c.id, null).catch(fail)}>
-              <IconArrowBackUp />
-              <span className="sr-only">{c.isFeed ? "Use the original color" : "Use Google's color"}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{c.isFeed ? "Use the original color" : "Use Google's color"}</TooltipContent>
-        </Tooltip>
-      )}
-      {actions}
       <EventPreview calendar={c} />
+      {/* Everything you can do to the calendar, together at the row's end. */}
+      {(c.customColor || actions) && (
+        <div className="flex shrink-0 items-center gap-1.5">
+          {c.customColor && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={() => void setCalendarColor(c.id, null).catch(fail)}>
+                  <IconArrowBackUp />
+                  <span className="sr-only">{c.isFeed ? "Use the original color" : "Use Google's color"}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{c.isFeed ? "Use the original color" : "Use Google's color"}</TooltipContent>
+            </Tooltip>
+          )}
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -775,7 +821,7 @@ function EventPreview({ calendar: c }: { calendar: CalendarInfo }) {
     <div
       aria-hidden
       className={cn(
-        "relative flex w-40 shrink-0 flex-col gap-0.5 rounded-lg py-1.5 pr-2 pl-3 text-xs leading-snug shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--event-bar)_22%,transparent)] transition-opacity",
+        "relative flex w-40 shrink-0 flex-col gap-0.5 rounded-lg px-2 py-1.5 text-xs leading-snug shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--event-bar)_22%,transparent)] transition-opacity",
         c.hidden && "opacity-40",
       )}
       style={
@@ -786,8 +832,7 @@ function EventPreview({ calendar: c }: { calendar: CalendarInfo }) {
         } as React.CSSProperties
       }
     >
-      <EventBar />
-      <span className="truncate text-[13px] font-semibold">{c.isPrimary ? "Coffee with Sam" : calendarName(c)}</span>
+      <span className="truncate text-[14px] font-semibold">{c.isPrimary ? "Coffee with Sam" : calendarName(c)}</span>
       <span style={{ color: dark ? c.colors.darkMuted : c.colors.lightMuted }}>
         {clockTime(new Date(2000, 0, 1, 9))} – {clockTime(new Date(2000, 0, 1, 10))}
       </span>
@@ -827,8 +872,8 @@ function ConnectionsTab() {
   return (
     <FieldGroup>
       <FieldDescription>
-        Relay signs in with your own app registrations, so your mail only travels between this PC and Google or
-        Microsoft. Step-by-step setup is in <code>docs/SETUP.md</code>.
+        Relay signs in with your own app registrations, so your mail and calendars only travel between this PC and
+        Google or Microsoft. You set these up once; step-by-step instructions are in <code>docs/SETUP.md</code>.
       </FieldDescription>
       <FieldSet>
         <FieldLegend>Google</FieldLegend>
@@ -850,20 +895,6 @@ function ConnectionsTab() {
           <FieldDescription>One registration covers Outlook.com, work and school accounts.</FieldDescription>
         </Field>
       </FieldSet>
-      <FieldSeparator />
-      <FieldSet>
-        <FieldLegend>Sync</FieldLegend>
-        <div className="grid grid-cols-2 gap-4">
-          <Field>
-            <FieldLabel htmlFor="interval">Check for mail every (seconds)</FieldLabel>
-            <Input id="interval" type="number" min={30} max={3600} value={cfg.syncIntervalSecs} onChange={(e) => set({ syncIntervalSecs: Number(e.target.value) })} />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="keep">Messages kept per account</FieldLabel>
-            <Input id="keep" type="number" min={10} max={500} value={cfg.messagesPerAccount} onChange={(e) => set({ messagesPerAccount: Number(e.target.value) })} />
-          </Field>
-        </div>
-      </FieldSet>
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving}>
           {saving && <Spinner />}
@@ -871,6 +902,94 @@ function ConnectionsTab() {
         </Button>
       </div>
     </FieldGroup>
+  );
+}
+
+/** How often Relay checks for mail and how much it keeps; each saves when you leave the field. */
+function MailTab() {
+  const [cfg, setCfg] = useState<Config | null>(null);
+
+  useEffect(() => {
+    api.getConfig().then(setCfg).catch((e) => toast.error(errorText(e)));
+  }, []);
+
+  if (!cfg) {
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  }
+
+  const commit = async (patch: Partial<Config>) => {
+    const next = { ...cfg, ...patch };
+    setCfg(next);
+    try {
+      setCfg(await api.saveConfig({ ...next, shortcuts: getOverrides() }));
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  };
+
+  return (
+    <div className="flex flex-col divide-y">
+      <SettingRow title="Check for new mail" description="How often Relay asks Google and Microsoft for new messages.">
+        <NumberField
+          label="Seconds between checks"
+          value={cfg.syncIntervalSecs}
+          min={30}
+          max={3600}
+          unit="seconds"
+          onCommit={(n) => void commit({ syncIntervalSecs: n })}
+        />
+      </SettingRow>
+      <SettingRow title="Messages kept per account" description="How many of each account's latest messages Relay keeps on this PC.">
+        <NumberField
+          label="Messages kept per account"
+          value={cfg.messagesPerAccount}
+          min={10}
+          max={500}
+          unit="messages"
+          onCommit={(n) => void commit({ messagesPerAccount: n })}
+        />
+      </SettingRow>
+    </div>
+  );
+}
+
+/** A number box with its unit after it; saves (clamped to its range) on Enter or leaving it. */
+function NumberField({ label, value, min, max, unit, onCommit }: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  unit: string;
+  onCommit: (n: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = () => {
+    const n = Math.round(Number(text));
+    const next = Number.isFinite(n) && text.trim() ? Math.min(max, Math.max(min, n)) : value;
+    setText(String(next));
+    if (next !== value) onCommit(next);
+  };
+  return (
+    <div className="flex shrink-0 items-center gap-2.5">
+      <Input
+        aria-label={label}
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+        className="w-24 text-right tabular-nums"
+      />
+      <span className="w-18 text-sm text-muted-foreground">{unit}</span>
+    </div>
   );
 }
 
@@ -965,7 +1084,7 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
       </Button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="text-destructive">
+          <Button variant="destructive" size="icon-sm">
             <IconTrash />
             <span className="sr-only">Remove account</span>
           </Button>
@@ -1176,8 +1295,8 @@ function ThemeCard({ id, label, selected, onSelect }: {
     <button type="button" onClick={onSelect} aria-pressed={selected} className="group flex flex-col gap-2 text-left outline-none">
       <span
         className={cn(
-          "relative block aspect-[16/10] overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) group-focus-visible:border-ring group-focus-visible:ring-1 group-focus-visible:ring-ring",
-          selected ? "border-ring ring-1 ring-ring" : "group-hover:border-foreground/25",
+          "relative block aspect-[16/10] overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) group-focus-visible:border-ring",
+          selected ? "border-primary ring-1 ring-primary" : "group-hover:border-foreground/25",
         )}
       >
         {id === "dark" ? <MiniRelay mode="dark" /> : <MiniRelay mode="light" />}
@@ -1401,7 +1520,7 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
         onBlur={() => setRecording(false)}
         onKeyDown={onKeyDown}
         className={cn(
-          "flex h-8 min-w-28 items-center justify-end rounded-md border bg-background px-2.5 text-sm transition-[border-color,box-shadow] duration-150 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring",
+          "flex h-8 min-w-28 items-center justify-end rounded-md border bg-background px-2.5 text-sm transition-[border-color,box-shadow] duration-150 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-ring",
           recording && "border-ring ring-1 ring-ring hover:border-ring",
         )}
       >

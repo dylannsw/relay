@@ -137,7 +137,7 @@ export function LocationField({ value, onChange }: { value: string; onChange: (v
             </li>
           ))}
         </ul>
-        <p className="px-2 pt-1 pb-0.5 text-[10px] text-muted-foreground">Places from OpenStreetMap</p>
+        <p className="px-2 pt-1 pb-0.5 text-[11px] text-muted-foreground">Places from OpenStreetMap</p>
       </PopoverContent>
     </Popover>
   );

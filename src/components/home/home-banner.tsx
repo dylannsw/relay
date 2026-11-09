@@ -228,7 +228,7 @@ export function HomeBanner({ className }: { className?: string }) {
       <div
         data-banner-toolbar
         className={cn(
-          "absolute top-3 right-3 flex items-center gap-1 rounded-lg border bg-background/85 p-1 shadow-sm backdrop-blur-md transition-opacity duration-150",
+          "absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-background/85 p-1 smooth-shadow-ring-sm backdrop-blur-md transition-opacity duration-150",
           repositioning ? "opacity-100" : "opacity-0 group-hover/banner:opacity-100 focus-within:opacity-100",
         )}
       >
@@ -259,7 +259,7 @@ export function HomeBanner({ className }: { className?: string }) {
             >
               <IconGrain />
             </ToolbarButton>
-            <ToolbarButton label="Remove banner" onClick={() => void save({ bannerImage: "" })}>
+            <ToolbarButton label="Remove banner" destructive onClick={() => void save({ bannerImage: "" })}>
               <IconTrash />
             </ToolbarButton>
           </>
@@ -269,17 +269,18 @@ export function HomeBanner({ className }: { className?: string }) {
   );
 }
 
-function ToolbarButton({ label, onClick, active, children }: {
+function ToolbarButton({ label, onClick, active, destructive, children }: {
   label: string;
   onClick: () => void;
   active?: boolean;
+  destructive?: boolean;
   children: ReactNode;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="ghost"
+          variant={destructive ? "destructive" : "ghost"}
           size="icon-sm"
           aria-pressed={active}
           className={cn(active && "bg-muted text-foreground")}
