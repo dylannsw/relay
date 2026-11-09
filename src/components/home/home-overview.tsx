@@ -33,6 +33,9 @@ export interface OverviewProps {
   accountsWithUnread: number;
   onOpenTasks: () => void;
   onOpenMail: () => void;
+  /** Today's events and a line about what's next, or null while no calendar is connected. */
+  events: { count: number; next: string } | null;
+  onOpenCalendar: () => void;
   className?: string;
 }
 
@@ -81,8 +84,13 @@ export function HomeOverview(p: OverviewProps) {
               ? "Inbox zero"
               : `in ${plural(p.accountsWithUnread, "inbox", "inboxes")}`}
         </Stat>
-        <Stat icon={<IconCalendarEvent />} label="Events Today" value="–">
-          Calendar coming soon
+        <Stat
+          icon={<IconCalendarEvent />}
+          label="Events Today"
+          value={p.events ? p.events.count.toLocaleString() : "–"}
+          onClick={p.onOpenCalendar}
+        >
+          <span className="truncate">{p.events ? p.events.next : "Connect your calendar"}</span>
         </Stat>
       </div>
       {s && <Heatmap weeks={s.heatmap.weeks} color={p.heatColor} date={date} />}

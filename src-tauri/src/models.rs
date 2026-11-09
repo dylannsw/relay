@@ -85,6 +85,12 @@ pub struct Account {
     pub unread_count: i64,
     pub last_sync: Option<i64>,
     pub last_error: Option<String>,
+    /// Google accounts: whether the sign-in includes the Calendar scopes. Accounts added
+    /// before Calendar existed need to sign in once more.
+    pub calendar_access: bool,
+    /// When the calendars last synced without error (ms).
+    pub calendar_sync: Option<i64>,
+    pub calendar_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]

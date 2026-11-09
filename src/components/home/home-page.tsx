@@ -2,6 +2,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { useTasks } from "@/tasks/store";
+import { useTodayEvents } from "@/calendar/events";
+import { useCalendars } from "@/calendar/store";
+import { clockTime } from "@/format";
 import type { Account } from "@/types";
 import { HomeBanner } from "./home-banner";
 import { HomeOverview } from "./home-overview";
@@ -17,12 +20,19 @@ const COLUMN = "mx-auto w-[min(100%-3rem,56rem)]";
  * faded out by the time it reaches the greeting. On a short window the page scrolls and the
  * banner keeps a minimum height.
  */
-export function HomePage({ accounts, onOpenTasks, onOpenMail }: {
+export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: {
   accounts: Account[];
   onOpenTasks: () => void;
+  onOpenCalendar: () => void;
   onOpenMail: () => void;
 }) {
   const t = useTasks();
+  const today = useTodayEvents();
+  const cal = useCalendars();
+  const calendarConnected = accounts.some((a) => a.calendarAccess) || cal.calendars.some((c) => c.isFeed);
+  const now = Date.now();
+  // The next event still to start today (all-day ones don't count as "next").
+  const next = today.find((e) => !e.allDay && e.start >= now);
   const ready = t.status === "ready";
   const unread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const scroller = useRef<HTMLDivElement>(null);
@@ -65,6 +75,19 @@ export function HomePage({ accounts, onOpenTasks, onOpenMail }: {
               accountsWithUnread={accounts.filter((a) => a.unreadCount > 0).length}
               onOpenTasks={onOpenTasks}
               onOpenMail={onOpenMail}
+              events={
+                calendarConnected
+                  ? {
+                      count: today.length,
+                      next: next
+                        ? `Next: ${next.title} at ${clockTime(next.start)}`
+                        : today.length
+                          ? "Nothing else today"
+                          : "A free day",
+                    }
+                  : null
+              }
+              onOpenCalendar={onOpenCalendar}
             />
           </div>
           {/* Grows as much as the banner above, so the greeting and overview sit centred

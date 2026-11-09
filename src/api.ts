@@ -5,6 +5,13 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { mockInvoke } from "./mock";
 import type {
   Account,
+  CalendarConfig,
+  CalendarEvent,
+  CalendarInfo,
+  EditScope,
+  EventChanges,
+  NewEvent,
+  Place,
   Config,
   Folder,
   ListQuery,
@@ -48,6 +55,34 @@ export const api = {
   send: (message: OutgoingMessage) => call<void>("send_message", { message }),
 
   syncNow: () => call<SyncReport[]>("sync_now"),
+
+  /** Signs a Google account in again with the Calendar scopes, that account preselected. */
+  grantCalendarAccess: (id: string) => call<Account>("grant_calendar_access", { id }),
+  listCalendars: () => call<CalendarInfo[]>("list_calendars"),
+  /** Cached events on visible calendars overlapping [from, to) (ms). */
+  listCalendarEvents: (from: number, to: number) => call<CalendarEvent[]>("list_calendar_events", { from, to }),
+  /** Returns the calendars with the new settings applied (colors recomputed). */
+  saveCalendarConfig: (calendar: CalendarConfig) => call<CalendarInfo[]>("save_calendar_config", { calendar }),
+  syncCalendars: () => call<void>("sync_calendars"),
+  /** Subscribes to an .ics address (read once first; an empty name uses the calendar's own). */
+  addCalendarFeed: (url: string, name: string) => call<CalendarInfo[]>("add_calendar_feed", { url, name }),
+  /** Renames a subscribed calendar and, with `url`, gives it a new address. */
+  updateCalendarFeed: (id: string, name: string, url: string | null) =>
+    call<CalendarInfo[]>("update_calendar_feed", { id, name, url }),
+  removeCalendarFeed: (id: string) => call<CalendarInfo[]>("remove_calendar_feed", { id }),
+  /** Places matching what's typed in a location field; `near` (lat, lon) favours nearby ones. */
+  searchPlaces: (query: string, near?: [number, number]) => call<Place[]>("search_places", { query, near: near ?? null }),
+  /** `notify`: Google emails the guests. */
+  createCalendarEvent: (event: NewEvent, notify: boolean) => call<void>("create_calendar_event", { event, notify }),
+  updateCalendarEvent: (id: string, changes: EventChanges, scope: EditScope, notify: boolean) =>
+    call<void>("update_calendar_event", { id, changes, scope, notify }),
+  deleteCalendarEvent: (id: string, scope: EditScope, notify: boolean) =>
+    call<void>("delete_calendar_event", { id, scope, notify }),
+  /** Reply to an invitation; Google tells the organizer. */
+  rsvpCalendarEvent: (id: string, response: "accepted" | "tentative" | "declined", scope: EditScope) =>
+    call<void>("rsvp_calendar_event", { id, response, scope }),
+  onCalendarUpdated: (cb: () => void): Promise<() => void> =>
+    isTauri ? listen("calendar-updated", () => cb()) : Promise.resolve(() => {}),
 
   saveTasksConfig: (tasks: TasksConfig) => call<Config>("save_tasks_config", { tasks }),
   tasksLoad: () => call<TasksSnapshot>("tasks_load"),

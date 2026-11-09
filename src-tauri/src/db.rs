@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS accounts (
     last_sync     INTEGER,
     last_error    TEXT,
     created_at    INTEGER NOT NULL,
+    scopes         TEXT,
+    calendar_sync  INTEGER,
+    calendar_error TEXT,
     UNIQUE(provider, email)
 );
 
@@ -54,6 +57,84 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_account ON messages(account_id, date DESC);
+
+CREATE TABLE IF NOT EXISTS calendars (
+    id           TEXT PRIMARY KEY,
+    account_id   TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    remote_id    TEXT NOT NULL,
+    name         TEXT NOT NULL DEFAULT '',
+    google_color TEXT NOT NULL DEFAULT '',
+    access_role  TEXT NOT NULL DEFAULT 'reader',
+    is_primary   INTEGER NOT NULL DEFAULT 0,
+    time_zone    TEXT NOT NULL DEFAULT '',
+    position     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id                 TEXT PRIMARY KEY,
+    calendar_id        TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+    remote_id          TEXT NOT NULL,
+    recurring_event_id TEXT,
+    ical_uid           TEXT NOT NULL DEFAULT '',
+    title              TEXT NOT NULL DEFAULT '',
+    location           TEXT NOT NULL DEFAULT '',
+    description        TEXT NOT NULL DEFAULT '',
+    start_ms           INTEGER NOT NULL,
+    end_ms             INTEGER NOT NULL,
+    all_day            INTEGER NOT NULL DEFAULT 0,
+    start_date         TEXT,
+    end_date           TEXT,
+    status             TEXT NOT NULL DEFAULT 'confirmed',
+    my_response        TEXT,
+    organizer          TEXT,
+    attendees          TEXT NOT NULL DEFAULT '[]',
+    html_link          TEXT NOT NULL DEFAULT '',
+    meet_link          TEXT,
+    can_edit           INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_time ON events(start_ms, end_ms);
+CREATE INDEX IF NOT EXISTS idx_events_calendar ON events(calendar_id);
+
+-- Calendars subscribed by URL (.ics feeds). `url` is encrypted like a refresh token.
+CREATE TABLE IF NOT EXISTS feeds (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL DEFAULT '',
+    url        BLOB NOT NULL,
+    color      TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    last_sync  INTEGER,
+    last_try   INTEGER,
+    last_error TEXT
+);
+
+-- Same columns as events; feeds aren't accounts' calendars, so they get their own table.
+CREATE TABLE IF NOT EXISTS feed_events (
+    id                 TEXT PRIMARY KEY,
+    calendar_id        TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    remote_id          TEXT NOT NULL,
+    recurring_event_id TEXT,
+    ical_uid           TEXT NOT NULL DEFAULT '',
+    title              TEXT NOT NULL DEFAULT '',
+    location           TEXT NOT NULL DEFAULT '',
+    description        TEXT NOT NULL DEFAULT '',
+    start_ms           INTEGER NOT NULL,
+    end_ms             INTEGER NOT NULL,
+    all_day            INTEGER NOT NULL DEFAULT 0,
+    start_date         TEXT,
+    end_date           TEXT,
+    status             TEXT NOT NULL DEFAULT 'confirmed',
+    my_response        TEXT,
+    organizer          TEXT,
+    attendees          TEXT NOT NULL DEFAULT '[]',
+    html_link          TEXT NOT NULL DEFAULT '',
+    meet_link          TEXT,
+    can_edit           INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_feed_events_time ON feed_events(start_ms, end_ms);
+CREATE INDEX IF NOT EXISTS idx_feed_events_calendar ON feed_events(calendar_id);
 "#;
 
 pub fn open(path: &Path) -> Result<Connection> {
@@ -65,6 +146,7 @@ pub fn open(path: &Path) -> Result<Connection> {
 pub fn init(conn: &Connection) -> Result<()> {
     conn.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(()))?;
     conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;")?;
+    migrate_calendar_columns(conn)?;
     conn.execute_batch(SCHEMA)?;
     migrate_folders(conn)?;
     // Accounts still on a color from the original default palette move to the nearest
@@ -100,6 +182,26 @@ fn migrate_folders(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Accounts tables from before Calendar lack the scope and calendar-sync columns. Runs
+/// before SCHEMA, so on a fresh database the table doesn't exist yet and SCHEMA makes it whole.
+fn migrate_calendar_columns(conn: &Connection) -> Result<()> {
+    let has_table: bool = conn
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'accounts'")?
+        .exists([])?;
+    if !has_table {
+        return Ok(());
+    }
+    for (col, ty) in [("scopes", "TEXT"), ("calendar_sync", "INTEGER"), ("calendar_error", "TEXT")] {
+        let has: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('accounts') WHERE name = ?1")?
+            .exists([col])?;
+        if !has {
+            conn.execute_batch(&format!("ALTER TABLE accounts ADD COLUMN {col} {ty};"))?;
+        }
+    }
+    Ok(())
+}
+
 pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
@@ -107,7 +209,8 @@ pub fn now_ms() -> i64 {
 // ---------- accounts ----------
 
 const ACCOUNT_COLS: &str = "a.id, a.provider, a.email, a.display_name, a.label, a.color, a.last_sync, a.last_error,
-     (SELECT COUNT(*) FROM messages m WHERE m.account_id = a.id AND m.folder = 'inbox' AND m.is_read = 0)";
+     (SELECT COUNT(*) FROM messages m WHERE m.account_id = a.id AND m.folder = 'inbox' AND m.is_read = 0),
+     a.scopes, a.calendar_sync, a.calendar_error";
 
 fn row_to_account(r: &Row) -> rusqlite::Result<Account> {
     let provider: String = r.get(1)?;
@@ -121,6 +224,11 @@ fn row_to_account(r: &Row) -> rusqlite::Result<Account> {
         last_sync: r.get(6)?,
         last_error: r.get(7)?,
         unread_count: r.get(8)?,
+        calendar_access: r
+            .get::<_, Option<String>>(9)?
+            .is_some_and(|s| crate::oauth::has_calendar_scopes(&s)),
+        calendar_sync: r.get(10)?,
+        calendar_error: r.get(11)?,
     })
 }
 
@@ -198,6 +306,11 @@ pub fn set_refresh_token(c: &Connection, id: &str, token: &[u8]) -> Result<()> {
         "UPDATE accounts SET refresh_token = ?2 WHERE id = ?1",
         params![id, token],
     )?;
+    Ok(())
+}
+
+pub fn set_scopes(c: &Connection, id: &str, scopes: &str) -> Result<()> {
+    c.execute("UPDATE accounts SET scopes = ?2 WHERE id = ?1", params![id, scopes])?;
     Ok(())
 }
 
@@ -501,6 +614,9 @@ mod tests {
             unread_count: 0,
             last_sync: None,
             last_error: None,
+            calendar_access: false,
+            calendar_sync: None,
+            calendar_error: None,
         }
     }
 

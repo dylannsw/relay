@@ -19,14 +19,18 @@ Expect about 10 minutes for each part.
 
 1. Go to <https://console.cloud.google.com/> and sign in with any Google account
    (your personal one is fine). Create a new project named **Relay**.
-2. **Enable the Gmail API**: *APIs & Services → Library*, search "Gmail API", click **Enable**.
+2. **Enable the Gmail and Calendar APIs**: *APIs & Services → Library*, search "Gmail API",
+   click **Enable**, then do the same for "Google Calendar API".
 3. **Configure the consent screen**: *Google Auth Platform → Branding* (older UI:
    *OAuth consent screen*) → **Get started**.
    - App name: `Relay`, support email: your email.
    - Audience: **External**.
    - Contact email: your email → **Create**.
-4. **Add the Gmail scope**: *Data access → Add or remove scopes*, add
-   `https://www.googleapis.com/auth/gmail.modify` → **Update → Save**.
+4. **Add the scopes**: *Data access → Add or remove scopes*, add these three
+   → **Update → Save**:
+   - `https://www.googleapis.com/auth/gmail.modify`
+   - `https://www.googleapis.com/auth/calendar.events`
+   - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
 5. **Add yourself as a test user**: *Audience → Test users → Add users*, and add
    **every Gmail address** you want in Relay (personal and work).
 6. **Create the client**: *Clients → Create client* → Application type **Desktop app**,
@@ -46,6 +50,12 @@ Expect about 10 minutes for each part.
   Audience = **Internal**.
 - Relay requests `gmail.modify`: read mail, change labels (read/star/archive),
   move to trash, and send. It cannot permanently delete mail.
+- For Calendar, Relay requests `calendar.events` (see, create, change and RSVP to
+  events on your calendars) and `calendar.calendarlist.readonly` (see which
+  calendars you have, including subscribed ones like public holidays). Accounts
+  added before Calendar existed need one more sign-in to allow it: *Settings →
+  Calendar → Allow access*. On Google's consent screen, leave the Calendar boxes
+  ticked.
 
 ---
 

@@ -28,6 +28,21 @@ pub struct Config {
     /// The name Home greets you by ("" = the first account's name). Saved on its own with
     /// `save_display_name`; `save_config` leaves it as it is.
     pub display_name: String,
+    /// Which calendars show, their colors, and where new events go. Saved on its own with
+    /// `save_calendar_config`; `save_config` leaves it as it is.
+    pub calendar: CalendarConfig,
+}
+
+/// Calendar ids here are Relay's ("{account id}:{Google calendar id}").
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CalendarConfig {
+    /// Calendars hidden from the Calendar page and Home. Everything else shows.
+    pub hidden: Vec<String>,
+    /// Colors picked in Relay ("#rrggbb"), overriding the calendar's Google color.
+    pub colors: BTreeMap<String, String>,
+    /// Where new events go ("" = the first account's primary calendar).
+    pub default_calendar: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +81,7 @@ impl Default for Config {
             shortcuts: BTreeMap::new(),
             tasks: TasksConfig::default(),
             display_name: String::new(),
+            calendar: CalendarConfig::default(),
         }
     }
 }
@@ -96,6 +112,13 @@ impl Config {
         self.messages_per_account = self.messages_per_account.clamp(10, 500);
         self.tasks.vault_path = self.tasks.vault_path.trim().to_string();
         self.display_name = self.display_name.split_whitespace().collect::<Vec<_>>().join(" ");
+        self.calendar.hidden.sort();
+        self.calendar.hidden.dedup();
+        // Drop anything that isn't a color rather than storing it.
+        self.calendar.colors = std::mem::take(&mut self.calendar.colors)
+            .into_iter()
+            .filter_map(|(id, c)| crate::colors::normalize_hex(&c).map(|c| (id, c)))
+            .collect();
         self.tasks.banner_position = if self.tasks.banner_position.is_finite() {
             self.tasks.banner_position.clamp(0.0, 100.0)
         } else {

@@ -1,17 +1,24 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod calendar;
+mod calendar_edit;
+mod colors;
 mod commands;
 mod config;
 mod crypt;
 mod db;
 mod error;
+mod feeds;
+mod gcal;
 mod gmail;
 mod graph;
 mod http;
+mod ics;
 mod mime;
 mod models;
 mod oauth;
+mod places;
 mod state;
 mod sync;
 mod tasks;
@@ -42,6 +49,7 @@ fn main() {
             commands::save_display_name,
             commands::list_accounts,
             commands::add_account,
+            commands::grant_calendar_access,
             commands::cancel_sign_in,
             commands::remove_account,
             commands::update_account,
@@ -58,6 +66,18 @@ fn main() {
             commands::tasks_write,
             commands::set_task_banner,
             commands::read_image,
+            commands::list_calendars,
+            commands::list_calendar_events,
+            commands::save_calendar_config,
+            commands::sync_calendars,
+            commands::create_calendar_event,
+            commands::update_calendar_event,
+            commands::delete_calendar_event,
+            commands::rsvp_calendar_event,
+            commands::search_places,
+            commands::add_calendar_feed,
+            commands::update_calendar_feed,
+            commands::remove_calendar_feed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Relay");

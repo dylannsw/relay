@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
-use crate::config::{Config, TasksConfig};
+use crate::config::{CalendarConfig, Config, TasksConfig};
 use crate::error::{msg, Error, Result};
 use crate::models::Account;
 use crate::{crypt, db, oauth};
@@ -26,6 +26,7 @@ pub struct AppState {
     tokens: Mutex<HashMap<String, CachedToken>>,
     refresh_lock: tokio::sync::Mutex<()>,
     pub sync_lock: tokio::sync::Mutex<()>,
+    pub calendar_lock: tokio::sync::Mutex<()>,
     pub auth_cancel: Mutex<Option<oneshot::Sender<()>>>,
 }
 
@@ -58,6 +59,7 @@ impl AppState {
             tokens: Mutex::new(HashMap::new()),
             refresh_lock: tokio::sync::Mutex::new(()),
             sync_lock: tokio::sync::Mutex::new(()),
+            calendar_lock: tokio::sync::Mutex::new(()),
             auth_cancel: Mutex::new(None),
         })
     }
@@ -78,6 +80,7 @@ impl AppState {
         let mut current = self.config.write().expect("config lock");
         cfg.tasks = current.tasks.clone();
         cfg.display_name = current.display_name.clone();
+        cfg.calendar = current.calendar.clone();
         let cfg = cfg.normalized();
         cfg.save(&self.config_path)?;
         *current = cfg.clone();
@@ -88,6 +91,16 @@ impl AppState {
         let mut current = self.config.write().expect("config lock");
         let mut cfg = current.clone();
         cfg.tasks = tasks;
+        let cfg = cfg.normalized();
+        cfg.save(&self.config_path)?;
+        *current = cfg.clone();
+        Ok(cfg)
+    }
+
+    pub fn save_calendar_config(&self, calendar: CalendarConfig) -> Result<Config> {
+        let mut current = self.config.write().expect("config lock");
+        let mut cfg = current.clone();
+        cfg.calendar = calendar;
         let cfg = cfg.normalized();
         cfg.save(&self.config_path)?;
         *current = cfg.clone();
@@ -153,6 +166,11 @@ impl AppState {
         if let Some(new_rt) = tokens.refresh_token.as_deref().filter(|t| *t != refresh_token) {
             let enc = crypt::protect_str(new_rt)?;
             self.db(|c| db::set_refresh_token(c, &account.id, &enc))?;
+        }
+        // Google says which scopes the token carries; that's how Relay learns whether an
+        // account added before Calendar existed can read calendars yet.
+        if let Some(scope) = tokens.scope.as_deref() {
+            self.db(|c| db::set_scopes(c, &account.id, scope))?;
         }
         self.cache_token(&account.id, tokens.access_token.clone(), tokens.expires_in);
         Ok(tokens.access_token)

@@ -8,7 +8,9 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use crate::config::{Config, TasksConfig};
+use crate::calendar::{self, CalendarEvent, CalendarInfo, CALENDAR_UPDATED};
+use crate::calendar_edit::{self, EventChanges, NewEvent, Scope};
+use crate::config::{CalendarConfig, Config, TasksConfig};
 use crate::tasks::{self, Note, TasksSnapshot};
 use crate::error::{msg, Result};
 use crate::mime::{self, OutgoingMime};
@@ -18,7 +20,7 @@ use crate::models::{
 };
 use crate::state::AppState;
 use crate::sync::{self, MAIL_UPDATED};
-use crate::{crypt, db, gmail, graph, oauth};
+use crate::{crypt, db, feeds, gmail, graph, oauth, places};
 
 type St<'a> = State<'a, Arc<AppState>>;
 
@@ -74,6 +76,35 @@ pub fn list_accounts(state: St<'_>) -> Result<Vec<Account>> {
 
 #[tauri::command]
 pub async fn add_account(app: AppHandle, state: St<'_>, provider: Provider) -> Result<Account> {
+    sign_in(app, &state, provider, None).await
+}
+
+/// Signs an existing Google account in again with the Calendar scopes, with that
+/// account already chosen on Google's page.
+#[tauri::command]
+pub async fn grant_calendar_access(app: AppHandle, state: St<'_>, id: String) -> Result<Account> {
+    let account = state.db(|c| db::get_account(c, &id))?;
+    if account.provider != Provider::Google {
+        return Err(msg("Calendar works with Google accounts only."));
+    }
+    let signed_in = sign_in(app, &state, Provider::Google, Some(&account.email)).await?;
+    if signed_in.id != account.id {
+        return Err(msg(format!(
+            "You signed in as {} instead of {}. That account was added; choose Allow access again and pick {}.",
+            signed_in.email, account.email, account.email
+        )));
+    }
+    if !signed_in.calendar_access {
+        return Err(msg(
+            "Google didn't grant calendar access. Try again and leave the Calendar boxes ticked on Google's screen.",
+        ));
+    }
+    Ok(signed_in)
+}
+
+/// The interactive sign-in shared by adding an account and signing in again. Adds the
+/// account, or replaces the token of one already in Relay, then syncs it in the background.
+async fn sign_in(app: AppHandle, state: &Arc<AppState>, provider: Provider, login_hint: Option<&str>) -> Result<Account> {
     let cfg = state.config();
     let (tx, rx) = oneshot::channel();
     // Starting a new sign-in cancels any previous one still waiting.
@@ -81,7 +112,7 @@ pub async fn add_account(app: AppHandle, state: St<'_>, provider: Provider) -> R
         *slot = Some(tx);
     }
     let opener = app.clone();
-    let tokens = oauth::authorize(&state.http, provider, &cfg, rx, move |url| {
+    let tokens = oauth::authorize(&state.http, provider, &cfg, login_hint, rx, move |url| {
         opener
             .opener()
             .open_url(url, None::<&str>)
@@ -107,35 +138,53 @@ pub async fn add_account(app: AppHandle, state: St<'_>, provider: Provider) -> R
     let encrypted = crypt::protect_str(&refresh)?;
 
     let id = state.db(|c| {
-        if let Some(id) = db::find_account(c, provider, &email)? {
+        let id = match db::find_account(c, provider, &email)? {
             // Re-signing in to an existing account: just replace its token.
-            db::set_refresh_token(c, &id, &encrypted)?;
-            db::set_sync_result(c, &id, None)?;
-            return Ok(id);
-        }
-        let n = db::account_count(c)?;
-        let account = Account {
-            id: Uuid::new_v4().simple().to_string(),
-            provider,
-            label: guess_label(&email),
-            email: email.clone(),
-            display_name: display_name.clone(),
-            color: PALETTE[n % PALETTE.len()].to_string(),
-            unread_count: 0,
-            last_sync: None,
-            last_error: None,
+            Some(id) => {
+                db::set_refresh_token(c, &id, &encrypted)?;
+                db::set_sync_result(c, &id, None)?;
+                id
+            }
+            None => {
+                let n = db::account_count(c)?;
+                let account = Account {
+                    id: Uuid::new_v4().simple().to_string(),
+                    provider,
+                    label: guess_label(&email),
+                    email: email.clone(),
+                    display_name: display_name.clone(),
+                    color: PALETTE[n % PALETTE.len()].to_string(),
+                    unread_count: 0,
+                    last_sync: None,
+                    last_error: None,
+                    calendar_access: false,
+                    calendar_sync: None,
+                    calendar_error: None,
+                };
+                db::insert_account(c, &account, &encrypted)?;
+                account.id
+            }
         };
-        db::insert_account(c, &account, &encrypted)?;
-        Ok(account.id)
+        if let Some(scope) = tokens.scope.as_deref() {
+            db::set_scopes(c, &id, scope)?;
+        }
+        Ok(id)
     })?;
     state.cache_token(&id, tokens.access_token, tokens.expires_in);
 
-    // First sync in the background; the UI refreshes on the event.
-    let st = state.inner().clone();
+    // First sync in the background; the UI refreshes on the events.
+    let st = state.clone();
     let sync_id = id.clone();
     tauri::async_runtime::spawn(async move {
         let report = sync::sync_one(&st, &sync_id).await;
         let _ = app.emit(MAIL_UPDATED, vec![report]);
+        if let Ok(account) = st.db(|c| db::get_account(c, &sync_id)) {
+            if account.calendar_access {
+                let _guard = st.calendar_lock.lock().await;
+                let _ = calendar::sync_account(&st, &account).await;
+                let _ = app.emit(CALENDAR_UPDATED, ());
+            }
+        }
     });
 
     state.db(|c| db::get_account(c, &id))
@@ -517,4 +566,129 @@ mod tests {
         assert_eq!(sanitize_filename("..\\..\\evil:name?.exe"), "_.._evil_name_.exe");
         assert_eq!(sanitize_filename("   "), "attachment");
     }
+}
+
+// ---------- calendar ----------
+
+#[tauri::command]
+pub fn list_calendars(state: St<'_>) -> Result<Vec<CalendarInfo>> {
+    let cfg = state.config().calendar;
+    state.db(|c| calendar::list_calendars(c, &cfg))
+}
+
+/// Cached events on visible calendars overlapping [from, to) (ms).
+#[tauri::command]
+pub fn list_calendar_events(state: St<'_>, from: i64, to: i64) -> Result<Vec<CalendarEvent>> {
+    let cfg = state.config().calendar;
+    state.db(|c| calendar::list_events(c, &cfg, from, to))
+}
+
+/// Saves which calendars show, their colors and the default; returns the calendars as
+/// they now are (with the new colors worked out).
+#[tauri::command]
+pub fn save_calendar_config(app: AppHandle, state: St<'_>, calendar: CalendarConfig) -> Result<Vec<CalendarInfo>> {
+    let cfg = state.save_calendar_config(calendar)?.calendar;
+    let list = state.db(|c| calendar::list_calendars(c, &cfg))?;
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    Ok(list)
+}
+
+/// Syncs every calendar now; the UI refreshes on the "calendar-updated" event.
+#[tauri::command]
+pub async fn sync_calendars(app: AppHandle, state: St<'_>) -> Result<()> {
+    calendar::sync_all(&state, true).await;
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    Ok(())
+}
+
+// ---------- calendars subscribed by URL ----------
+
+fn calendars_changed(app: &AppHandle, state: &AppState) -> Result<Vec<CalendarInfo>> {
+    let cfg = state.config().calendar;
+    let list = state.db(|c| calendar::list_calendars(c, &cfg))?;
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    Ok(list)
+}
+
+/// Subscribes to an .ics address (read once first, so a wrong one fails here).
+/// An empty `name` uses the calendar's own. Returns the calendars as they now are.
+#[tauri::command]
+pub async fn add_calendar_feed(app: AppHandle, state: St<'_>, url: String, name: String) -> Result<Vec<CalendarInfo>> {
+    feeds::add(&state, &url, &name).await?;
+    calendars_changed(&app, &state)
+}
+
+/// Renames a subscribed calendar and, with `url`, gives it a new address.
+#[tauri::command]
+pub async fn update_calendar_feed(
+    app: AppHandle,
+    state: St<'_>,
+    id: String,
+    name: String,
+    url: Option<String>,
+) -> Result<Vec<CalendarInfo>> {
+    feeds::update(&state, &id, &name, url.as_deref()).await?;
+    calendars_changed(&app, &state)
+}
+
+/// Unsubscribes, forgetting its events and its settings (shown or hidden, color).
+#[tauri::command]
+pub async fn remove_calendar_feed(app: AppHandle, state: St<'_>, id: String) -> Result<Vec<CalendarInfo>> {
+    {
+        let _guard = state.calendar_lock.lock().await;
+        state.db(|c| feeds::remove(c, &id))?;
+    }
+    let mut cfg = state.config().calendar;
+    if cfg.hidden.contains(&id) || cfg.colors.contains_key(&id) {
+        cfg.hidden.retain(|x| x != &id);
+        cfg.colors.remove(&id);
+        state.save_calendar_config(cfg)?;
+    }
+    calendars_changed(&app, &state)
+}
+
+// ---------- changing events ----------
+
+#[tauri::command]
+pub async fn create_calendar_event(app: AppHandle, state: St<'_>, event: NewEvent, notify: bool) -> Result<()> {
+    let r = calendar_edit::create(&state, event, notify).await;
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    r
+}
+
+/// Changes an event; `scope` picks one occurrence or the whole series of a repeating event.
+#[tauri::command]
+pub async fn update_calendar_event(
+    app: AppHandle,
+    state: St<'_>,
+    id: String,
+    changes: EventChanges,
+    scope: Scope,
+    notify: bool,
+) -> Result<()> {
+    let r = calendar_edit::update(&state, &id, changes, scope, notify).await;
+    // Also on failure, so the UI drops what it showed ahead of the save.
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    r
+}
+
+#[tauri::command]
+pub async fn delete_calendar_event(app: AppHandle, state: St<'_>, id: String, scope: Scope, notify: bool) -> Result<()> {
+    let r = calendar_edit::delete(&state, &id, scope, notify).await;
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    r
+}
+
+/// Accept ("accepted"), "tentative" or decline ("declined") an invitation.
+#[tauri::command]
+pub async fn rsvp_calendar_event(app: AppHandle, state: St<'_>, id: String, response: String, scope: Scope) -> Result<()> {
+    let r = calendar_edit::rsvp(&state, &id, &response, scope).await;
+    let _ = app.emit(CALENDAR_UPDATED, ());
+    r
+}
+
+/// Place suggestions for an event's location; `near` favours results around a point (lat, lon).
+#[tauri::command]
+pub async fn search_places(state: St<'_>, query: String, near: Option<(f64, f64)>) -> Result<Vec<places::Place>> {
+    places::search(&state.http, &query, near).await
 }

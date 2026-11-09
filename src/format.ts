@@ -1,10 +1,17 @@
 import type { Address } from "./types";
 
+/** "10:00 AM" (or "10:00" where the clock is 24-hour), with AM/PM always in capitals. */
+export function clockTime(t: number | Date, withMinutes = true): string {
+  return new Date(t)
+    .toLocaleTimeString(undefined, withMinutes ? { hour: "numeric", minute: "2-digit" } : { hour: "numeric" })
+    .replace(/\b(am|pm|a\.m\.|p\.m\.)/gi, (m) => m.replace(/\./g, "").toUpperCase());
+}
+
 export function listDate(ms: number): string {
   const d = new Date(ms);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return clockTime(d);
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);

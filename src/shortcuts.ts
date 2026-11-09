@@ -68,6 +68,10 @@ export const FIXED_SHORTCUTS: { label: string; key: string }[] = [
   { label: "Toggle sidebar", key: "ctrl+b" },
   { label: "Add to selection", key: "ctrl+Click" },
   { label: "Select a range", key: "shift+Click" },
+  { label: "Calendar: go to today", key: "t" },
+  { label: "Calendar: a day earlier / later", key: "ArrowLeft" },
+  { label: "Calendar: a page earlier / later", key: "shift+ArrowLeft" },
+  { label: "Calendar: show 4 to 7 days", key: "4" },
 ];
 
 const DEFS = new Map(SHORTCUTS.map((d) => [d.id, d]));

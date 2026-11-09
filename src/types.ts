@@ -19,6 +19,11 @@ export interface Account {
   unreadCount: number;
   lastSync: number | null;
   lastError: string | null;
+  /** Google accounts: whether the sign-in includes the Calendar scopes. */
+  calendarAccess: boolean;
+  /** When the calendars last synced without error (ms). */
+  calendarSync: number | null;
+  calendarError: string | null;
 }
 
 export interface MessageSummary {
@@ -66,6 +71,18 @@ export interface Config {
   tasks: TasksConfig;
   /** The name Home greets you by ("" = the first account's name). Saved with `saveDisplayName`. */
   displayName: string;
+  /** Saved on its own with `saveCalendarConfig`. */
+  calendar: CalendarConfig;
+}
+
+/** Calendar ids are Relay's: "{account id}:{Google calendar id}". */
+export interface CalendarConfig {
+  /** Calendars hidden from the Calendar page and Home. */
+  hidden: string[];
+  /** Colors picked in Relay ("#rrggbb"), overriding Google's. */
+  colors: Record<string, string>;
+  /** Where new events go ("" = the first account's primary calendar). */
+  defaultCalendar: string;
 }
 
 export interface TasksConfig {
@@ -126,4 +143,122 @@ export interface SyncReport {
   accountId: string;
   newMessages: number;
   error: string | null;
+}
+
+/**
+ * Fills for a calendar's events, each with a title color (4.5:1 contrast or more) and a lighter
+ * one for times and places (3:1 or more). Worked out in Rust (colors.rs).
+ */
+export interface EventColors {
+  base: string;
+  text: string;
+  muted: string;
+  lightBg: string;
+  lightText: string;
+  lightMuted: string;
+  darkBg: string;
+  darkText: string;
+  darkMuted: string;
+}
+
+export interface CalendarInfo {
+  id: string;
+  accountId: string;
+  accountEmail: string;
+  name: string;
+  isPrimary: boolean;
+  /** "owner", "writer", "reader" or "freeBusyReader". */
+  accessRole: string;
+  /** New events can go here. */
+  canWrite: boolean;
+  hidden: boolean;
+  isDefault: boolean;
+  googleColor: string;
+  customColor: string | null;
+  colors: EventColors;
+  lastError: string | null;
+  /** Subscribed by URL (an .ics feed): read-only and tied to no account (`accountId` is ""). */
+  isFeed: boolean;
+  /** Feeds: when they last refreshed without error (ms). Google calendars keep this on the account. */
+  lastSync: number | null;
+}
+
+export type RsvpResponse = "needsAction" | "accepted" | "tentative" | "declined";
+
+export interface Attendee {
+  email: string;
+  name: string;
+  response: RsvpResponse;
+  optional: boolean;
+  organizer: boolean;
+  isYou: boolean;
+}
+
+export interface CalendarEvent {
+  id: string;
+  calendarId: string;
+  accountId: string;
+  remoteId: string;
+  recurringEventId: string | null;
+  icalUid: string;
+  title: string;
+  location: string;
+  description: string;
+  /** ms. For all-day events use startDate/endDate. */
+  start: number;
+  end: number;
+  allDay: boolean;
+  /** All-day events: "2026-11-10"; endDate is the day after the last day. */
+  startDate: string | null;
+  endDate: string | null;
+  status: string;
+  /** Your reply to an invitation; null when it isn't an invitation to you. */
+  myResponse: RsvpResponse | null;
+  organizer: Address | null;
+  attendees: Attendee[];
+  htmlLink: string;
+  meetLink: string | null;
+  canEdit: boolean;
+}
+
+/** When an event happens: timed events use start/end (ms); all-day ones the dates, endDate being the day after the last. */
+export interface EventTimes {
+  allDay: boolean;
+  start: number;
+  end: number;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+export interface NewEvent {
+  calendarId: string;
+  title: string;
+  location: string;
+  times: EventTimes;
+  /** Guests' email addresses. */
+  attendees: string[];
+}
+
+/** Fields to change; anything left out stays as it is. */
+export interface EventChanges {
+  title?: string;
+  location?: string;
+  times?: EventTimes;
+  /** The whole guest list wanted (people already invited keep their replies). */
+  attendees?: string[];
+  /** Another calendar of the same account. */
+  calendarId?: string;
+}
+
+/** For one occurrence of a repeating event: just it, or the whole series. */
+export type EditScope = "this" | "all";
+
+/** A suggested place for an event's location (from OpenStreetMap, via Photon). */
+export interface Place {
+  name: string;
+  detail: string;
+  /** What goes in the location: the name and the address together. */
+  label: string;
+  lat: number;
+  lon: number;
 }

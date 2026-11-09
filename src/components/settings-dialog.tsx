@@ -1,9 +1,11 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import {
   IconArrowBackUp,
+  IconCalendar,
+  IconCalendarOff,
   IconCheck,
   IconChecklist,
   IconFolderOpen,
@@ -11,6 +13,8 @@ import {
   IconKeyboard,
   IconLogin2,
   IconPalette,
+  IconPencil,
+  IconPlus,
   IconAlertCircle,
   IconCircleCheck,
   IconDownload,
@@ -36,7 +40,16 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Field,
   FieldDescription,
@@ -47,7 +60,8 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -57,12 +71,14 @@ import { Separator } from "@/components/ui/separator";
 import { quick } from "@/lib/motion";
 import { ACCENTS, FONTS, isFontInstalled, setAppearance, useAppearance } from "@/appearance";
 import { ShortcutKbd } from "@/components/shortcut-kbd";
+import { ColorPicker } from "@/components/color-picker";
+import { EventBar } from "@/components/calendar/event-bar";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/updater";
 import appIcon from "../../app-icon.svg";
 import { api, errorText, isTauri } from "@/api";
-import { relativeTime } from "@/format";
+import { clockTime, relativeTime } from "@/format";
 import {
   FIXED_SHORTCUTS,
   SHORTCUTS,
@@ -80,7 +96,18 @@ import {
   useShortcutBindings,
   type ShortcutDef,
 } from "@/shortcuts";
-import type { Account, Config, Provider } from "@/types";
+import type { Account, CalendarInfo, Config, Provider } from "@/types";
+import {
+  addCalendarFeed,
+  removeCalendarFeed,
+  setCalendarColor,
+  updateCalendarFeed,
+  setCalendarHidden,
+  setDefaultCalendar,
+  syncCalendars,
+  useCalendarUpdates,
+  useCalendars,
+} from "@/calendar/store";
 import { saveDisplayName, saveTasksConfig, useTasksState } from "@/tasks/store";
 import { greetingName } from "@/components/home/home-welcome";
 import { chooseVault } from "@/components/tasks/tasks-setup";
@@ -99,6 +126,7 @@ interface Props {
 const SECTIONS = [
   { id: "home", group: "General", label: "Home", icon: IconSmartHome, note: "Home settings save automatically." },
   { id: "tasks", group: "General", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
+  { id: "calendar", group: "General", label: "Calendar", icon: IconCalendar, note: "Calendar settings save automatically." },
   { id: "accounts", group: "Mail", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
   { id: "connections", group: "Mail", label: "Connections", icon: IconPlugConnected, note: "Save to apply connection changes." },
   { id: "appearance", group: "App", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
@@ -131,7 +159,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
           </>
         }
       >
-        <DialogDescription className="sr-only">Home, tasks, mail accounts and connections, appearance, keyboard shortcuts and updates.</DialogDescription>
+        <DialogDescription className="sr-only">Home, tasks, calendars, mail accounts and connections, appearance, keyboard shortcuts and updates.</DialogDescription>
         <Tabs
           value={section}
           onValueChange={(v) => setSection(v as Section)}
@@ -166,6 +194,10 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
             <TabsContent value="tasks">
               <SectionTitle>{SECTIONS.find((x) => x.id === "tasks")!.label}</SectionTitle>
               <TasksTab />
+            </TabsContent>
+            <TabsContent value="calendar">
+              <SectionTitle>{SECTIONS.find((x) => x.id === "calendar")!.label}</SectionTitle>
+              <CalendarTab accounts={accounts} onAccountsChanged={onAccountsChanged} />
             </TabsContent>
             <TabsContent value="connections">
               <SectionTitle>{SECTIONS.find((x) => x.id === "connections")!.label}</SectionTitle>
@@ -319,6 +351,450 @@ function TasksTab() {
   );
 }
 
+/** Google calendars: which show, their colors, and where new events go. */
+function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onAccountsChanged: () => void }) {
+  const cal = useCalendars();
+  const google = accounts.filter((a) => a.provider === "google");
+  // A finished sync changes each account's "synced" time and errors.
+  useCalendarUpdates(onAccountsChanged);
+
+  if (cal.status === "loading") {
+    return (
+      <div className="flex justify-center py-10">
+        <Spinner />
+      </div>
+    );
+  }
+
+  const writable = cal.calendars.filter((c) => c.canWrite && !c.hidden);
+  const defaultCal = cal.calendars.find((c) => c.isDefault);
+  const feeds = cal.calendars.filter((c) => c.isFeed);
+  const lastSync = Math.max(0, ...google.map((a) => a.calendarSync ?? 0), ...feeds.map((c) => c.lastSync ?? 0)) || null;
+
+  const sync = () => syncCalendars().catch((e) => toast.error(errorText(e)));
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col divide-y">
+        {google.length > 0 && (
+          <SettingRow title="Default calendar" description="New events go here. You can pick another calendar on each event.">
+            <Select
+              value={defaultCal?.id ?? ""}
+              onValueChange={(id) => void setDefaultCalendar(id).catch((e) => toast.error(errorText(e)))}
+              disabled={writable.length === 0}
+            >
+              <SelectTrigger className="w-60 shrink-0">
+                <SelectValue placeholder="No calendar yet" />
+              </SelectTrigger>
+              <SelectContent>
+                {google.map((a) => {
+                  const own = writable.filter((c) => c.accountId === a.id);
+                  if (own.length === 0) return null;
+                  return (
+                    <SelectGroup key={a.id}>
+                      <SelectLabel>{a.email}</SelectLabel>
+                      {own.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.colors.base }} />
+                          <span className="truncate">{calendarName(c)}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+        <SettingRow
+          title="Sync"
+          description={`Relay checks Google calendars every 5 minutes and subscribed ones every 15${lastSync ? `; last synced ${relativeTime(lastSync)}` : ""}.`}
+        >
+          <Button variant="outline" className="shrink-0" disabled={cal.syncing} onClick={() => void sync()}>
+            {cal.syncing ? <Spinner /> : <IconRefresh />}
+            Sync now
+          </Button>
+        </SettingRow>
+      </div>
+      {cal.error && (
+        <p className="flex items-start gap-2 text-sm text-destructive">
+          <IconAlertCircle className="mt-0.5 size-4 shrink-0" />
+          {cal.error}
+        </p>
+      )}
+      {google.length === 0 ? (
+        <p className="rounded-lg border px-4 py-3.5 text-sm text-muted-foreground">
+          Add a Gmail account to see its Google calendars here, or subscribe to a calendar by its address below.
+        </p>
+      ) : (
+        google.map((a) => (
+          <AccountCalendars
+            key={a.id}
+            account={a}
+            calendars={cal.calendars.filter((c) => c.accountId === a.id)}
+            onAccountsChanged={onAccountsChanged}
+          />
+        ))
+      )}
+      <FeedCalendars feeds={feeds} />
+    </div>
+  );
+}
+
+/** Calendars subscribed by an .ics address: view-only, for accounts Relay can't sign in to. */
+function FeedCalendars({ feeds }: { feeds: CalendarInfo[] }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium">Subscribed by URL</h3>
+          <p className="text-xs text-muted-foreground">
+            View-only calendars from an iCal address, for when your organization won't let Relay connect to the account.
+          </p>
+        </div>
+        <FeedDialog>
+          <Button variant="outline" size="sm" className="shrink-0">
+            <IconPlus />
+            Add by URL
+          </Button>
+        </FeedDialog>
+      </div>
+      {feeds.length === 0 ? (
+        <p className="rounded-lg border border-dashed px-4 py-3.5 text-sm text-muted-foreground">No subscribed calendars yet.</p>
+      ) : (
+        <div className="flex flex-col divide-y rounded-lg border">
+          {feeds.map((c) => (
+            <CalendarRow key={c.id} calendar={c} actions={<FeedActions calendar={c} />} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Adds a subscribed calendar, or (with `feed`) renames one or gives it a new address. */
+function FeedDialog({ feed, children }: { feed?: CalendarInfo; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = (next: boolean) => {
+    setOpen(next);
+    if (next) {
+      setUrl("");
+      setName(feed?.name ?? "");
+      setError(null);
+    }
+  };
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (feed) {
+        await updateCalendarFeed(feed.id, name, url.trim() || null);
+        toast.success(url.trim() ? `${name.trim() || feed.name} now uses the new address` : "Calendar renamed");
+      } else {
+        await addCalendarFeed(url, name);
+        toast.success("Calendar subscribed");
+      }
+      setOpen(false);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !busy && reset(v)}>
+      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{feed ? `Edit ${feed.name}` : "Subscribe to a calendar"}</DialogTitle>
+          <DialogDescription>
+            In Google Calendar on the web, open Settings, pick the calendar under "Settings for my calendars", and copy
+            the <span className="font-medium text-foreground">Secret address in iCal format</span>. Any .ics address works.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <FieldGroup>
+            <Field data-invalid={!!error || undefined}>
+              <FieldLabel htmlFor="feed-url">{feed ? "New address" : "Address"}</FieldLabel>
+              <Input
+                id="feed-url"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={feed ? "Leave empty to keep the current one" : "https://calendar.google.com/calendar/ical/…/basic.ics"}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                aria-invalid={!!error || undefined}
+              />
+              <FieldDescription>
+                Anyone with this address can see the calendar, so Relay keeps it encrypted on this PC and never shows it
+                again. If it leaks, reset it in Google Calendar and paste the new one here.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="feed-name">Name</FieldLabel>
+              <Input
+                id="feed-name"
+                autoComplete="off"
+                placeholder="The calendar's own name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+          </FieldGroup>
+          {error && (
+            <p role="alert" className="flex items-start gap-2 text-sm text-destructive">
+              <IconAlertCircle className="mt-0.5 size-4 shrink-0" />
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" disabled={busy}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={busy || (!feed && !url.trim())}>
+              {busy && <Spinner />}
+              {busy ? "Reading calendar…" : feed ? "Save" : "Subscribe"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FeedActions({ calendar: c }: { calendar: CalendarInfo }) {
+  const remove = () =>
+    removeCalendarFeed(c.id)
+      .then(() => toast.success(`Unsubscribed from ${c.name}`))
+      .catch((e) => toast.error(errorText(e)));
+  return (
+    <>
+      <FeedDialog feed={c}>
+        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${c.name}`}>
+          <IconPencil />
+        </Button>
+      </FeedDialog>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="ghost" size="icon-sm" className="text-destructive" aria-label={`Unsubscribe from ${c.name}`}>
+            <IconTrash />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsubscribe from {c.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Relay forgets the address and its copy of the events. The calendar itself isn't changed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void remove()}>
+              Unsubscribe
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+/** Google names an account's main calendar after its address; the heading already shows that. */
+function calendarName(c: CalendarInfo) {
+  return c.isPrimary && c.name === c.accountEmail ? "Main calendar" : c.name;
+}
+
+const ACCESS_TEXT: Record<string, string> = {
+  owner: "Yours",
+  writer: "You can edit",
+  reader: "View only",
+  freeBusyReader: "Free/busy only",
+};
+
+function AccountCalendars({ account: a, calendars, onAccountsChanged }: {
+  account: Account;
+  calendars: CalendarInfo[];
+  onAccountsChanged: () => void;
+}) {
+  const [granting, setGranting] = useState(false);
+
+  const grant = async () => {
+    setGranting(true);
+    try {
+      await api.grantCalendarAccess(a.id);
+      onAccountsChanged();
+      await syncCalendars();
+      toast.success(`Calendar access allowed for ${a.email}`);
+    } catch (e) {
+      const text = errorText(e);
+      if (text !== "Sign-in cancelled.") toast.error(text);
+    } finally {
+      setGranting(false);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-4">
+        <h3 className="truncate text-sm font-medium">{a.email}</h3>
+        {a.calendarAccess && (
+          <span className={cn("shrink-0 text-xs", a.calendarError ? "text-destructive" : "text-muted-foreground")}>
+            {a.calendarError ? "Couldn't sync" : a.calendarSync ? `Synced ${relativeTime(a.calendarSync)}` : "Not synced yet"}
+          </span>
+        )}
+      </div>
+      {!a.calendarAccess ? (
+        <div className="flex items-center gap-4 rounded-lg border border-dashed px-4 py-3.5">
+          <IconCalendarOff className="size-5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1 text-sm">
+            <div className="font-medium">Calendar access needed</div>
+            <div className="text-muted-foreground">
+              This account was added before Relay had a calendar. Sign in once more and keep the Calendar boxes ticked.
+            </div>
+          </div>
+          {granting ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner />
+                Waiting for Google…
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => void api.cancelSignIn()}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button className="shrink-0" onClick={() => void grant()}>
+              <IconLogin2 />
+              Allow access
+            </Button>
+          )}
+        </div>
+      ) : (
+        <>
+          {a.calendarError && (
+            <p className="flex items-start gap-2 text-sm text-destructive">
+              <IconAlertCircle className="mt-0.5 size-4 shrink-0" />
+              {a.calendarError}
+            </p>
+          )}
+          {calendars.length === 0 ? (
+            <p className="rounded-lg border px-4 py-3.5 text-sm text-muted-foreground">
+              {a.calendarError ? "No calendars yet." : "Calendars appear here after the first sync."}
+            </p>
+          ) : (
+            <div className="flex flex-col divide-y rounded-lg border">
+              {calendars.map((c) => (
+                <CalendarRow key={c.id} calendar={c} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function CalendarRow({ calendar: c, actions }: { calendar: CalendarInfo; actions?: React.ReactNode }) {
+  const saved = c.customColor ?? c.googleColor;
+  const [color, setColor] = useState(saved);
+  useEffect(() => setColor(saved), [saved]);
+  const timer = useRef<number | undefined>(undefined);
+  const fail = useCallback((e: unknown) => toast.error(errorText(e)), []);
+
+  // The picker reports every drag step; save once it settles so the preview keeps up without a flood of writes.
+  const pick = (next: string) => {
+    setColor(next);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      if (next.toLowerCase() !== saved.toLowerCase()) void setCalendarColor(c.id, next).catch(fail);
+    }, 200);
+  };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const subtitle = [
+    c.isPrimary && calendarName(c) !== "Main calendar" ? "Main calendar" : null,
+    ACCESS_TEXT[c.accessRole] ?? c.accessRole,
+    c.isFeed ? (c.lastSync ? `Synced ${relativeTime(c.lastSync)}` : "Not synced yet") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <Checkbox
+        checked={!c.hidden}
+        onCheckedChange={(v) => void setCalendarHidden(c.id, v !== true).catch(fail)}
+        aria-label={`Show ${calendarName(c)}`}
+      />
+      <ColorPicker label={`Color of ${calendarName(c)}`} value={color} onChange={pick} presets={CALENDAR_COLORS} />
+      <div className={cn("min-w-0 flex-1 transition-opacity", c.hidden && "opacity-50")}>
+        <div className="truncate text-sm">{calendarName(c)}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {subtitle}
+          {c.lastError && <span className="text-destructive"> · {c.lastError}</span>}
+        </div>
+      </div>
+      {c.customColor && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-sm" onClick={() => void setCalendarColor(c.id, null).catch(fail)}>
+              <IconArrowBackUp />
+              <span className="sr-only">{c.isFeed ? "Use the original color" : "Use Google's color"}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{c.isFeed ? "Use the original color" : "Use Google's color"}</TooltipContent>
+        </Tooltip>
+      )}
+      {actions}
+      <EventPreview calendar={c} />
+    </div>
+  );
+}
+
+/** A sample event in the calendar's colors, as the Calendar page will draw it in this theme. */
+function EventPreview({ calendar: c }: { calendar: CalendarInfo }) {
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === "dark";
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "relative flex w-40 shrink-0 flex-col gap-0.5 rounded-lg py-1.5 pr-2 pl-3 text-xs leading-snug shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--event-bar)_22%,transparent)] transition-opacity",
+        c.hidden && "opacity-40",
+      )}
+      style={
+        {
+          "--event-bar": c.colors.base,
+          backgroundColor: dark ? c.colors.darkBg : c.colors.lightBg,
+          color: dark ? c.colors.darkText : c.colors.lightText,
+        } as React.CSSProperties
+      }
+    >
+      <EventBar />
+      <span className="truncate text-[13px] font-semibold">{c.isPrimary ? "Coffee with Sam" : calendarName(c)}</span>
+      <span style={{ color: dark ? c.colors.darkMuted : c.colors.lightMuted }}>
+        {clockTime(new Date(2000, 0, 1, 9))} – {clockTime(new Date(2000, 0, 1, 10))}
+      </span>
+    </div>
+  );
+}
+
 function ConnectionsTab() {
   const [cfg, setCfg] = useState<Config | null>(null);
   const [saving, setSaving] = useState(false);
@@ -400,6 +876,14 @@ function ConnectionsTab() {
 
 const LABELS = ["Personal", "Work", "School"];
 
+/** Account colours offered in the picker (Relay's defaults, as in commands.rs, and a few more). */
+const ACCOUNT_COLORS = ["#008dff", "#33c759", "#6a42e1", "#df9147", "#ee665a", "#cf9943", "#14b8a6", "#ec4899", "#64748b"];
+/** Google Calendar's own palette, so a colour picked here also looks at home in Google. */
+const CALENDAR_COLORS = [
+  "#d50000", "#e67c73", "#f4511e", "#f6bf26", "#33b679", "#0b8043",
+  "#039be5", "#3f51b5", "#7986cb", "#8e24aa", "#616161", "#a79b8e",
+];
+
 function AccountsTab({ accounts, onChanged, onReconnect }: {
   accounts: Account[];
   onChanged: () => void;
@@ -434,6 +918,15 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
     }
   };
 
+  // The picker reports every drag step; save once it settles.
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const pickColor = (next: string) => {
+    setColor(next);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => next.toLowerCase() !== a.color.toLowerCase() && void update(a.label, next), 300);
+  };
+
   const remove = async () => {
     try {
       await api.removeAccount(a.id);
@@ -446,14 +939,7 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
 
   return (
     <div className="flex items-center gap-3 py-3">
-      <input
-        type="color"
-        aria-label="Account color"
-        className="size-7 shrink-0 cursor-pointer rounded-md border bg-transparent p-0.5"
-        value={color}
-        onChange={(e) => setColor(e.target.value)}
-        onBlur={() => color !== a.color && update(a.label, color)}
-      />
+      <ColorPicker label="Account color" value={color} onChange={pickColor} presets={ACCOUNT_COLORS} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{a.email}</div>
         <div className="truncate text-xs text-muted-foreground">

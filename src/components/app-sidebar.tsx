@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
+  IconCalendar,
   IconChecklist,
   IconChevronRight,
   IconSchool,
@@ -45,6 +46,7 @@ import type { Account, Folder, Provider } from "@/types";
 import { relativeTime } from "@/format";
 import { FOLDERS } from "@/folders";
 import { useTasks } from "@/tasks/store";
+import { useTodayEvents } from "@/calendar/events";
 
 /**
  * Home, or the Tasks list (optionally filtered to a section). Mail: all inboxes and groups show
@@ -53,12 +55,13 @@ import { useTasks } from "@/tasks/store";
 export type View =
   | { kind: "home" }
   | { kind: "tasks"; section?: string }
+  | { kind: "calendar" }
   | { kind: "all" }
   | { kind: "label"; label: string }
   | { kind: "account"; id: string; folder: Folder };
 
-/** Home and Tasks: pages without a message list. */
-export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks";
+/** Home, Tasks and Calendar: pages without a message list. */
+export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks" || v.kind === "calendar";
 
 const LABEL_ORDER = ["Personal", "Work", "School"];
 const LABEL_ICONS: Record<string, TablerIcon> = {
@@ -160,10 +163,11 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
   );
 }
 
-/** Home and Tasks, at the top of the sidebar. Tasks shows how many are open. */
+/** Home, Tasks and Calendar, at the top of the sidebar, with open tasks and today's events counted. */
 function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) {
   const t = useTasks();
   const open = t.status === "ready" ? t.tasks.length : 0;
+  const today = useTodayEvents().length;
   return (
     <>
       <SidebarMenuItem>
@@ -178,6 +182,13 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
           <span>Tasks</span>
         </SidebarMenuButton>
         {open > 0 && <SidebarMenuBadge>{open}</SidebarMenuBadge>}
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton isActive={view.kind === "calendar"} onClick={() => onView({ kind: "calendar" })}>
+          <IconCalendar />
+          <span>Calendar</span>
+        </SidebarMenuButton>
+        {today > 0 && <SidebarMenuBadge>{today}</SidebarMenuBadge>}
       </SidebarMenuItem>
     </>
   );

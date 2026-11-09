@@ -17,7 +17,7 @@ use crate::error::{Error, Result};
 use crate::gmail::{self, Change, GMessage};
 use crate::models::{Account, Folder, Provider, SyncReport};
 use crate::state::AppState;
-use crate::{db, graph};
+use crate::{calendar, db, graph};
 
 pub const MAIL_UPDATED: &str = "mail-updated";
 
@@ -179,10 +179,18 @@ pub async fn sync_one(state: &AppState, account_id: &str) -> SyncReport {
 pub fn spawn_background(app: AppHandle, state: Arc<AppState>) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(1)).await;
+        let mut calendars_synced: Option<i64> = None;
         loop {
             let reports = sync_all(&state).await;
             if !reports.is_empty() {
                 let _ = app.emit(MAIL_UPDATED, &reports);
+            }
+            // Calendars change less often than mail, so they refresh on a slower beat.
+            let now = chrono::Utc::now().timestamp();
+            if calendars_synced.is_none_or(|t| now - t >= calendar::SYNC_EVERY_SECS) {
+                calendar::sync_all(&state, false).await;
+                calendars_synced = Some(now);
+                let _ = app.emit(calendar::CALENDAR_UPDATED, ());
             }
             let secs = state.config().sync_interval_secs;
             tokio::time::sleep(Duration::from_secs(secs)).await;

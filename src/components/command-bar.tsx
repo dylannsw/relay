@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Command as CommandPrimitive } from "cmdk";
 import { useTheme } from "next-themes";
 import {
+  IconCalendar,
   IconChecklist,
   IconEdit,
   IconFilter,
@@ -146,6 +147,7 @@ export function CommandBar(p: Props) {
     return [
       { id: "go-home", label: "Home", keywords: "overview dashboard start", icon: <IconSmartHome />, run: () => p.onNavigate({ kind: "home" }) },
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
+      { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <IconCalendar />, run: () => p.onNavigate({ kind: "calendar" }) },
       ...taskSections.map((section) => ({
         id: `go-section-${section}`,
         label: section,

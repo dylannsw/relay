@@ -10,6 +10,7 @@ import { TitleBar } from "@/components/title-bar";
 import { AppSidebar, isPageView, type View } from "@/components/app-sidebar";
 import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
+import { CalendarPage } from "@/components/calendar/calendar-page";
 import { MailList, type Filter } from "@/components/mail-list";
 import { MailReader } from "@/components/mail-reader";
 import { CommandBar } from "@/components/command-bar";
@@ -454,7 +455,7 @@ export default function App() {
         : folderLabel(view.folder);
   const openSettings = (section?: SettingsSection) => {
     closeReader();
-    setSettingsSection(section ?? (view.kind === "home" ? "home" : view.kind === "tasks" ? "tasks" : undefined));
+    setSettingsSection(section ?? (view.kind === "home" ? "home" : view.kind === "tasks" ? "tasks" : view.kind === "calendar" ? "calendar" : undefined));
     setSettingsOpen(true);
   };
   const viewAccount = view.kind === "account" ? accountById.get(view.id) : undefined;
@@ -507,6 +508,7 @@ export default function App() {
             <HomePage
               accounts={accounts}
               onOpenTasks={() => setView({ kind: "tasks" })}
+              onOpenCalendar={() => setView({ kind: "calendar" })}
               onOpenMail={() => {
                 setView({ kind: "all" });
                 clearSelection();
@@ -514,6 +516,8 @@ export default function App() {
             />
           ) : view.kind === "tasks" ? (
             <TasksPage section={view.section} onOpenSettings={() => openSettings("tasks")} />
+          ) : view.kind === "calendar" ? (
+            <CalendarPage onOpenSettings={() => openSettings("calendar")} />
           ) : (
           <MailList
             title={viewTitle}

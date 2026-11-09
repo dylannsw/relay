@@ -25,7 +25,24 @@ use crate::models::Provider;
 
 const GOOGLE_AUTH: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN: &str = "https://oauth2.googleapis.com/token";
-const GOOGLE_SCOPES: &str = "https://www.googleapis.com/auth/gmail.modify";
+const GOOGLE_SCOPES: &str = "https://www.googleapis.com/auth/gmail.modify \
+    https://www.googleapis.com/auth/calendar.events \
+    https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+
+/// Scopes Relay needs for the Calendar page. Accounts added before Calendar existed lack
+/// these until they sign in again.
+pub const GOOGLE_CALENDAR_SCOPES: [&str; 2] = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+];
+
+/// Whether a granted-scopes string (space-separated, as the token endpoint returns it)
+/// includes everything the Calendar page needs. Google lets people untick boxes on the
+/// consent screen, so a fresh sign-in can still come back without them.
+pub fn has_calendar_scopes(granted: &str) -> bool {
+    let granted: Vec<&str> = granted.split_whitespace().collect();
+    GOOGLE_CALENDAR_SCOPES.iter().all(|s| granted.contains(s))
+}
 
 // "common" accepts personal Microsoft accounts and any work/school (Entra ID) tenant.
 const MS_AUTH: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
@@ -39,6 +56,8 @@ pub struct Tokens {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub expires_in: i64,
+    /// Space-separated scopes the user granted, when the provider says.
+    pub scope: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -46,6 +65,7 @@ struct TokenJson {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: Option<i64>,
+    scope: Option<String>,
 }
 
 struct Client {
@@ -92,6 +112,7 @@ pub async fn authorize(
     http: &reqwest::Client,
     provider: Provider,
     cfg: &Config,
+    login_hint: Option<&str>,
     cancel: oneshot::Receiver<()>,
     open: impl FnOnce(&str) -> Result<()>,
 ) -> Result<Tokens> {
@@ -135,6 +156,9 @@ pub async fn authorize(
                     .append_pair("response_mode", "query")
                     .append_pair("prompt", "select_account");
             }
+        }
+        if let Some(hint) = login_hint {
+            q.append_pair("login_hint", hint);
         }
     }
 
@@ -217,6 +241,7 @@ async fn token_request(
         access_token: t.access_token,
         refresh_token: t.refresh_token,
         expires_in: t.expires_in.unwrap_or(3600),
+        scope: t.scope,
     })
 }
 
