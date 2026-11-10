@@ -4,7 +4,7 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,opacity,translate] outline-none select-none focus-visible:border-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
   {
     variants: {
       variant: {
@@ -17,6 +17,12 @@ const buttonVariants = cva(
           "hover:bg-foreground/[0.07] hover:text-foreground aria-expanded:bg-foreground/[0.07] aria-expanded:text-foreground dark:hover:bg-foreground/10",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        // Same tinted pill as destructive, in neutral grey (for the actions beside Delete).
+        tinted:
+          "bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.11] hover:text-foreground focus-visible:border-foreground/30 focus-visible:ring-foreground/10 dark:bg-foreground/10 dark:hover:bg-foreground/[0.16]",
+        // The same pill in mustard yellow (Star).
+        mustard:
+          "bg-yellow-500/15 text-yellow-700 hover:bg-yellow-500/25 focus-visible:border-yellow-600/40 focus-visible:ring-yellow-500/20 dark:bg-yellow-400/15 dark:text-yellow-400 dark:hover:bg-yellow-400/25",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

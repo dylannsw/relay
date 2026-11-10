@@ -3,7 +3,7 @@ import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
 import { IconCheck, IconChecks, IconChevronDown, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { glide, smooth } from "@/lib/motion";
+import { glide, quick, smooth } from "@/lib/motion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -199,7 +199,7 @@ export function TasksPage({ section: requested, onOpenSettings }: { section?: st
         <ScrollArea className="min-h-0 flex-1">
           <motion.div
             key={active}
-            className="flex flex-col p-3 pb-1"
+            className="flex flex-col gap-6 p-3 pb-1"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={smooth}
@@ -229,7 +229,7 @@ export function TasksPage({ section: requested, onOpenSettings }: { section?: st
                           className="overflow-hidden"
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0, x: 24 }}
+                          exit={{ opacity: 0, height: 0, transition: quick }}
                           transition={smooth}
                         >
                           <div className="pb-2">
@@ -268,7 +268,15 @@ export function TasksPage({ section: requested, onOpenSettings }: { section?: st
         />
       )}
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
-        <AlertDialogContent size="sm">
+        <AlertDialogContent
+          size="sm"
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || !deleting) return;
+            e.preventDefault();
+            void remove(deleting);
+            setDeleting(null);
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this task?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -393,7 +401,7 @@ function RowAction({ label, onClick, destructive, children }: {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant={destructive ? "destructive" : "ghost"}
+          variant={destructive ? "destructive" : "tinted"}
           size="icon-xs"
           className="[&_svg:not([class*='size-'])]:size-4.5"
           onClick={(e) => {

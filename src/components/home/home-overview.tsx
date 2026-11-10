@@ -48,10 +48,11 @@ export function HomeOverview(p: OverviewProps) {
   // Dates in Tick's date format, in title case ("28 Oct 26").
   const date = (d: Date) => formatDate(d, p.dateFormat, false);
   return (
-    <Card className={cn("@container gap-0 py-0", p.className)}>
+    // Its edges and lines catch the light of the add-task glow (see `.halo-glint` in styles.css).
+    <Card className={cn("halo-glint-inset relative @container gap-0 py-0", p.className)}>
       {/* Equal padding above and below: the stock header adds extra bottom padding when bordered,
           and a row gap for the empty second row that CardAction spans. */}
-      <CardHeader className="gap-y-0 border-b py-3.5 [.border-b]:pb-3.5">
+      <CardHeader className="halo-glint relative gap-y-0 border-b py-3.5 [.border-b]:pb-3.5">
         <CardTitle className="flex h-6 items-center">
           <span className="[text-box:trim-both_cap_alphabetic]">Overview</span>
         </CardTitle>
@@ -64,7 +65,7 @@ export function HomeOverview(p: OverviewProps) {
         </CardAction>
       </CardHeader>
       {/* The 1px gaps over a border-coloured background draw the lines between tiles. */}
-      <div className={cn("grid grid-cols-2 gap-px bg-border @3xl:grid-cols-4", s && "border-b")}>
+      <div className={cn("halo-glint-fill grid grid-cols-2 gap-px bg-border @3xl:grid-cols-4", s && "halo-glint relative border-b")}>
         <Stat icon={<IconCircleCheck />} label="Tasks Completed" value={s ? s.week.toLocaleString() : "–"} onClick={p.onOpenTasks}>
           {s ? <Delta change={s.week - s.previousWeek} versus="vs past week" /> : "Connect your vault"}
         </Stat>

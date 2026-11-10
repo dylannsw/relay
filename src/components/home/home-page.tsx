@@ -9,6 +9,7 @@ import type { Account } from "@/types";
 import { HomeBanner } from "./home-banner";
 import { HomeOverview } from "./home-overview";
 import { greetingName, HomeWelcome } from "./home-welcome";
+import { Shockwave, type ShockwaveHandle } from "./shockwave";
 import { TaskComposer } from "./task-composer";
 
 /** Width of Home's centred column (the greeting, the overview and the add-task box). */
@@ -36,6 +37,7 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
   const ready = t.status === "ready";
   const unread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const scroller = useRef<HTMLDivElement>(null);
+  const halo = useRef<ShockwaveHandle>(null);
   const [height, setHeight] = useState(0);
 
   // The scroll area's own height, so its content can fill it (the banner takes the rest).
@@ -58,7 +60,7 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <ScrollArea ref={scroller} className="min-h-0 flex-1">
         <div className="flex flex-col" style={{ minHeight: height || undefined }}>
           {/* The banner reaches 2.5rem under the greeting (where its fade is faintest); it starts
@@ -96,8 +98,16 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
         </div>
       </ScrollArea>
       <div className="shrink-0 pb-4">
-        <TaskComposer className={COLUMN} sections={t.addSections} ready={ready} vaultPath={t.vaultPath} />
+        <TaskComposer
+          className={COLUMN}
+          sections={t.addSections}
+          ready={ready}
+          vaultPath={t.vaultPath}
+          onAdded={(box) => halo.current?.fire(box)}
+        />
       </div>
+      {/* The glow that sweeps up the page when a task is added. */}
+      <Shockwave ref={halo} />
     </div>
   );
 }

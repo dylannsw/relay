@@ -16,6 +16,42 @@ export const ACCENTS: Accent[] = [
   { id: "graphite", label: "Dark gray", light: "#3f3f46", dark: "#6b6b74" },
 ];
 
+/** The accent id for a colour picked with the colour picker (`AppearancePrefs.customAccent`). */
+export const CUSTOM_ACCENT = "custom";
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+function rgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function toHex([r, g, b]: [number, number, number]): string {
+  return "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+}
+
+function luminance(hex: string): number {
+  const [r, g, b] = rgb(hex).map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** White text unless the colour is light enough that near-black reads better. */
+function textOn(hex: string): string {
+  const l = luminance(hex);
+  const onWhite = 1.05 / (l + 0.05);
+  const onDark = (l + 0.05) / (luminance("#1f1f1f") + 0.05);
+  return onWhite >= onDark ? "oklch(0.985 0 0)" : "#1f1f1f";
+}
+
+/** The custom colour as an accent: as picked in light mode, a touch brighter in dark mode. */
+export function customAccent(hex: string): Accent {
+  const dark = toHex(rgb(hex).map((v) => v + (255 - v) * 0.12) as [number, number, number]);
+  return { id: CUSTOM_ACCENT, label: "Custom", light: hex, dark };
+}
+
 export interface FontChoice {
   id: string;
   label: string;
@@ -44,13 +80,28 @@ export function isFontInstalled(name: string): boolean {
   });
 }
 
+export const TOAST_POSITIONS = [
+  { id: "top-left", label: "Top left" },
+  { id: "top-center", label: "Top centre" },
+  { id: "top-right", label: "Top right" },
+  { id: "bottom-left", label: "Bottom left" },
+  { id: "bottom-center", label: "Bottom centre" },
+  { id: "bottom-right", label: "Bottom right" },
+] as const;
+
+export type ToastPosition = (typeof TOAST_POSITIONS)[number]["id"];
+
 export interface AppearancePrefs {
   accent: string;
+  /** The colour-picker colour as "#rrggbb"; "" until one is picked. Kept when a preset is chosen. */
+  customAccent: string;
   font: string;
+  /** Where notifications (toasts) appear. */
+  toastPosition: ToastPosition;
 }
 
 const KEY = "relay.appearance";
-const DEFAULTS: AppearancePrefs = { accent: "blue", font: "default" };
+const DEFAULTS: AppearancePrefs = { accent: "blue", customAccent: "", font: "default", toastPosition: "bottom-right" };
 
 let prefs: AppearancePrefs = DEFAULTS;
 const listeners = new Set<() => void>();
@@ -60,22 +111,34 @@ function read(): AppearancePrefs {
     const raw = localStorage.getItem(KEY);
     const saved: AppearancePrefs = raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
     // Choices that no longer exist fall back to the defaults.
+    const custom = typeof saved.customAccent === "string" && HEX.test(saved.customAccent) ? saved.customAccent : "";
+    const accentOk = ACCENTS.some((a) => a.id === saved.accent) || (saved.accent === CUSTOM_ACCENT && custom !== "");
     return {
-      accent: ACCENTS.some((a) => a.id === saved.accent) ? saved.accent : DEFAULTS.accent,
+      accent: accentOk ? saved.accent : DEFAULTS.accent,
+      customAccent: custom,
       font: FONTS.some((x) => x.id === saved.font) ? saved.font : DEFAULTS.font,
+      toastPosition: TOAST_POSITIONS.some((x) => x.id === saved.toastPosition) ? saved.toastPosition : DEFAULTS.toastPosition,
     };
   } catch {
     return DEFAULTS;
   }
 }
 
-/** Sets the CSS variables the stylesheet reads (`--accent-light/-dark`, `--app-font`). */
+/** The accent in use, preset or custom. */
+export function currentAccent(p: AppearancePrefs): Accent {
+  if (p.accent === CUSTOM_ACCENT && HEX.test(p.customAccent)) return customAccent(p.customAccent);
+  return ACCENTS.find((a) => a.id === p.accent) ?? ACCENTS[0];
+}
+
+/** Sets the CSS variables the stylesheet reads (`--accent-light/-dark(-fg)`, `--app-font`). */
 function apply(p: AppearancePrefs) {
   const root = document.documentElement.style;
-  const accent = ACCENTS.find((a) => a.id === p.accent) ?? ACCENTS[0];
+  const accent = currentAccent(p);
   const font = FONTS.find((f) => f.id === p.font) ?? FONTS[0];
   root.setProperty("--accent-light", accent.light);
   root.setProperty("--accent-dark", accent.dark);
+  root.setProperty("--accent-light-fg", textOn(accent.light));
+  root.setProperty("--accent-dark-fg", textOn(accent.dark));
   root.setProperty("--app-font", font.family);
 }
 

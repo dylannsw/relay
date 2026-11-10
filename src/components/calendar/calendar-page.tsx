@@ -193,6 +193,13 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     if (!el) return;
     const g = glider.current;
     g.target = clamp(left, 0, el.scrollWidth - el.clientWidth);
+    // Reduced motion: go straight there instead of gliding.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      cancelAnimationFrame(g.raf);
+      g.raf = 0;
+      el.scrollLeft = g.target;
+      return;
+    }
     if (g.raf) return;
     g.current = el.scrollLeft;
     g.last = performance.now();

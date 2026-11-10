@@ -18,6 +18,7 @@ import {
   IconPencil,
   IconPlus,
   IconAlertCircle,
+  IconBan,
   IconCircleCheck,
   IconDownload,
   IconRefresh,
@@ -76,7 +77,18 @@ import { MailWindow } from "@/components/mail-window";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { quick } from "@/lib/motion";
-import { ACCENTS, FONTS, isFontInstalled, setAppearance, useAppearance } from "@/appearance";
+import {
+  ACCENTS,
+  CUSTOM_ACCENT,
+  customAccent,
+  FONTS,
+  isFontInstalled,
+  setAppearance,
+  TOAST_POSITIONS,
+  type ToastPosition,
+  useAppearance,
+} from "@/appearance";
+import { HALO_OFF, HALO_PALETTES, setHaloPalette, useHaloPalette } from "@/halo";
 import { ShortcutKbd } from "@/components/shortcut-kbd";
 import { ColorPicker } from "@/components/color-picker";
 import { Progress } from "@/components/ui/progress";
@@ -155,7 +167,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <MailWindow
-        className="h-[min(85svh,46rem)] sm:max-w-3xl"
+        className="h-[min(90svh,54rem)] sm:max-w-4xl"
         // While a shortcut is being recorded, Escape cancels that rather than closing Settings.
         onEscapeKeyDown={(e) => isRecordingShortcut() && e.preventDefault()}
         onClose={onClose}
@@ -313,6 +325,60 @@ function HomeTab({ accounts }: { accounts: Account[] }) {
       <SettingRow title="Dotted banner" description="Draw the banner as a matrix of dots in the picture's colours.">
         <Switch checked={cfg.bannerDots} onCheckedChange={(on) => void save({ bannerDots: on })} aria-label="Dotted banner" />
       </SettingRow>
+      <SettingRow title="Glow when adding a task" description="A halo of light sweeps up Home each time you add a task.">
+        <HaloSwatches />
+      </SettingRow>
+    </div>
+  );
+}
+
+/** The add-task glow's palettes, each drawn as its four rings, then a choice to turn it off. */
+function HaloSwatches() {
+  const { resolvedTheme } = useTheme();
+  const chosen = useHaloPalette();
+  const ring = (color: string) => `0 0 0 2px var(--background), 0 0 0 3.5px ${color}`;
+  const swatch =
+    "flex size-6 items-center justify-center rounded-full transition-[box-shadow,scale] duration-200 ease-(--ease-out-soft) outline-none hover:scale-110 focus-visible:scale-110";
+
+  return (
+    <div className="flex shrink-0 items-center gap-2.5">
+      {HALO_PALETTES.map((p) => {
+        const rings = (resolvedTheme === "dark" ? p.dark : p.light).map((c) => `rgb(${c.join(" ")})`);
+        const selected = chosen === p.id;
+        return (
+          <Tooltip key={p.id}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={p.label}
+                aria-pressed={selected}
+                onClick={() => setHaloPalette(p.id)}
+                className={swatch}
+                style={{
+                  background: `linear-gradient(135deg, ${rings.join(", ")})`,
+                  boxShadow: selected ? ring(rings[1]) : undefined,
+                }}
+              />
+            </TooltipTrigger>
+            <TooltipContent>{p.label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="Off"
+            aria-pressed={chosen === HALO_OFF}
+            onClick={() => setHaloPalette(HALO_OFF)}
+            className={cn(swatch, "bg-muted text-muted-foreground [&_svg]:size-3.5")}
+            style={{ boxShadow: chosen === HALO_OFF ? ring("var(--muted-foreground)") : undefined }}
+          >
+            <IconBan />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Off</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -1351,9 +1417,9 @@ function ThemeCard({ id, label, selected, onSelect }: {
           {selected && (
             <motion.span
               className="absolute right-2 bottom-2 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm [&_svg]:size-3.5"
-              initial={{ scale: 0, opacity: 0 }}
+              initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0, opacity: 0 }}
+              exit={{ scale: 0.5, opacity: 0 }}
               transition={quick}
             >
               <IconCheck />
@@ -1406,6 +1472,11 @@ function AppearanceTab() {
               </Tooltip>
             );
           })}
+          <CustomAccentSwatch
+            value={prefs.customAccent}
+            selected={prefs.accent === CUSTOM_ACCENT}
+            dark={resolvedTheme === "dark"}
+          />
         </div>
       </SettingRow>
       <SettingRow
@@ -1442,7 +1513,60 @@ function AppearanceTab() {
           })}
         </div>
       </SettingRow>
+      <SettingRow title="Notification position" description="Where Relay's pop-up notifications appear.">
+        <div className="flex shrink-0 items-center gap-2">
+          <Select value={prefs.toastPosition} onValueChange={(v) => setAppearance({ toastPosition: v as ToastPosition })}>
+            <SelectTrigger className="w-40 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TOAST_POSITIONS.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={testToast}>
+            Test
+          </Button>
+        </div>
+      </SettingRow>
     </div>
+  );
+}
+
+const RAINBOW = "conic-gradient(#f44 0deg, #fb3 60deg, #4d6 120deg, #3cf 180deg, #46f 240deg, #c4f 300deg, #f44 360deg)";
+
+/** The third accent swatch: a rainbow ring around the picked colour that opens the system
+ *  colour picker. Clicking it also switches back to the last picked colour. */
+function CustomAccentSwatch({ value, selected, dark }: { value: string; selected: boolean; dark: boolean }) {
+  const color = value ? (dark ? customAccent(value).dark : value) : "";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <label
+          aria-label="Custom color"
+          className="relative flex size-6 cursor-pointer items-center justify-center rounded-full transition-[box-shadow,scale] duration-200 ease-(--ease-out-soft) hover:scale-110 has-focus-visible:scale-110"
+          style={{
+            background: RAINBOW,
+            boxShadow: selected && color ? `0 0 0 2px var(--background), 0 0 0 3.5px ${color}` : undefined,
+          }}
+          onClick={() => {
+            if (value && !selected) setAppearance({ accent: CUSTOM_ACCENT });
+          }}
+        >
+          {color && <span className="size-3.5 rounded-full ring-2 ring-background" style={{ backgroundColor: color }} />}
+          <input
+            type="color"
+            value={value || "#3451d1"}
+            onChange={(e) => setAppearance({ accent: CUSTOM_ACCENT, customAccent: e.target.value })}
+            className="sr-only"
+          />
+        </label>
+      </TooltipTrigger>
+      <TooltipContent>Custom</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1570,4 +1694,21 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
       </button>
     </div>
   );
+}
+
+// Each click of "Test" shows the next kind of notification, so every icon can be previewed.
+const TEST_TOASTS = [
+  () => toast.success("Test notification", { description: "This is how a success looks." }),
+  () => toast.info("Test notification", { description: "This is how info looks." }),
+  () => toast.warning("Test notification", { description: "This is how a warning looks." }),
+  () => toast.error("Test notification", { description: "This is how an error looks." }),
+  () => {
+    const id = toast.loading("Test notification", { description: "This is how loading looks." });
+    setTimeout(() => toast.success("Test notification", { id, description: "Loading finished." }), 2000);
+  },
+];
+let nextTest = 0;
+function testToast() {
+  TEST_TOASTS[nextTest]();
+  nextTest = (nextTest + 1) % TEST_TOASTS.length;
 }

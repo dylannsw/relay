@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AnimatePresence, motion, type Variants } from "motion/react";
+import { motion } from "motion/react";
 import {
   IconArchive,
   IconArrowBackUp,
@@ -15,7 +15,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { quick, smooth } from "@/lib/motion";
+import { quick } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -32,9 +32,8 @@ import { fileSize, fullDate, senderName } from "@/format";
 
 interface Props {
   open: boolean;
-  /** Id of the message being shown; changing it slides the content in `direction`. */
+  /** Id of the message being shown. */
   messageId: string | null;
-  direction: 1 | -1;
   /** `"keyboard"` when closed with Escape; otherwise it was closed with the mouse. */
   onClose: (how?: "keyboard") => void;
   detail: MessageDetail | null;
@@ -57,13 +56,6 @@ interface Props {
   onMailto: (address: string) => void;
 }
 
-/** Paging to the next message slides content left; previous slides it right. */
-const slide: Variants = {
-  enter: (dir: number) => ({ opacity: 0, x: dir * 32 }),
-  center: { opacity: 1, x: 0 },
-  exit: (dir: number) => ({ opacity: 0, x: dir * -32 }),
-};
-
 function ToolButton(props: {
   label: string;
   shortcut?: ShortcutId;
@@ -71,7 +63,7 @@ function ToolButton(props: {
   onClick: () => void;
   /** Shows the label next to the icon instead of only in the tooltip. */
   text?: boolean;
-  variant?: "ghost" | "outline" | "default";
+  variant?: "ghost" | "outline" | "default" | "tinted" | "mustard";
   destructive?: boolean;
   children: ReactNode;
 }) {
@@ -130,12 +122,12 @@ export function MailReader(p: Props) {
             </ToolButton>
             <ToolbarDivider />
             {p.folder && p.folder !== "inbox" && (
-              <ToolButton label="Move to inbox" shortcut="moveInbox" disabled={off} onClick={() => p.onMove("inbox")}>
+              <ToolButton variant="tinted" label="Move to inbox" shortcut="moveInbox" disabled={off} onClick={() => p.onMove("inbox")}>
                 <IconInbox />
               </ToolButton>
             )}
             {p.folder !== "archive" && (
-              <ToolButton label="Archive" shortcut="archive" disabled={off} onClick={() => p.onMove("archive")}>
+              <ToolButton variant="tinted" label="Archive" shortcut="archive" disabled={off} onClick={() => p.onMove("archive")}>
                 <IconArchive />
               </ToolButton>
             )}
@@ -146,6 +138,7 @@ export function MailReader(p: Props) {
             )}
             <ToolbarDivider />
             <ToolButton
+              variant="tinted"
               label={d?.isRead === false ? "Mark as read" : "Mark as unread"}
               shortcut="toggleRead"
               disabled={off}
@@ -153,8 +146,8 @@ export function MailReader(p: Props) {
             >
               {d?.isRead === false ? <IconMailOpened /> : <IconMail />}
             </ToolButton>
-            <ToolButton label={d?.isStarred ? "Unstar" : "Star"} shortcut="toggleStar" disabled={off} onClick={p.onToggleStar}>
-              <IconStar className={cn("transition-colors", d?.isStarred && "fill-yellow-400 text-yellow-400")} />
+            <ToolButton variant="mustard" label={d?.isStarred ? "Unstar" : "Star"} shortcut="toggleStar" disabled={off} onClick={p.onToggleStar}>
+              <IconStar className={cn("transition-colors", d?.isStarred && "fill-current")} />
             </ToolButton>
             <div className="ml-auto flex items-center gap-2">
               <ToolButton text variant="outline" label="Reply all" shortcut="replyAll" disabled={off} onClick={p.onReplyAll}>
@@ -171,19 +164,9 @@ export function MailReader(p: Props) {
         }
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {/* Beside the subject, outside the sliding content so it stays put while paging. */}
+          {/* Beside the subject, outside the paged content so it stays put while paging. */}
           <CloseButton onClose={() => p.onClose()} className="absolute top-4.5 right-4 z-10" />
-          <AnimatePresence mode="popLayout" initial={false} custom={p.direction}>
-            <motion.div
-              key={p.messageId ?? "none"}
-              className="flex min-h-0 flex-1 flex-col bg-background"
-              custom={p.direction}
-              variants={slide}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={smooth}
-            >
+            <div key={p.messageId ?? "none"} className="flex min-h-0 flex-1 flex-col bg-background">
               {p.error ? (
                 <>
                   <DialogTitle className="sr-only">Message</DialogTitle>
@@ -282,8 +265,7 @@ export function MailReader(p: Props) {
                   )}
                 </motion.div>
               )}
-            </motion.div>
-          </AnimatePresence>
+            </div>
         </div>
       </MailWindow>
     </Dialog>

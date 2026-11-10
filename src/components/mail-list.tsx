@@ -110,7 +110,7 @@ function IconAction(props: {
   fixedKey?: string;
   onClick: () => void;
   children: ReactNode;
-  variant?: "ghost" | "outline";
+  variant?: "ghost" | "outline" | "tinted";
   size?: "icon-sm" | "icon-xs";
   destructive?: boolean;
 }) {
@@ -118,7 +118,7 @@ function IconAction(props: {
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          // Anything that deletes is a filled red button, even among ghost ones.
+          // Delete is a tinted red pill; the moves beside it get the same pill in the brand colour.
           variant={props.destructive ? "destructive" : (props.variant ?? "ghost")}
           size={props.size ?? "icon-sm"}
           className={cn(props.size === "icon-xs" && "[&_svg:not([class*='size-'])]:size-4.5")}
@@ -169,7 +169,7 @@ export function MailList(p: Props) {
                 <span className="text-base font-semibold whitespace-nowrap tabular-nums">{nChecked} selected</span>
                 <ButtonGroup>
                   {movesFrom(p.folder).map((a) => (
-                    <IconAction key={a.to} variant="outline" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onBulkMove(a.to)}>
+                    <IconAction key={a.to} variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onBulkMove(a.to)}>
                       {a.icon}
                     </IconAction>
                   ))}
@@ -292,7 +292,7 @@ function MessageRows(p: Props & { selecting: boolean }) {
     if (!p.selectedId || !listRef.current) return;
     listRef.current
       .querySelector(`[data-id="${CSS.escape(p.selectedId)}"]`)
-      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      ?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [p.selectedId]);
 
   return (
@@ -307,7 +307,7 @@ function MessageRows(p: Props & { selecting: boolean }) {
               className="overflow-hidden"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0, x: 24 }}
+              exit={{ opacity: 0, height: 0, transition: quick }}
               transition={smooth}
             >
               <div className="pb-2">
@@ -377,9 +377,9 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
               <motion.span
                 key="unread"
                 className="size-2 shrink-0 rounded-full bg-primary"
-                initial={{ scale: 0, opacity: 0 }}
+                initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
+                exit={{ scale: 0.5, opacity: 0 }}
                 transition={quick}
               />
             )}
@@ -403,7 +403,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
               )}
             >
               {movesFrom(m.folder).map((a) => (
-                <IconAction key={a.to} size="icon-xs" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onMove(m, a.to)}>
+                <IconAction key={a.to} size="icon-xs" variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onMove(m, a.to)}>
                   {a.icon}
                 </IconAction>
               ))}

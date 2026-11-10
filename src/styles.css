@@ -70,6 +70,8 @@
 :root {
     /* Relay's accent: the logo blue. Filled buttons, checked boxes, links and unread dots. */
     --brand: var(--accent-light, #3451d1);
+    /* Text on the accent: white, or near-black when a light custom colour needs it. */
+    --brand-foreground: var(--accent-light-fg, oklch(0.985 0 0));
     --background: oklch(1 0 0);
     --foreground: oklch(0.3 0 0);
     --card: oklch(1 0 0);
@@ -77,7 +79,7 @@
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.3 0 0);
     --primary: var(--brand);
-    --primary-foreground: oklch(0.985 0 0);
+    --primary-foreground: var(--brand-foreground);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.3 0 0);
     --muted: oklch(0.97 0 0);
@@ -99,7 +101,7 @@
     --sidebar: oklch(0.955 0 0);
     --sidebar-foreground: oklch(0.3 0 0);
     --sidebar-primary: var(--brand);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-primary-foreground: var(--brand-foreground);
     --sidebar-accent: oklch(0.915 0 0);
     --sidebar-accent-foreground: oklch(0.3 0 0);
     --sidebar-border: oklch(0.895 0 0);
@@ -127,6 +129,7 @@
 .dark {
     /* A touch brighter so filled controls stand out on dark surfaces. */
     --brand: var(--accent-dark, #4462e4);
+    --brand-foreground: var(--accent-dark-fg, oklch(0.985 0 0));
     /* Neutral greys: the window frame and sidebar (#111), the framed content (#171717), and
        raised surfaces inside it such as cards and list rows (#1c1c1c), menus a step above. */
     --background: #171717;
@@ -136,7 +139,7 @@
     --popover: #1f1f1f;
     --popover-foreground: oklch(0.96 0 0);
     --primary: var(--brand);
-    --primary-foreground: oklch(0.985 0 0);
+    --primary-foreground: var(--brand-foreground);
     --secondary: #262626;
     --secondary-foreground: oklch(0.96 0 0);
     --muted: #242424;
@@ -156,7 +159,7 @@
     --sidebar: #111111;
     --sidebar-foreground: oklch(0.96 0 0);
     --sidebar-primary: var(--brand);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-primary-foreground: var(--brand-foreground);
     --sidebar-accent: #242424;
     --sidebar-accent-foreground: oklch(0.96 0 0);
     --sidebar-border: oklch(1 0 0 / 8%);
@@ -178,6 +181,14 @@
   html {
     @apply font-sans;
     }
+  /* Tooltips are labels only and never take the pointer. They're portalled outside their
+     trigger, so catching it would end hover on whatever opened them (an email row's
+     actions would hide and flicker). Radix's positioning wrapper catches the pointer too
+     while the tooltip fades out, and both set pointer-events inline, hence !important. */
+  [data-radix-popper-content-wrapper]:has(> [data-slot="tooltip-content"]),
+  [data-slot="tooltip-content"] {
+    pointer-events: none !important;
+  }
   /* Tabler icons: every line is 1.75 screen pixels whatever the icon's size. Without
      non-scaling-stroke the width is in the icon's 24-unit grid and grows with the icon,
      so a 14px icon would get thinner lines than a 20px one. */
@@ -225,17 +236,64 @@
   ::-webkit-scrollbar-thumb:hover {
     background: color-mix(in oklab, var(--foreground) 30%, transparent);
   }
-  /* People who turn animations off in Windows get instant changes everywhere. */
+  /* People who turn animations off in Windows: nothing moves, zooms or slides, but fades and
+     loading spinners stay so changes are still visible (matching MotionConfig reducedMotion="user"). */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
+      /* tw-animate-css enter/exit (menus, dialogs, tooltips, popovers): keep the fade, drop the zoom and slide. */
+      --tw-enter-scale: 1 !important;
+      --tw-exit-scale: 1 !important;
+      --tw-enter-translate-x: 0 !important;
+      --tw-enter-translate-y: 0 !important;
+      --tw-exit-translate-x: 0 !important;
+      --tw-exit-translate-y: 0 !important;
+      --tw-enter-rotate: 0 !important;
+      --tw-exit-rotate: 0 !important;
+      /* Transitions (sidebar width, switch thumb, hover scale and colours) stay instant, as before. */
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
+    }
+    /* Height reveals (the sidebar's collapsible groups) jump straight to their size. */
+    [data-slot="collapsible-content"] {
+      animation: none !important;
     }
   }
   /* Desktop app: the window is the viewport, panes scroll individually. */
   html, body, #root {
     @apply h-full overflow-hidden overscroll-none;
   }
+}
+
+/* Home's add-task glow (src/components/home/shockwave.tsx). While it runs, it gives each marked
+   element its light as `--halo-glint`, and the element's lines catch it:
+   .halo-glint        its own border (any widths), painted over it; needs position: relative.
+   .halo-glint-inset  a 1px edge just inside it, for surfaces outlined by a shadow ring.
+   .halo-glint-fill   its background, for lines drawn as gaps between tiles.
+   Nothing is drawn at rest. */
+/* The glow's radius, strength and light change every frame, so they don't inherit: only the
+   elements they're set on restyle, not everything inside the cards (~4.5ms → ~0.1ms a frame). */
+@property --halo-r { syntax: "*"; inherits: false; }
+@property --halo-s { syntax: "*"; inherits: false; }
+@property --halo-glint { syntax: "*"; inherits: false; }
+[data-halo] :is(.halo-glint, .halo-glint-inset)::after {
+  content: "";
+  --halo-glint: inherit;
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  border-radius: inherit;
+  border-width: inherit;
+  border-style: solid;
+  border-color: transparent;
+  background: var(--halo-glint) border-box;
+  mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box;
+  mask-composite: exclude;
+}
+[data-halo] .halo-glint-inset::after {
+  inset: 0;
+  border-width: 1px;
+}
+[data-halo] .halo-glint-fill {
+  background-image: var(--halo-glint);
+  background-origin: border-box;
 }

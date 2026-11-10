@@ -17,7 +17,7 @@ createRoot(document.getElementById("root")!).render(
       <MotionConfig reducedMotion="user">
       <TooltipProvider>
         <App />
-        <Toaster position="bottom-center" />
+        <Toaster />
       </TooltipProvider>
       </MotionConfig>
     </ThemeProvider>

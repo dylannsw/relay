@@ -48,8 +48,6 @@ export default function App() {
   const [checked, setChecked] = useState<Set<string>>(() => new Set());
   const checkAnchor = useRef<string | null>(null);
   const [readerOpen, setReaderOpen] = useState(false);
-  /** Which way the reader card slides when paging: 1 = next, -1 = previous. */
-  const [navDir, setNavDir] = useState<1 | -1>(1);
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -178,8 +176,6 @@ export default function App() {
 
   /** Opens a message in the reader card (or swaps the card to it when already open). */
   const openMessage = async (m: MessageSummary) => {
-    const from = messages.findIndex((x) => x.id === selectedId);
-    setNavDir(messages.findIndex((x) => x.id === m.id) >= from ? 1 : -1);
     selectedRef.current = m.id;
     setSelectedId(m.id);
     setReaderOpen(true);
@@ -510,6 +506,7 @@ export default function App() {
               onOpenCalendar={() => setView({ kind: "calendar" })}
               onOpenMail={() => {
                 setView({ kind: "all" });
+                setFilter("unread");
                 clearSelection();
               }}
             />
@@ -562,7 +559,6 @@ export default function App() {
         error={detailError}
         account={detail ? accountById.get(detail.accountId) : undefined}
         messageId={selectedId}
-        direction={navDir}
         position={selectedIdx + 1}
         total={messages.length}
         onPrev={() => selectedIdx > 0 && void openMessage(messages[selectedIdx - 1])}
