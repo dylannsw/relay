@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
@@ -8,8 +8,6 @@ import {
   IconSchool,
   IconInbox,
   IconLogin2,
-  IconMail,
-  IconPlus,
   IconSettings,
   IconSmartHome,
   IconTag,
@@ -22,7 +20,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
@@ -34,13 +31,6 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Account, Folder, Provider } from "@/types";
 import { relativeTime } from "@/format";
@@ -77,9 +67,9 @@ interface Props {
   accounts: Account[];
   view: View;
   onView: (v: View) => void;
-  onAddAccount: (p: Provider) => void;
+  /** Signs an account in again after its sign-in expires. Adding accounts lives in Settings. */
+  onReconnect: (p: Provider) => void;
   onOpenSettings: () => void;
-  signingIn: Provider | null;
   className?: string;
 }
 
@@ -121,7 +111,8 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
-          <SidebarMenuSub>
+          {/* Indented so the folder icons line up under the address, beside the dot. */}
+          <SidebarMenuSub className="pl-6.5">
             {a.lastError && (
               <SidebarMenuSubItem>
                 <Tooltip>
@@ -191,36 +182,13 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   );
 }
 
-export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSettings, signingIn, className }: Props) {
+export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = [...new Set(accounts.map((a) => a.label))].sort((a, b) => {
     const ia = LABEL_ORDER.indexOf(a);
     const ib = LABEL_ORDER.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
   });
-
-  const addMenu = (trigger: ReactNode) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" className="w-64">
-        <DropdownMenuLabel>Add an account</DropdownMenuLabel>
-        <DropdownMenuItem disabled={!!signingIn} onSelect={() => onAddAccount("google")}>
-          <IconMail />
-          <div className="flex flex-col">
-            <span>Google</span>
-            <span className="text-xs text-muted-foreground">Gmail and Google Workspace</span>
-          </div>
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!!signingIn} onSelect={() => onAddAccount("microsoft")}>
-          <IconMail />
-          <div className="flex flex-col">
-            <span>Microsoft</span>
-            <span className="text-xs text-muted-foreground">Outlook.com, work and school</span>
-          </div>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 
   return (
     <Sidebar variant="inset" className={className}>
@@ -262,43 +230,24 @@ export function AppSidebar({ accounts, view, onView, onAddAccount, onOpenSetting
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Accounts</SidebarGroupLabel>
-          <Tooltip>
-            {addMenu(
-              <TooltipTrigger asChild>
-                <SidebarGroupAction>
-                  <IconPlus />
-                  <span className="sr-only">Add account</span>
-                </SidebarGroupAction>
-              </TooltipTrigger>,
-            )}
-            <TooltipContent>Add account</TooltipContent>
-          </Tooltip>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {accounts.length === 0 && (
-                <SidebarMenuItem>
-                  {addMenu(
-                    <SidebarMenuButton disabled={!!signingIn} className="text-muted-foreground">
-                      <IconPlus />
-                      <span>{signingIn ? "Waiting for sign-in…" : "Add an account"}</span>
-                    </SidebarMenuButton>,
-                  )}
-                </SidebarMenuItem>
-              )}
-              {accounts.map((a) => (
-                <AccountItem
-                  key={a.id}
-                  account={a}
-                  view={view}
-                  onView={onView}
-                  onReconnect={() => onAddAccount(a.provider)}
-                />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {accounts.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Accounts</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {accounts.map((a) => (
+                  <AccountItem
+                    key={a.id}
+                    account={a}
+                    view={view}
+                    onView={onView}
+                    onReconnect={() => onReconnect(a.provider)}
+                  />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter>

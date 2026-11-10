@@ -35,20 +35,20 @@ export interface ShortcutDef {
   group: string;
   /** Default key ("" = none until someone assigns one). */
   key: string;
-  /** Extra keys that always work in addition to the bound one (not editable). */
+  /** Extra keys that always work in addition to the bound one (not editable, not shown). */
   also?: Partial<Record<ShortcutContext | "any", string[]>>;
 }
 
 export const SHORTCUTS: ShortcutDef[] = [
-  { id: "commandBar", label: "Open / close command bar", group: "Navigate", key: "ctrl+k", also: { any: ["/"] } },
+  { id: "commandBar", label: "Open / close command bar", group: "Navigate", key: "ctrl+k" },
   { id: "next", label: "Next message", group: "Navigate", key: "j", also: { list: ["ArrowDown"], reader: ["ArrowRight"] } },
   { id: "prev", label: "Previous message", group: "Navigate", key: "k", also: { list: ["ArrowUp"], reader: ["ArrowLeft"] } },
-  { id: "open", label: "Open message", group: "Navigate", key: "Enter", also: { list: ["o"] } },
+  { id: "open", label: "Open message", group: "Navigate", key: "Enter" },
   { id: "goAll", label: "Go to All inboxes", group: "Navigate", key: "" },
   { id: "select", label: "Select message", group: "Select", key: "x" },
   { id: "selectAll", label: "Select all", group: "Select", key: "ctrl+a" },
   { id: "archive", label: "Archive", group: "Organize", key: "e" },
-  { id: "delete", label: "Delete", group: "Organize", key: "#", also: { any: ["Delete"] } },
+  { id: "delete", label: "Delete", group: "Organize", key: "Delete" },
   { id: "moveInbox", label: "Move to inbox", group: "Organize", key: "" },
   { id: "spam", label: "Move to Spam", group: "Organize", key: "" },
   { id: "toggleRead", label: "Mark as read / unread", group: "Organize", key: "u" },

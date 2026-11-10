@@ -49,12 +49,17 @@ export function HomeOverview(p: OverviewProps) {
   const date = (d: Date) => formatDate(d, p.dateFormat, false);
   return (
     <Card className={cn("@container gap-0 py-0", p.className)}>
-      <CardHeader className="border-b py-3.5">
-        <CardTitle className="flex h-6 items-center">Overview</CardTitle>
-        <CardAction>
+      {/* Equal padding above and below: the stock header adds extra bottom padding when bordered,
+          and a row gap for the empty second row that CardAction spans. */}
+      <CardHeader className="gap-y-0 border-b py-3.5 [.border-b]:pb-3.5">
+        <CardTitle className="flex h-6 items-center">
+          <span className="[text-box:trim-both_cap_alphabetic]">Overview</span>
+        </CardTitle>
+        <CardAction className="flex">
           <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-[14px] font-normal text-muted-foreground tabular-nums">
             <IconCalendarEvent />
-            {date(new Date())}
+            {/* Trim the line box to the cap height so the digits sit exactly level with the icon. */}
+            <span className="[text-box:trim-both_cap_alphabetic]">{date(new Date())}</span>
           </Badge>
         </CardAction>
       </CardHeader>
@@ -116,7 +121,7 @@ function Stat({ icon, label, value, onClick, children }: {
       <span className="flex h-6 w-full min-w-0 items-center gap-2 text-sm text-muted-foreground">{children}</span>
     </>
   );
-  const tile = "flex min-w-0 flex-col items-start gap-1.5 overflow-hidden bg-card px-5 py-4 text-left";
+  const tile = "flex min-w-0 flex-col items-start gap-2.5 overflow-hidden bg-card px-5 py-4 text-left";
   return onClick ? (
     <button type="button" onClick={onClick} className={cn(tile, "outline-none transition-colors duration-150 hover:bg-muted/40 focus-visible:bg-muted/60")}>
       {body}
@@ -127,7 +132,7 @@ function Stat({ icon, label, value, onClick, children }: {
 }
 
 /** Up is green, down is red, no change is grey. */
-const DELTA_COLORS = { up: "#2aa250", down: "#f23c47", level: "#8a8a8a" };
+const DELTA_COLORS = { up: "#2aa250", down: "var(--signal-red)", level: "#8a8a8a" };
 
 /**
  * The change since last time: the arrow in a small solid square of its own, then the number in
@@ -142,10 +147,13 @@ function Delta({ change, versus }: { change: number; versus: string }) {
         {/* White on the colour in light mode; a dark arrow on it in dark mode, as in the reference. */}
         <Icon className="size-3.5 stroke-[length:2.25px]! text-white dark:text-black/75" />
       </span>
-      <span className="shrink-0 font-medium tabular-nums text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
-        {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "0"}
+      {/* One line of text: the number, a plain space, then what it's compared with. */}
+      <span className="truncate">
+        <span className="font-medium tabular-nums text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
+          {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "0"}
+        </span>{" "}
+        {versus}
       </span>
-      <span className="truncate">{versus}</span>
     </span>
   );
 }

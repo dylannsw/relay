@@ -102,7 +102,8 @@ export async function saveChanges(e: CalendarEvent, changes: EventChanges, previ
   }
 }
 
-export async function createEvent(input: NewEvent): Promise<boolean> {
+/** `onShown` runs once the new event is on the grid, before Google has answered. */
+export async function createEvent(input: NewEvent, onShown?: () => void): Promise<boolean> {
   const notify = input.attendees.length ? await chooseNotify("new") : false;
   if (notify === null) return false;
   addEventLocal({
@@ -124,6 +125,7 @@ export async function createEvent(input: NewEvent): Promise<boolean> {
     canEdit: false,
     ...(withTimes(input.times) as Pick<CalendarEvent, "allDay" | "start" | "end" | "startDate" | "endDate">),
   });
+  onShown?.();
   try {
     await api.createCalendarEvent(input, notify);
     return true;

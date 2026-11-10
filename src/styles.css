@@ -7,7 +7,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The one red for "down" and "now": Home's falling-delta badge and the calendar's current-time line. */
+:root {
+    --signal-red: #f23c47;
+}
+
 @theme inline {
+    --color-signal-red: var(--signal-red);
     --font-heading: var(--font-sans);
     /* Settings > Appearance > Font style sets --app-font. */
     --font-sans: var(--app-font, 'Geist Variable', sans-serif);
@@ -196,27 +202,6 @@
   /* Badges force the size on direct-child icons, overriding the icon's own class. */
   :is([class~="[&>svg]:size-3.5!"], [class~="[&>svg]:size-4!"]) > .tabler-icon {
     stroke-width: 1.35px;
-  }
-  /* An icon beside a label lines up with the label's optical middle. Flex centring puts it level
-     with the capitals, but labels are mostly lowercase, whose body sits about 0.1em lower, so the
-     text read as sitting low. Nudging the icon half that gap splits the difference for any font.
-     Icon-only buttons (data-size="icon…") stay exactly centred. */
-  :is(
-      [data-slot="button"]:not([data-size^="icon"]),
-      [data-slot="badge"],
-      [data-slot="sidebar-menu-button"],
-      [data-slot="sidebar-menu-sub-button"],
-      [data-slot="tabs-trigger"],
-      [data-slot="select-trigger"],
-      [data-slot="select-item"],
-      [data-slot="dropdown-menu-item"],
-      [data-slot="dropdown-menu-sub-trigger"],
-      [data-slot="context-menu-item"],
-      [data-slot="context-menu-sub-trigger"],
-      [data-slot="command-item"]
-    )
-    > svg {
-    translate: 0 0.06em;
   }
   /* Light mode: icons are never darker than mid-grey, so ones that inherit near-black
      text colour don't read as solid black. Lighter colours (muted grey, chip colours,

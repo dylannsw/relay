@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring } from "motion/react";
+import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring, useVelocity } from "motion/react";
 import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -42,8 +42,6 @@ type Drag =
       /** The card's size when it was picked up. */
       w: number;
       h: number;
-      /** Horizontal speed (px/ms), which tilts the card. */
-      vx: number;
       /** Where it would land: whole days and minutes from where it started. */
       days: number;
       mins: number;
@@ -372,9 +370,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     return { day: Math.floor(x / w), min: clamp((y / live.current.hour) * 60, 0, 24 * 60) };
   };
 
-  /** Pointer speed for the lifted card's tilt, smoothed over the last few moves. */
-  const motionTrack = useRef({ x: 0, t: 0, vx: 0 });
-
   const step = (d: Drag, pe: PointerEvent): Drag => {
     const far = (dx: number, dy: number) => Math.abs(dx) > 4 || Math.abs(dy) > 4;
     const hourPx = live.current.hour;
@@ -394,11 +389,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
         const el = scroller.current;
         const w = live.current.colW;
         if (!el || !w) return d;
-        const tr = motionTrack.current;
-        const dt = Math.max(1, pe.timeStamp - tr.t);
-        tr.vx = tr.vx * 0.6 + ((pe.clientX - tr.x) / dt) * 0.4;
-        tr.x = pe.clientX;
-        tr.t = pe.timeStamp;
         // The slot is read from the card's top edge (time) and the pointer's column (day).
         const r = el.getBoundingClientRect();
         const top = pe.clientY - d.grabY - r.top + el.scrollTop - live.current.headH;
@@ -410,7 +400,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
           ...d,
           x: pe.clientX,
           y: pe.clientY,
-          vx: tr.vx,
           moved: d.moved || far(pe.clientX - d.startX, pe.clientY - d.startY),
           days: col - from,
           mins: startMin - minutesInto(d.event.start),
@@ -515,7 +504,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     if (mode === "resize") pe.stopPropagation();
     if (mode === "move") {
       const r = (pe.currentTarget as HTMLElement).getBoundingClientRect();
-      motionTrack.current = { x: pe.clientX, t: pe.timeStamp, vx: 0 };
       beginDrag({
         kind: "move",
         event,
@@ -527,7 +515,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
         grabY: pe.clientY - r.top,
         w: r.width,
         h: r.height,
-        vx: 0,
         days: 0,
         mins: 0,
         moved: false,
@@ -552,7 +539,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       const t = dragTimes(drag);
       if (t) list = list.map((e) => (e.id === drag.event.id ? { ...e, ...withTimes(t) } : e));
     }
-    let ghost: EventTimes | null = draft?.times ?? null;
+    let ghost: EventTimes | null = draft && !draft.saving ? draft.times : null;
     if (drag?.kind === "create" && drag.moved) {
       const day = addDays(origin, drag.day).getTime();
       ghost = { allDay: false, start: day + drag.from * 60_000, end: day + drag.to * 60_000, startDate: null, endDate: null };
@@ -739,7 +726,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
             <div className="sticky top-0 z-20 bg-background" style={{ width: trackW, height: headH }}>
               <div className="relative border-b" style={{ height: DAY_HEAD }}>
                 <div
-                  className="sticky left-0 z-30 flex h-full items-end bg-background pr-2 pb-1.5 text-[11px] text-muted-foreground"
+                  className="sticky left-0 z-30 flex h-full items-end bg-background pr-2 pb-1.5 text-[11px] font-semibold text-muted-foreground"
                   style={{ width: GUTTER }}
                 >
                   <span className="ml-auto">{zoneLabel()}</span>
@@ -755,8 +742,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                     >
                       <span
                         className={cn(
-                          "truncate rounded-md px-2 py-1 text-sm whitespace-nowrap tabular-nums",
-                          isToday ? "bg-foreground font-medium text-background" : "text-foreground/85",
+                          "truncate rounded-md px-2 py-1 text-sm font-semibold whitespace-nowrap tabular-nums",
+                          isToday ? "bg-foreground text-background" : "text-foreground/85",
                         )}
                       >
                         {d.toLocaleDateString(undefined, { weekday: colW < 64 ? "narrow" : "short" })} {d.getDate()}
@@ -770,7 +757,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
               {stripH > 0 && (
                 <div className="relative border-b" style={{ height: stripH }}>
                   <div
-                    className="sticky left-0 z-30 flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-[11px] whitespace-nowrap text-muted-foreground"
+                    className="sticky left-0 z-30 flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ width: GUTTER }}
                   >
                     All day
@@ -832,11 +819,10 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
               />
               {columns.map((i) => {
                 const d = addDays(origin, i);
-                const weekend = d.getDay() === 0 || d.getDay() === 6;
                 return (
                   <div
                     key={i}
-                    className={cn("absolute top-0 border-l", weekend && "bg-muted/30")}
+                    className="absolute top-0 border-l"
                     style={{ left: GUTTER + i * colW, width: colW, height: 24 * hour }}
                   >
                     <DayEvents
@@ -869,14 +855,14 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 {range(1, 23).map((h) => (
                   <span
                     key={h}
-                    className="absolute right-2.5 -translate-y-1/2 text-[12px] whitespace-nowrap text-muted-foreground tabular-nums"
+                    className="absolute right-2.5 -translate-y-1/2 text-[12px] font-semibold whitespace-nowrap text-muted-foreground tabular-nums"
                     style={{ top: h * hour }}
                   >
                     {hourLabel(h)}
                   </span>
                 ))}
                 <span
-                  className="absolute right-1.5 z-10 -translate-y-1/2 rounded-md bg-red-500 px-1.5 py-px text-[12px] font-medium whitespace-nowrap text-white tabular-nums"
+                  className="absolute right-1.5 z-10 -translate-y-1/2 rounded-md bg-signal-red px-1.5 py-px text-[12px] font-semibold whitespace-nowrap text-white tabular-nums"
                   style={{ top: minutesInto(now) * (hour / 60) }}
                 >
                   {clockTime(now)}
@@ -917,7 +903,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
           y={moving ? moving.y - moving.grabY : landing!.y}
           w={lifted.w}
           h={lifted.h}
-          vx={moving?.vx ?? 0}
           landing={!moving}
           onLanded={() => setLanding(null)}
         />
@@ -939,7 +924,12 @@ function landingLabel(d: Extract<Drag, { kind: "move" }>): string {
  * land in shows underneath), tilts with how fast it's moving, and names the landing time. Once
  * dropped it glides into its new place on the grid, then hands over to the real card.
  */
-function LiftedEvent({ event, calendar, dark, label, x, y, w, h, vx, landing, onLanded }: {
+/** How the lifted card trails the pointer: critically damped, settling in about 110 ms. */
+const TRAIL = { stiffness: 900, damping: 52, mass: 0.75 };
+/** How the tilt follows speed: quick and critically damped, so it never wobbles. */
+const TILT = { stiffness: 1000, damping: 63 };
+
+function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLanded }: {
   event: CalendarEvent;
   calendar: CalendarInfo | undefined;
   dark: boolean;
@@ -948,7 +938,6 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, vx, landing, on
   y: number;
   w: number;
   h: number;
-  vx: number;
   landing: boolean;
   onLanded: () => void;
 }) {
@@ -958,22 +947,33 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, vx, landing, on
   const mh = useMotionValue(h);
   const scale = useMotionValue(1.04);
   const lift = useMotionValue(1);
-  const rotate = useSpring(0, { stiffness: 320, damping: 22 });
+  const rotate = useSpring(0, TILT);
 
-  // Follow the pointer exactly (no lag) while it's held.
+  // While held, the card trails the pointer on a critically damped spring: a touch of lag,
+  // never an overshoot. On drop the raw values take over (from wherever the trail had got to)
+  // so the landing glide below owns the motion.
+  const tx = useSpring(x, TRAIL);
+  const ty = useSpring(y, TRAIL);
   useLayoutEffect(() => {
     if (landing) return;
     mx.set(x);
     my.set(y);
-  }, [x, y, landing, mx, my]);
+    tx.set(x);
+    ty.set(y);
+  }, [x, y, landing, mx, my, tx, ty]);
+  useLayoutEffect(() => {
+    if (!landing) return;
+    mx.jump(tx.get());
+    my.jump(ty.get());
+  }, [landing, mx, my, tx, ty]);
 
-  // Tilt into the direction of travel; level out again as soon as the pointer rests.
+  // Tilt into the direction of travel by how fast the trailing card is moving, so it levels
+  // out as soon as the card catches up with a resting pointer.
+  const speed = useVelocity(tx);
   useEffect(() => {
     if (landing) return;
-    rotate.set(clamp(vx * 7, -10, 10));
-    const t = window.setTimeout(() => rotate.set(0), 90);
-    return () => window.clearTimeout(t);
-  }, [vx, x, landing, rotate]);
+    return speed.on("change", (v) => rotate.set(clamp(v * 0.004, -6, 6)));
+  }, [speed, landing, rotate]);
 
   // Dropped: glide onto the card's new place (measured once the grid has redrawn it there).
   const done = useRef(onLanded);
@@ -1015,8 +1015,8 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, vx, landing, on
       )}
       style={{
         ...eventStyle(event, calendar, dark, false),
-        x: mx,
-        y: my,
+        x: landing ? mx : tx,
+        y: landing ? my : ty,
         width: mw,
         height: mh,
         scale,
@@ -1170,9 +1170,9 @@ function NowLine({ now, hour, left, width, todayLeft, todayWidth }: {
   const top = minutesInto(now) * (hour / 60);
   return (
     <>
-      <div aria-hidden className="pointer-events-none absolute z-10 h-px bg-red-500/60" style={{ top, left, width }} />
-      <div aria-hidden className="pointer-events-none absolute z-10 h-0.5 bg-red-500" style={{ top: top - 0.5, left: todayLeft, width: todayWidth }}>
-        <span className="absolute -top-[3px] -left-1 size-2 rounded-full bg-red-500" />
+      <div aria-hidden className="pointer-events-none absolute z-10 h-px bg-signal-red/60" style={{ top, left, width }} />
+      <div aria-hidden className="pointer-events-none absolute z-10 h-0.5 bg-signal-red" style={{ top: top - 0.5, left: todayLeft, width: todayWidth }}>
+        <span className="absolute -top-[3px] -left-1 size-2 rounded-full bg-signal-red" />
       </div>
     </>
   );

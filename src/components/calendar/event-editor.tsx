@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -23,6 +24,8 @@ export interface Draft {
   location: string;
   attendees: string[];
   times: EventTimes;
+  /** Create was pressed and the event is on the grid already, so its ghost is hidden. */
+  saving?: boolean;
 }
 
 interface Form {
@@ -154,8 +157,10 @@ export function EventEditor(props: {
     setSaving(true);
     try {
       if (props.mode === "new") {
-        const ok = await createEvent({ calendarId: f.calendarId, title: f.title, location: f.location, attendees: f.guests, times });
+        const draft: Draft = { calendarId: f.calendarId, title: f.title, location: f.location, attendees: f.guests, times };
+        const ok = await createEvent(draft, () => props.onDraftChange({ ...draft, saving: true }));
         if (ok) props.onDone();
+        else props.onDraftChange(draft);
       } else if (event) {
         await saveChanges(event, changes, {
           ...(changes.times ? withTimes(changes.times) : {}),
@@ -184,10 +189,10 @@ export function EventEditor(props: {
         autoFocus={props.mode === "new"}
         value={f.title}
         onChange={(e) => set({ title: e.target.value })}
-        className="h-10 border-transparent px-2 text-lg font-semibold shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
+        className="h-11 border-transparent px-2 text-xl font-semibold md:text-xl shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
       />
 
-      <div className="flex flex-col gap-3 text-sm">
+      <div className="flex flex-col gap-5 text-sm">
         <FieldRow icon={<IconClock />}>
           <div className="flex flex-col gap-2">
             {/* Date and time share the row; an all-day event's date takes all of it. */}
@@ -213,6 +218,8 @@ export function EventEditor(props: {
             {typeof times === "string" && <p className="text-destructive">{times}</p>}
           </div>
         </FieldRow>
+
+        <Separator />
 
         <FieldRow icon={<IconMapPin />}>
           <LocationField value={f.location} onChange={(location) => set({ location })} />

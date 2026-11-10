@@ -42,6 +42,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -117,7 +123,9 @@ interface Props {
   accounts: Account[];
   onClose: () => void;
   onAccountsChanged: () => void;
-  onReconnect: (p: Provider) => void;
+  /** Starts a sign-in to add an account, or to sign one in again. */
+  onSignIn: (p: Provider) => void;
+  signingIn: Provider | null;
   /** Section to open on; otherwise Accounts (or Connections before any account is added). */
   initialSection?: SettingsSection;
 }
@@ -141,7 +149,7 @@ const SECTIONS = [
 export type SettingsSection = (typeof SECTIONS)[number]["id"];
 type Section = SettingsSection;
 
-export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconnect, initialSection }: Props) {
+export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn, signingIn, initialSection }: Props) {
   const [section, setSection] = useState<Section>(initialSection ?? (accounts.length ? "accounts" : "connections"));
 
   return (
@@ -214,7 +222,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onReconne
             </TabsContent>
             <TabsContent value="accounts">
               <SectionTitle>{SECTIONS.find((x) => x.id === "accounts")!.label}</SectionTitle>
-              <AccountsTab accounts={accounts} onChanged={onAccountsChanged} onReconnect={onReconnect} />
+              <AccountsTab accounts={accounts} onChanged={onAccountsChanged} onSignIn={onSignIn} signingIn={signingIn} />
             </TabsContent>
             <TabsContent value="appearance">
               <SectionTitle>{SECTIONS.find((x) => x.id === "appearance")!.label}</SectionTitle>
@@ -1003,19 +1011,52 @@ const CALENDAR_COLORS = [
   "#039be5", "#3f51b5", "#7986cb", "#8e24aa", "#616161", "#a79b8e",
 ];
 
-function AccountsTab({ accounts, onChanged, onReconnect }: {
+function AccountsTab({ accounts, onChanged, onSignIn, signingIn }: {
   accounts: Account[];
   onChanged: () => void;
-  onReconnect: (p: Provider) => void;
+  onSignIn: (p: Provider) => void;
+  signingIn: Provider | null;
 }) {
-  if (accounts.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">No accounts yet. Use “Add account” in the sidebar.</p>;
-  }
   return (
-    <div className="flex flex-col divide-y">
-      {accounts.map((a) => (
-        <AccountRow key={a.id} account={a} onChanged={onChanged} onReconnect={onReconnect} />
-      ))}
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+          {accounts.length
+            ? "Mail and calendars from these accounts appear in Relay."
+            : "No accounts yet. Add one to start seeing your mail."}
+        </p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" disabled={!!signingIn}>
+              <IconPlus />
+              {signingIn ? "Waiting for sign-in…" : "Add account"}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onSelect={() => onSignIn("google")}>
+              <IconMail />
+              <div className="flex flex-col">
+                <span>Google</span>
+                <span className="text-xs text-muted-foreground">Gmail and Google Workspace</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onSignIn("microsoft")}>
+              <IconMail />
+              <div className="flex flex-col">
+                <span>Microsoft</span>
+                <span className="text-xs text-muted-foreground">Outlook.com, work and school</span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {accounts.length > 0 && (
+        <div className="flex flex-col divide-y">
+          {accounts.map((a) => (
+            <AccountRow key={a.id} account={a} onChanged={onChanged} onReconnect={onSignIn} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1462,7 +1503,6 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
   const [recording, setRecording] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const key = bindingOf(def.id);
-  const also = [...new Set(Object.values(def.also ?? {}).flat())];
 
   useEffect(() => {
     setRecordingShortcut(recording);
@@ -1496,11 +1536,7 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
     <div className="flex min-h-12 items-center gap-3 px-3 py-1.5">
       <div className="min-w-0 flex-1">
         <div className="text-sm">{def.label}</div>
-        {recording && problem ? (
-          <div className="text-xs text-destructive">{problem}</div>
-        ) : also.length > 0 ? (
-          <div className="text-xs text-muted-foreground">Also {also.map(keyText).join(", ")}</div>
-        ) : null}
+        {recording && problem && <div className="text-xs text-destructive">{problem}</div>}
       </div>
       {isCustomized(def.id) && (
         <Tooltip>

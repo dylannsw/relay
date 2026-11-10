@@ -35,18 +35,9 @@ export function EventPanel(props: {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-1 px-2">
+      {/* px-3 + the icon button's own 8px inset puts the X glyph 20px in, level with the details' px-5. */}
+      <div className="flex h-12 shrink-0 items-center gap-1 px-3">
         <span className="flex-1 truncate px-2 text-sm font-medium text-muted-foreground">{e ? "" : "New event"}</span>
-        {e?.htmlLink && (
-          <IconButton label="Open in Google Calendar" onClick={() => void api.openExternal(e.htmlLink)}>
-            <IconExternalLink />
-          </IconButton>
-        )}
-        {e && editable && (
-          <IconButton label="Delete event" variant="destructive" onClick={() => void deleteEvent(e).then((ok) => ok && onClose())}>
-            <IconTrash />
-          </IconButton>
-        )}
         <IconButton label="Close" onClick={onClose}>
           <IconX />
         </IconButton>
@@ -69,7 +60,9 @@ export function EventPanel(props: {
             <>
               <Separator />
               <Row icon={<IconAlignLeft />}>
-                <p className="break-words whitespace-pre-wrap">{description}</p>
+                {/* `anywhere`, not `break-word`: the scroll area's content box sizes to its widest
+                    unbreakable word, so a long URL would otherwise widen the panel and get clipped. */}
+                <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{description}</p>
               </Row>
             </>
           )}
@@ -100,6 +93,22 @@ export function EventPanel(props: {
           </ButtonGroup>
         </div>
       )}
+      {e && (e.htmlLink || editable) && (
+        <div className="flex shrink-0 items-center gap-2 border-t px-5 py-3">
+          {e.htmlLink && (
+            <Button variant="outline" size="sm" onClick={() => void api.openExternal(e.htmlLink)}>
+              <IconExternalLink />
+              Open in Google Calendar
+            </Button>
+          )}
+          {editable && (
+            <Button variant="destructive" size="sm" className="ml-auto" onClick={() => void deleteEvent(e).then((ok) => ok && onClose())}>
+              <IconTrash />
+              Delete
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -107,16 +116,15 @@ export function EventPanel(props: {
 const editorKey = (e: CalendarEvent) =>
   [e.id, e.title, e.location, e.start, e.end, e.allDay, e.startDate, e.endDate, e.calendarId, e.attendees.map((a) => a.email).join()].join("|");
 
-function IconButton({ label, onClick, variant = "ghost", children }: {
+function IconButton({ label, onClick, children }: {
   label: string;
   onClick: () => void;
-  variant?: "ghost" | "destructive";
   children: React.ReactNode;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant={variant} size="icon-sm" onClick={onClick}>
+        <Button variant="ghost" size="icon-sm" onClick={onClick}>
           {children}
           <span className="sr-only">{label}</span>
         </Button>

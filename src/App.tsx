@@ -499,9 +499,8 @@ export default function App() {
             setView(v);
             clearSelection();
           }}
-          onAddAccount={addAccount}
+          onReconnect={addAccount}
           onOpenSettings={() => openSettings()}
-          signingIn={signingIn}
         />
         <SidebarInset className="min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0">
           {view.kind === "home" ? (
@@ -605,7 +604,8 @@ export default function App() {
             setSettingsSection(undefined);
           }}
           onAccountsChanged={() => refreshAll.current()}
-          onReconnect={(p) => {
+          signingIn={signingIn}
+          onSignIn={(p) => {
             setSettingsOpen(false);
             void addAccount(p);
           }}
