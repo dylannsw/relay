@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Relay: a deep-blue tile with a tilted blue sheet and a lined pad whose top page peels back. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2c45c2"/>
+      <stop offset="1" stop-color="#21369c"/>
+    </linearGradient>
+    <linearGradient id="sheet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4b68ea"/>
+      <stop offset="1" stop-color="#3f5bdb"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f6fd"/>
+      <stop offset="1" stop-color="#e2e7f7"/>
+    </linearGradient>
+    <linearGradient id="under-page" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e6ebf9"/>
+      <stop offset="1" stop-color="#d6ddf3"/>
+    </linearGradient>
+    <!-- The flap is shaded darker toward the fold (lower left) and bright at its rounded edge. -->
+    <linearGradient id="flap" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#c9d1ee"/>
+      <stop offset="0.45" stop-color="#eef1fb"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <clipPath id="tile-shape">
+      <rect width="1024" height="1024" rx="236"/>
+    </clipPath>
+    <clipPath id="pad-shape">
+      <rect x="286" y="-500" width="1300" height="1227" rx="92"/>
+    </clipPath>
+    <!-- The top page once its corner is folded away: everything above the fold line. -->
+    <path id="top-page" d="M286 -500 V 236 C 286 306 328 336 404 351 L 777 727 H 1586 V -500 Z"/>
+    <path id="flap-shape" transform="translate(404 351) scale(1.18) translate(-404 -351)" d="M404 351 C 472 352 548 362 594 388 C 642 416 664 452 664 504 C 664 552 678 604 729 679 Z"/>
+    <g id="lines" stroke="#c5ceee" stroke-width="12" stroke-linecap="round">
+      <line x1="286" y1="-216" x2="1586" y2="-216"/>
+      <line x1="286" y1="-76" x2="1586" y2="-76"/>
+      <line x1="286" y1="64" x2="1586" y2="64"/>
+      <line x1="286" y1="204" x2="1586" y2="204"/>
+      <line x1="286" y1="344" x2="1586" y2="344"/>
+      <line x1="286" y1="484" x2="1586" y2="484"/>
+      <line x1="286" y1="624" x2="1586" y2="624"/>
+    </g>
+    <clipPath id="top-page-clip">
+      <use href="#top-page"/>
+    </clipPath>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <filter id="softer" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+  </defs>
+
+  <g clip-path="url(#tile-shape)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+
+    <!-- The sheets, drawn upright and then tilted. -->
+    <g transform="rotate(-13 512 512)">
+      <!-- Blue sheet underneath, with its shadow on the tile -->
+      <rect x="194" y="-480" width="1400" height="1336" rx="124" fill="#14257a" opacity="0.5" filter="url(#soft)" transform="translate(-4 14)"/>
+      <rect x="199" y="-500" width="1400" height="1338" rx="124" fill="url(#sheet)"/>
+
+      <!-- Shadow of the pad on the blue sheet -->
+      <rect x="286" y="-500" width="1300" height="1227" rx="92" fill="#1b2f95" opacity="0.5" filter="url(#soft)" transform="translate(-6 16)"/>
+
+      <g clip-path="url(#pad-shape)">
+        <!-- The page underneath, showing where the top page has peeled away -->
+        <rect x="286" y="-500" width="1300" height="1227" fill="url(#under-page)"/>
+        <use href="#lines"/>
+
+        <!-- The top page, casting a soft shadow along its folded edge -->
+        <use href="#top-page" fill="#1b2f95" opacity="0.2" filter="url(#softer)" transform="translate(-6 12)"/>
+        <use href="#top-page" fill="url(#page)"/>
+        <use href="#lines" clip-path="url(#top-page-clip)"/>
+
+        <!-- The folded-back corner: shadow on the page, then its underside -->
+        <use href="#flap-shape" fill="#1b2f95" opacity="0.32" filter="url(#softer)" transform="translate(12 10)"/>
+        <use href="#flap-shape" fill="url(#flap)"/>
+      </g>
+    </g>
+  </g>
+</svg>

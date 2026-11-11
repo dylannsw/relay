@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { isTauri } from "@/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import appIcon from "../../app-icon.svg";
+import { useAppIcon } from "@/app-icon";
 
 interface Props {
   /** Centre of the bar: the command bar. */
@@ -19,6 +19,7 @@ interface Props {
  * the search field stay clickable.
  */
 export function TitleBar({ children }: Props) {
+  const appIcon = useAppIcon();
   return (
     <header
       data-tauri-drag-region

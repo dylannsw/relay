@@ -79,6 +79,8 @@ import { Separator } from "@/components/ui/separator";
 import { quick } from "@/lib/motion";
 import {
   ACCENTS,
+  APP_ICONS,
+  type AppIconId,
   CUSTOM_ACCENT,
   customAccent,
   FONTS,
@@ -94,7 +96,7 @@ import { ColorPicker } from "@/components/color-picker";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/updater";
-import appIcon from "../../app-icon.svg";
+import { appIconSrc, useAppIcon } from "@/app-icon";
 import { api, errorText, isTauri } from "@/api";
 import { clockTime, relativeTime } from "@/format";
 import {
@@ -1217,6 +1219,7 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
 
 function UpdatesTab() {
   const u = useUpdater();
+  const appIcon = useAppIcon();
   const s = u.status;
   const busy = s.kind === "checking" || s.kind === "downloading" || s.kind === "installing";
   const checked = u.checkedAt ? `Checked ${relativeTime(u.checkedAt)}` : null;
@@ -1432,6 +1435,33 @@ function ThemeCard({ id, label, selected, onSelect }: {
   );
 }
 
+/** The corner shape of each app icon: a circular radius as a fraction of its size, or the
+ *  exponent of the squircle (|x|^n + |y|^n = 1) its artwork is drawn on. */
+const APP_ICON_SHAPE = { relay: { radius: 0.23 }, terminal: { n: 4.4 }, command: { n: 5.2 } } as const;
+
+/** Centre line of an outline drawn `gap`px outside an `iconSize`px icon of the given shape, in a
+ *  viewBox just big enough for it (stroke width 2), so it follows the icon's corners at an even distance. */
+function iconOutlinePath(id: AppIconId, iconSize: number, gap: number): string {
+  const shape = APP_ICON_SHAPE[id];
+  const half = iconSize / 2 + gap;
+  const c = half + 1;
+  if ("radius" in shape) {
+    // A rounded square: the outline's radius is the icon's plus the gap.
+    const r = shape.radius * iconSize + gap;
+    return `M${c - half + r} ${c - half}H${c + half - r}A${r} ${r} 0 0 1 ${c + half} ${c - half + r}V${c + half - r}A${r} ${r} 0 0 1 ${c + half - r} ${c + half}H${c - half + r}A${r} ${r} 0 0 1 ${c - half} ${c + half - r}V${c - half + r}A${r} ${r} 0 0 1 ${c - half + r} ${c - half}Z`;
+  }
+  const points: string[] = [];
+  for (let i = 0; i < 128; i++) {
+    const t = (i / 128) * Math.PI * 2;
+    const cos = Math.cos(t);
+    const sin = Math.sin(t);
+    const x = c + half * Math.sign(cos) * Math.abs(cos) ** (2 / shape.n);
+    const y = c + half * Math.sign(sin) * Math.abs(sin) ** (2 / shape.n);
+    points.push(`${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`);
+  }
+  return points.join("") + "Z";
+}
+
 function AppearanceTab() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   const prefs = useAppearance();
@@ -1477,6 +1507,36 @@ function AppearanceTab() {
             selected={prefs.accent === CUSTOM_ACCENT}
             dark={resolvedTheme === "dark"}
           />
+        </div>
+      </SettingRow>
+      <SettingRow
+        title="App icon"
+        description="Shown in the title bar and on the taskbar. The installer and shortcuts always use the Terminal icon."
+      >
+        <div className="flex shrink-0 items-center gap-1">
+          {APP_ICONS.map((icon) => {
+            const selected = prefs.appIcon === icon.id;
+            return (
+              <Tooltip key={icon.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={icon.label}
+                    aria-pressed={selected}
+                    onClick={() => setAppearance({ appIcon: icon.id })}
+                    className="group relative p-1 transition-[scale] duration-200 ease-(--ease-out-soft) outline-none hover:scale-105"
+                  >
+                    <img src={appIconSrc(icon.id)} alt="" draggable={false} className="size-10" />
+                    {/* The outline follows the icon's own corner shape, 3px out from it. */}
+                    <svg viewBox="0 0 48 48" fill="none" strokeWidth="2" aria-hidden className={cn("pointer-events-none absolute inset-0 size-full transition-[stroke] duration-200", selected ? "stroke-primary" : "stroke-transparent group-focus-visible:stroke-ring")}>
+                      <path d={iconOutlinePath(icon.id, 40, 3)} />
+                    </svg>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{icon.label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
       </SettingRow>
       <SettingRow

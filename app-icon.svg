@@ -1,83 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Relay: a deep-blue tile with a tilted blue sheet and a lined pad whose top page peels back. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><g transform="scale(1.75643) translate(-136 -155)">
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2c45c2"/>
-      <stop offset="1" stop-color="#21369c"/>
+    <path id="tile" d="M719 446.5C719 474.63 718.91 511.63 718.72 530.89C718.53 550.14 718.24 552.98 717.86 562.03C717.48 571.08 717.01 578.15 716.44 585.18C715.87 592.21 715.21 598.31 714.44 604.2C713.68 610.08 712.82 615.4 711.86 620.52C710.91 625.63 709.85 630.35 708.7 634.87C707.54 639.4 706.29 643.63 704.93 647.69C703.57 651.74 702.12 655.56 700.55 659.22C698.99 662.88 697.32 666.34 695.54 669.66C693.77 672.98 691.88 676.12 689.89 679.13C687.89 682.14 685.78 684.99 683.55 687.72C681.33 690.45 678.99 693.04 676.51 695.51C674.04 697.99 671.45 700.33 668.72 702.55C665.99 704.78 663.14 706.89 660.13 708.89C657.12 710.88 653.98 712.77 650.66 714.54C647.34 716.32 643.88 717.99 640.22 719.55C636.56 721.12 632.74 722.57 628.69 723.93C624.63 725.29 620.4 726.54 615.87 727.7C611.35 728.85 606.63 729.91 601.52 730.86C596.4 731.82 591.08 732.68 585.2 733.44C579.31 734.21 573.21 734.87 566.18 735.44C559.15 736.01 552.08 736.48 543.03 736.86C533.98 737.24 531.14 737.53 511.89 737.72C492.63 737.91 455.63 738 427.5 738C399.37 738 362.37 737.91 343.11 737.72C323.86 737.53 321.02 737.24 311.97 736.86C302.92 736.48 295.85 736.01 288.82 735.44C281.79 734.87 275.69 734.21 269.8 733.44C263.92 732.68 258.6 731.82 253.48 730.86C248.37 729.91 243.65 728.85 239.13 727.7C234.6 726.54 230.37 725.29 226.31 723.93C222.26 722.57 218.44 721.12 214.78 719.55C211.12 717.99 207.66 716.32 204.34 714.54C201.02 712.77 197.88 710.88 194.87 708.89C191.86 706.89 189.01 704.78 186.28 702.55C183.55 700.33 180.96 697.99 178.49 695.51C176.01 693.04 173.67 690.45 171.45 687.72C169.22 684.99 167.11 682.14 165.11 679.13C163.12 676.12 161.23 672.98 159.46 669.66C157.68 666.34 156.01 662.88 154.45 659.22C152.88 655.56 151.43 651.74 150.07 647.69C148.71 643.63 147.46 639.4 146.3 634.87C145.15 630.35 144.09 625.63 143.14 620.52C142.18 615.4 141.32 610.08 140.56 604.2C139.79 598.31 139.13 592.21 138.56 585.18C137.99 578.15 137.52 571.08 137.14 562.03C136.76 552.98 136.47 550.14 136.28 530.89C136.09 511.63 136 474.63 136 446.5C136 418.37 136.09 381.37 136.28 362.11C136.47 342.86 136.76 340.02 137.14 330.97C137.52 321.92 137.99 314.85 138.56 307.82C139.13 300.79 139.79 294.69 140.56 288.8C141.32 282.92 142.18 277.6 143.14 272.48C144.09 267.37 145.15 262.65 146.3 258.13C147.46 253.6 148.71 249.37 150.07 245.31C151.43 241.26 152.88 237.44 154.45 233.78C156.01 230.12 157.68 226.66 159.46 223.34C161.23 220.02 163.12 216.88 165.11 213.87C167.11 210.86 169.22 208.01 171.45 205.28C173.67 202.55 176.01 199.96 178.49 197.49C180.96 195.01 183.55 192.67 186.28 190.45C189.01 188.22 191.86 186.11 194.87 184.11C197.88 182.12 201.02 180.23 204.34 178.46C207.66 176.68 211.12 175.01 214.78 173.45C218.44 171.88 222.26 170.43 226.31 169.07C230.37 167.71 234.6 166.46 239.13 165.3C243.65 164.15 248.37 163.09 253.48 162.14C258.6 161.18 263.92 160.32 269.8 159.56C275.69 158.79 281.79 158.13 288.82 157.56C295.85 156.99 302.92 156.52 311.97 156.14C321.02 155.76 323.86 155.47 343.11 155.28C362.37 155.09 399.37 155 427.5 155C455.63 155 492.63 155.09 511.89 155.28C531.14 155.47 533.98 155.76 543.03 156.14C552.08 156.52 559.15 156.99 566.18 157.56C573.21 158.13 579.31 158.79 585.2 159.56C591.08 160.32 596.4 161.18 601.52 162.14C606.63 163.09 611.35 164.15 615.87 165.3C620.4 166.46 624.63 167.71 628.69 169.07C632.74 170.43 636.56 171.88 640.22 173.45C643.88 175.01 647.34 176.68 650.66 178.46C653.98 180.23 657.12 182.12 660.13 184.11C663.14 186.11 665.99 188.22 668.72 190.45C671.45 192.67 674.04 195.01 676.51 197.49C678.99 199.96 681.33 202.55 683.55 205.28C685.78 208.01 687.89 210.86 689.89 213.87C691.88 216.88 693.77 220.02 695.54 223.34C697.32 226.66 698.99 230.12 700.55 233.78C702.12 237.44 703.57 241.26 704.93 245.31C706.29 249.37 707.54 253.6 708.7 258.13C709.85 262.65 710.91 267.37 711.86 272.48C712.82 277.6 713.68 282.92 714.44 288.8C715.21 294.69 715.87 300.79 716.44 307.82C717.01 314.85 717.48 321.92 717.86 330.97C718.24 340.02 718.53 342.86 718.72 362.11C718.91 381.37 719 418.37 719 446.5Z"/>
+    <clipPath id="tile-clip"><use href="#tile"/></clipPath>
+    <radialGradient id="face" gradientUnits="userSpaceOnUse" cx="610" cy="185" r="700">
+      <stop offset="0" stop-color="#414247"/>
+      <stop offset="0.2" stop-color="#3f4044"/>
+      <stop offset="0.4" stop-color="#343539"/>
+      <stop offset="0.65" stop-color="#252528"/>
+      <stop offset="0.8" stop-color="#1e1d22"/>
+      <stop offset="1" stop-color="#18171c"/>
+    </radialGradient>
+    <linearGradient id="rim-l" gradientUnits="userSpaceOnUse" x1="136" y1="200" x2="719" y2="640">
+      <stop offset="0" stop-color="#d0d0d5" stop-opacity="0.95"/>
+      <stop offset="0.22" stop-color="#cdcdd2" stop-opacity="0.8"/>
+      <stop offset="0.3" stop-color="#c4c4ca" stop-opacity="0.45"/>
+      <stop offset="0.5" stop-color="#bdbdc4" stop-opacity="0.15"/>
+      <stop offset="0.66" stop-color="#bdbdc4" stop-opacity="0"/>
+      <stop offset="1" stop-color="#bdbdc4" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="sheet" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4b68ea"/>
-      <stop offset="1" stop-color="#3f5bdb"/>
+    <linearGradient id="rim-b" gradientUnits="userSpaceOnUse" x1="0" y1="640" x2="0" y2="738">
+      <stop offset="0" stop-color="#b5b4be" stop-opacity="0"/>
+      <stop offset="1" stop-color="#c4c3cd" stop-opacity="0.4"/>
     </linearGradient>
-    <linearGradient id="page" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f4f6fd"/>
-      <stop offset="1" stop-color="#e2e7f7"/>
+    <filter id="blur1" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1"/></filter>
+    <filter id="blur2" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="2.4"/></filter>
+    <filter id="blur3" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="2.2"/></filter>
+    <filter id="blur5" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="4.5"/></filter>
+    <filter id="blur6" x="-10%" y="-20%" width="120%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+    <linearGradient id="pill-fill" gradientUnits="userSpaceOnUse" x1="195" y1="0" x2="660" y2="0">
+      <stop offset="0" stop-color="#101013"/>
+      <stop offset="0.12" stop-color="#121214"/>
+      <stop offset="0.5" stop-color="#18181a"/>
+      <stop offset="1" stop-color="#1f1f21"/>
     </linearGradient>
-    <linearGradient id="under-page" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#e6ebf9"/>
-      <stop offset="1" stop-color="#d6ddf3"/>
+    <linearGradient id="pill-rim" gradientUnits="userSpaceOnUse" x1="0" y1="452" x2="0" y2="680">
+      <stop offset="0" stop-color="#46454b"/>
+      <stop offset="0.5" stop-color="#3c3b41"/>
+      <stop offset="1" stop-color="#4a4950"/>
     </linearGradient>
-    <!-- The flap is shaded darker toward the fold (lower left) and bright at its rounded edge. -->
-    <linearGradient id="flap" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#c9d1ee"/>
-      <stop offset="0.45" stop-color="#eef1fb"/>
-      <stop offset="1" stop-color="#ffffff"/>
+    <linearGradient id="glyph" gradientUnits="userSpaceOnUse" x1="0" y1="498" x2="0" y2="634">
+      <stop offset="0" stop-color="#626264"/>
+      <stop offset="1" stop-color="#58585b"/>
     </linearGradient>
-    <clipPath id="tile-shape">
-      <rect width="1024" height="1024" rx="236"/>
-    </clipPath>
-    <clipPath id="pad-shape">
-      <rect x="286" y="-500" width="1300" height="1227" rx="92"/>
-    </clipPath>
-    <!-- The top page once its corner is folded away: everything above the fold line. -->
-    <path id="top-page" d="M286 -500 V 236 C 286 306 328 336 404 351 L 777 727 H 1586 V -500 Z"/>
-    <path id="flap-shape" transform="translate(404 351) scale(1.18) translate(-404 -351)" d="M404 351 C 472 352 548 362 594 388 C 642 416 664 452 664 504 C 664 552 678 604 729 679 Z"/>
-    <g id="lines" stroke="#c5ceee" stroke-width="12" stroke-linecap="round">
-      <line x1="286" y1="-216" x2="1586" y2="-216"/>
-      <line x1="286" y1="-76" x2="1586" y2="-76"/>
-      <line x1="286" y1="64" x2="1586" y2="64"/>
-      <line x1="286" y1="204" x2="1586" y2="204"/>
-      <line x1="286" y1="344" x2="1586" y2="344"/>
-      <line x1="286" y1="484" x2="1586" y2="484"/>
-      <line x1="286" y1="624" x2="1586" y2="624"/>
-    </g>
-    <clipPath id="top-page-clip">
-      <use href="#top-page"/>
-    </clipPath>
-    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="16"/>
-    </filter>
-    <filter id="softer" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="9"/>
-    </filter>
+    <clipPath id="pill-clip"><rect x="195" y="452" width="465" height="227.5" rx="92"/></clipPath>
   </defs>
 
-  <g clip-path="url(#tile-shape)">
-    <rect width="1024" height="1024" fill="url(#tile)"/>
-
-    <!-- The sheets, drawn upright and then tilted. -->
-    <g transform="rotate(-13 512 512)">
-      <!-- Blue sheet underneath, with its shadow on the tile -->
-      <rect x="194" y="-480" width="1400" height="1336" rx="124" fill="#14257a" opacity="0.5" filter="url(#soft)" transform="translate(-4 14)"/>
-      <rect x="199" y="-500" width="1400" height="1338" rx="124" fill="url(#sheet)"/>
-
-      <!-- Shadow of the pad on the blue sheet -->
-      <rect x="286" y="-500" width="1300" height="1227" rx="92" fill="#1b2f95" opacity="0.5" filter="url(#soft)" transform="translate(-6 16)"/>
-
-      <g clip-path="url(#pad-shape)">
-        <!-- The page underneath, showing where the top page has peeled away -->
-        <rect x="286" y="-500" width="1300" height="1227" fill="url(#under-page)"/>
-        <use href="#lines"/>
-
-        <!-- The top page, casting a soft shadow along its folded edge -->
-        <use href="#top-page" fill="#1b2f95" opacity="0.2" filter="url(#softer)" transform="translate(-6 12)"/>
-        <use href="#top-page" fill="url(#page)"/>
-        <use href="#lines" clip-path="url(#top-page-clip)"/>
-
-        <!-- The folded-back corner: shadow on the page, then its underside -->
-        <use href="#flap-shape" fill="#1b2f95" opacity="0.32" filter="url(#softer)" transform="translate(12 10)"/>
-        <use href="#flap-shape" fill="url(#flap)"/>
-      </g>
-    </g>
+  <g clip-path="url(#tile-clip)">
+    <use href="#tile" fill="url(#face)"/>
+    <!-- Lit edge: bright on the left and top, a softer glow along the bottom, none on the right -->
+    <use href="#tile" fill="none" stroke="url(#rim-l)" stroke-width="20" opacity="0.22" filter="url(#blur5)"/>
+    <use href="#tile" fill="none" stroke="url(#rim-l)" stroke-width="8" filter="url(#blur1)"/>
+    <use href="#tile" fill="none" stroke="url(#rim-b)" stroke-width="12" filter="url(#blur3)"/>
+    <use href="#tile" fill="none" stroke="url(#rim-b)" stroke-width="3" opacity="0.7"/>
   </g>
-</svg>
+
+  <!-- The recessed prompt bar -->
+  <rect x="195" y="452" width="465" height="227.5" rx="92" fill="url(#pill-fill)"/>
+  <g clip-path="url(#pill-clip)">
+    <rect x="180" y="452" width="40" height="228" fill="#000" opacity="0.14" filter="url(#blur6)"/>
+  </g>
+  <rect x="195.8" y="452.8" width="463.4" height="225.9" rx="91.2" fill="none" stroke="url(#pill-rim)" stroke-width="1.7"/>
+
+  <!-- >_ -->
+  <path fill="url(#glyph)" d="M265 498.6 L351 556 V576.4 L265 633.8 V611.6 L331.5 566.2 L265 521Z"/>
+  <rect x="352" y="607.5" width="131" height="24" fill="url(#glyph)"/></g></svg>

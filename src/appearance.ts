@@ -91,6 +91,18 @@ export const TOAST_POSITIONS = [
 
 export type ToastPosition = (typeof TOAST_POSITIONS)[number]["id"];
 
+/** The icons Relay can wear in its title bar and on the taskbar (images live in `app-icon.ts`). */
+export const APP_ICONS = [
+  { id: "terminal", label: "Terminal" },
+  { id: "command", label: "Command" },
+  { id: "relay", label: "Relay" },
+] as const;
+
+export type AppIconId = (typeof APP_ICONS)[number]["id"];
+
+/** The icon built into the .exe and installer (`app-icon.svg`); the others are applied at run time. */
+export const DEFAULT_APP_ICON: AppIconId = "terminal";
+
 export interface AppearancePrefs {
   accent: string;
   /** The colour-picker colour as "#rrggbb"; "" until one is picked. Kept when a preset is chosen. */
@@ -98,10 +110,12 @@ export interface AppearancePrefs {
   font: string;
   /** Where notifications (toasts) appear. */
   toastPosition: ToastPosition;
+  /** The icon shown in the title bar and on the taskbar. */
+  appIcon: AppIconId;
 }
 
 const KEY = "relay.appearance";
-const DEFAULTS: AppearancePrefs = { accent: "blue", customAccent: "", font: "default", toastPosition: "bottom-right" };
+const DEFAULTS: AppearancePrefs = { accent: "blue", customAccent: "", font: "default", toastPosition: "bottom-right", appIcon: DEFAULT_APP_ICON };
 
 let prefs: AppearancePrefs = DEFAULTS;
 const listeners = new Set<() => void>();
@@ -118,6 +132,7 @@ function read(): AppearancePrefs {
       customAccent: custom,
       font: FONTS.some((x) => x.id === saved.font) ? saved.font : DEFAULTS.font,
       toastPosition: TOAST_POSITIONS.some((x) => x.id === saved.toastPosition) ? saved.toastPosition : DEFAULTS.toastPosition,
+      appIcon: APP_ICONS.some((x) => x.id === saved.appIcon) ? saved.appIcon : DEFAULTS.appIcon,
     };
   } catch {
     return DEFAULTS;
