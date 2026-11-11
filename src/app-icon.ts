@@ -3,6 +3,7 @@
 // The installer, the .exe file and pinned shortcuts keep the default icon (app-icon.svg): Windows reads those at build time.
 
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "@/api";
 import { type AppIconId, DEFAULT_APP_ICON, useAppearance } from "@/appearance";
@@ -31,10 +32,14 @@ async function setWindowIcon(id: AppIconId) {
   if (id === DEFAULT_APP_ICON && !changed) return;
   changed = true;
   try {
-    const bytes = await (await fetch(FILES[id].png)).arrayBuffer();
-    await getCurrentWindow().setIcon(new Uint8Array(bytes));
-  } catch {
+    const bytes = new Uint8Array(await (await fetch(FILES[id].png)).arrayBuffer());
+    // The taskbar uses the window's big icon, which only our own command sets; the window's small
+    // icon (title bar, which this undecorated window doesn't show) goes through Tauri.
+    await invoke("set_taskbar_icon", { png: bytes });
+    await getCurrentWindow().setIcon(bytes);
+  } catch (e) {
     // Not fatal: the title bar still shows the chosen icon.
+    console.warn("Couldn't set the window icon", e);
   }
 }
 

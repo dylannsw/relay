@@ -22,6 +22,7 @@ mod places;
 mod senders;
 mod state;
 mod sync;
+mod taskbar;
 mod tasks;
 
 use std::sync::Arc;
@@ -45,6 +46,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            taskbar::set_taskbar_icon,
             commands::get_config,
             commands::save_config,
             commands::save_display_name,
