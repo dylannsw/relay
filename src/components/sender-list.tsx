@@ -95,11 +95,10 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       : null;
 
   // A group of several emails reads as a stack of three: two cards peek out behind the row.
-  // On hover the stack fans open a little, as a hint that it opens.
   const behind = g.count > 1 ? 2 : 0;
 
   return (
-    <div className="group/stack relative" style={{ paddingBottom: behind * PEEK }}>
+    <div className="relative" style={{ paddingBottom: behind * PEEK }}>
       {/* Deepest first, so each card paints over the one behind it. Every layer is opaque, or
           the cards would show through each other (and through the row's hover colour). */}
       {[2, 1].filter((depth) => depth <= behind).map((depth) => (
@@ -107,13 +106,13 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
           key={depth}
           aria-hidden
           className={cn(
-            "absolute top-3 rounded-xl border border-foreground/10 transition-transform duration-300 ease-(--ease-out-soft)",
+            "absolute top-3 rounded-xl border border-foreground/10",
             // Each card further back is darker, as if in the row's shadow: tinted towards the
             // text colour in light mode, and towards black in dark mode (where mixing in the
             // text colour would lighten it instead).
             depth === 1
-              ? "inset-x-2.5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_4%)] group-hover/stack:translate-y-1 dark:border-white/12 dark:bg-[color-mix(in_oklab,var(--card),black_12%)]"
-              : "inset-x-5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_6%)] group-hover/stack:translate-y-2 dark:border-white/9 dark:bg-[color-mix(in_oklab,var(--card),black_16%)]",
+              ? "inset-x-2.5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_4%)] dark:border-white/12 dark:bg-[color-mix(in_oklab,var(--card),black_12%)]"
+              : "inset-x-5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_6%)] dark:border-white/9 dark:bg-[color-mix(in_oklab,var(--card),black_16%)]",
           )}
           style={{ bottom: (behind - depth) * PEEK }}
         />
