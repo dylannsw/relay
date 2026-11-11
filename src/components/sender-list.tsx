@@ -113,7 +113,7 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
             // text colour would lighten it instead).
             depth === 1
               ? "inset-x-2.5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_4%)] group-hover/stack:translate-y-1 dark:border-white/12 dark:bg-[color-mix(in_oklab,var(--card),black_12%)]"
-              : "inset-x-5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_9%)] group-hover/stack:translate-y-2 dark:border-white/9 dark:bg-[color-mix(in_oklab,var(--card),black_24%)]",
+              : "inset-x-5 bg-[color-mix(in_oklab,var(--card),var(--foreground)_6%)] group-hover/stack:translate-y-2 dark:border-white/9 dark:bg-[color-mix(in_oklab,var(--card),black_16%)]",
           )}
           style={{ bottom: (behind - depth) * PEEK }}
         />

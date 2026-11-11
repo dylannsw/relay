@@ -216,7 +216,12 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                 {totalUnread > 0 && <SidebarMenuBadge>{totalUnread}</SidebarMenuBadge>}
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={view.kind === "cleanup"} onClick={() => onView({ kind: "cleanup" })}>
+                <SidebarMenuButton
+                  isActive={view.kind === "cleanup"}
+                  onClick={() => onView({ kind: "cleanup" })}
+                  // Selected, its icon is the Star button's mustard instead of the accent colour.
+                  className="[--sidebar-icon-active:var(--color-yellow-700)] dark:[--sidebar-icon-active:var(--color-yellow-400)]"
+                >
                   <IconSparkles />
                   <span>Clean up</span>
                 </SidebarMenuButton>
