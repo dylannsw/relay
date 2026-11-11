@@ -507,7 +507,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       return delay(undefined) as Promise<T>;
     case "move_message":
       find(args.id)!.folder = args.folder as Folder;
-      return delay(undefined) as Promise<T>;
+      return delay(args.id as string) as Promise<T>;
     case "send_message": {
       const out = args.message as OutgoingMessage;
       console.info("[mock] would send", out);

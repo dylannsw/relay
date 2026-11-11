@@ -55,7 +55,8 @@ export const api = {
 
   setRead: (id: string, read: boolean) => call<void>("set_read", { id, read }),
   setStarred: (id: string, starred: boolean) => call<void>("set_starred", { id, starred }),
-  moveMessage: (id: string, folder: Folder) => call<void>("move_message", { id, folder }),
+  /** Resolves to the message's id after the move (Outlook gives it a new one). */
+  moveMessage: (id: string, folder: Folder) => call<string>("move_message", { id, folder }),
   send: (message: OutgoingMessage) => call<void>("send_message", { message }),
 
   syncNow: () => call<SyncReport[]>("sync_now"),

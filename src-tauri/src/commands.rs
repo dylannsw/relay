@@ -15,7 +15,7 @@ use crate::tasks::{self, Note, TasksSnapshot};
 use crate::error::{msg, Result};
 use crate::mime::{self, OutgoingMime};
 use crate::models::{
-    Account, Address, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, OutgoingMessage,
+    local_id, Account, Address, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, OutgoingMessage,
     Provider, SyncReport,
 };
 use crate::state::AppState;
@@ -378,12 +378,13 @@ pub async fn set_starred(state: St<'_>, id: String, starred: bool) -> Result<()>
 }
 
 #[tauri::command]
-/// Moves a message to Inbox, Archive, Trash or Spam.
-pub async fn move_message(state: St<'_>, id: String, folder: Folder) -> Result<()> {
+/// Moves a message to Inbox, Archive, Trash or Spam. Returns its id afterwards: Outlook
+/// gives a moved message a new one, so moving it back (Undo) has to use that.
+pub async fn move_message(state: St<'_>, id: String, folder: Folder) -> Result<String> {
     let c = ctx(&state, &id).await?;
     let from = c.message.folder;
     if from == folder {
-        return Ok(());
+        return Ok(id);
     }
     let new_remote_id = match c.account.provider {
         Provider::Google => {
@@ -394,7 +395,11 @@ pub async fn move_message(state: St<'_>, id: String, folder: Folder) -> Result<(
             Some(graph::move_to(&state.http, &c.token, &c.message.remote_id, folder).await?)
         }
     };
-    state.db(|db| db::set_folder(db, &id, folder, new_remote_id.as_deref()))
+    state.db(|db| db::set_folder(db, &id, folder, new_remote_id.as_deref()))?;
+    Ok(match new_remote_id {
+        Some(rid) => local_id(&c.account.id, &rid),
+        None => id,
+    })
 }
 
 // ---------- sending ----------

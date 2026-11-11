@@ -289,9 +289,21 @@ export default function App() {
     void refreshGroups();
     const n = moving.length;
     const where = folderLabel(to);
+    // Each message goes back to the folder it came from, under the id it has now.
+    const undo = moving.map((m, i) => ({ id: (results[i] as PromiseFulfilledResult<string>).value, folder: m.folder }));
     toast.success(
       to === "archive" ? (n === 1 ? "Archived" : `Archived ${n} messages`) : n === 1 ? `Moved to ${where}` : `Moved ${n} messages to ${where}`,
+      { duration: 8000, action: { label: "Undo", onClick: () => void undoMoves(undo) } },
     );
+  };
+
+  /** Puts moved messages back in the folders they came from. */
+  const undoMoves = async (moved: { id: string; folder: Folder }[]) => {
+    const results = await Promise.allSettled(moved.map((x) => api.moveMessage(x.id, x.folder)));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed) toast.error(errorText(failed.reason));
+    else toast.success(moved.length === 1 ? "Moved back" : `Moved ${moved.length} messages back`);
+    refreshAll.current();
   };
   const moveMessage = (m: MessageSummary, to: Folder) => moveMessages([m], to);
 
