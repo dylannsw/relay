@@ -215,6 +215,21 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                 </SidebarMenuButton>
                 {totalUnread > 0 && <SidebarMenuBadge>{totalUnread}</SidebarMenuBadge>}
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.kind === "cleanup"} onClick={() => onView({ kind: "cleanup" })}>
+                  <IconSparkles />
+                  <span>Clean up</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Personal, Work, School: a group of their own, set apart from All inboxes and Clean up. */}
+        {labels.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
               {labels.map((label) => {
                   const Icon = LABEL_ICONS[label] ?? IconTag;
                   const unread = accounts.filter((a) => a.label === label).reduce((n, a) => n + a.unreadCount, 0);
@@ -229,15 +244,10 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                     </SidebarMenuItem>
                   );
                 })}
-              <SidebarMenuItem>
-                <SidebarMenuButton isActive={view.kind === "cleanup"} onClick={() => onView({ kind: "cleanup" })}>
-                  <IconSparkles />
-                  <span>Clean up</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {accounts.length > 0 && (
           <SidebarGroup>
