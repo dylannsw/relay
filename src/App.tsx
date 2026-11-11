@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, errorText, isTauri } from "@/api";
-import type { Account, ComposeMode, Folder, MessageDetail, MessageSummary, Provider } from "@/types";
+import type { Account, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, Provider, SenderGroup } from "@/types";
 import { addressList, dedupeAddresses, prefixSubject } from "@/format";
 import { folderLabel } from "@/folders";
 import { loadShortcuts, matchShortcut, type ShortcutId } from "@/shortcuts";
@@ -12,6 +12,7 @@ import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
 import { CalendarPage } from "@/components/calendar/calendar-page";
 import { MailList, type Filter } from "@/components/mail-list";
+import type { SendersProps } from "@/components/sender-list";
 import { MailReader } from "@/components/mail-reader";
 import { CommandBar } from "@/components/command-bar";
 import { ComposeDialog, type Draft } from "@/components/compose-dialog";
@@ -57,6 +58,13 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  /** The inbox's Messages | Senders toggle (Senders only exists for inboxes). */
+  const [sendersMode, setSendersMode] = useState(false);
+  const [groups, setGroups] = useState<SenderGroup[]>([]);
+  /** Sender rows ticked for whole-group actions. */
+  const [checkedGroups, setCheckedGroups] = useState<Set<string>>(() => new Set());
+  /** How many messages each account keeps synced; the Senders view only sees those. */
+  const [syncedPerAccount, setSyncedPerAccount] = useState(100);
   const selectedRef = useRef<string | null>(null);
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
@@ -69,6 +77,7 @@ export default function App() {
   // Stable key so a background account refresh doesn't refetch the list needlessly.
   const accountKey = accountIds?.join(",") ?? "*";
   const folder: Folder = view.kind === "account" ? view.folder : "inbox";
+  const bySenders = sendersMode && folder === "inbox";
 
   const refreshAccounts = useCallback(async () => {
     try {
@@ -78,16 +87,30 @@ export default function App() {
     }
   }, []);
 
+  /** What the list shows: this view's accounts and folder, narrowed by the filter and search. */
+  const scopeQuery = useCallback(
+    (): ListQuery => ({
+      accountIds: accountKey === "*" ? undefined : accountKey ? accountKey.split(",") : [],
+      folder,
+      unreadOnly: filter === "unread",
+      starredOnly: filter === "starred",
+      search: debouncedSearch.trim() || undefined,
+    }),
+    [accountKey, folder, filter, debouncedSearch],
+  );
+
+  const refreshGroups = useCallback(async () => {
+    if (!bySenders) return;
+    try {
+      setGroups(await api.listSenderGroups(scopeQuery()));
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  }, [bySenders, scopeQuery]);
+
   const refreshMessages = useCallback(async () => {
     try {
-      const list = await api.listMessages({
-        accountIds: accountKey === "*" ? undefined : accountKey ? accountKey.split(",") : [],
-        folder,
-        unreadOnly: filter === "unread",
-        starredOnly: filter === "starred",
-        search: debouncedSearch.trim() || undefined,
-        limit,
-      });
+      const list = await api.listMessages({ ...scopeQuery(), limit });
       setMessages(list);
       // Set together with the data (not when the view changes), so a new folder's list
       // replaces the old one in one step instead of the old rows animating out first.
@@ -95,24 +118,33 @@ export default function App() {
     } catch (e) {
       toast.error(errorText(e));
     }
-  }, [accountKey, folder, filter, debouncedSearch, limit]);
+  }, [scopeQuery, accountKey, folder, filter, debouncedSearch, limit]);
 
   const refreshAll = useRef(() => {});
   refreshAll.current = () => {
     void refreshAccounts();
     void refreshMessages();
+    void refreshGroups();
   };
 
   useEffect(() => void refreshAccounts(), [refreshAccounts]);
   // The user's rebound keyboard shortcuts live in the app config.
   useEffect(() => {
-    api.getConfig().then((c) => loadShortcuts(c.shortcuts), () => loadShortcuts({}));
+    api.getConfig().then(
+      (c) => {
+        loadShortcuts(c.shortcuts);
+        setSyncedPerAccount(c.messagesPerAccount);
+      },
+      () => loadShortcuts({}),
+    );
   }, []);
   useEffect(() => void refreshMessages(), [refreshMessages]);
+  useEffect(() => void refreshGroups(), [refreshGroups]);
   // A different list starts from the first page with nothing ticked.
   useEffect(() => {
     setLimit(PAGE);
     setChecked(new Set());
+    setCheckedGroups(new Set());
     checkAnchor.current = null;
   }, [accountKey, folder, filter, debouncedSearch]);
   // Look for a new version of Relay on launch and every few hours; installing waits for the user.
@@ -231,6 +263,7 @@ export default function App() {
       refreshAll.current();
       return;
     }
+    void refreshGroups();
     const n = moving.length;
     const where = folderLabel(to);
     toast.success(
@@ -267,6 +300,33 @@ export default function App() {
 
   const bulkRead = (read: boolean) => {
     for (const m of checkedMessages) void setRead(m, read);
+  };
+
+  // ----- sender groups -----
+
+  const toggleGroup = (g: SenderGroup) =>
+    setCheckedGroups((c) => {
+      const next = new Set(c);
+      if (!next.delete(g.key)) next.add(g.key);
+      return next;
+    });
+  const checkAllGroups = (on: boolean) => setCheckedGroups(on ? new Set(groups.map((g) => g.key)) : new Set());
+
+  /** Moves every message of the ticked groups (all of them, not just the ones on screen). */
+  const moveGroups = async (to: Folder) => {
+    const picked = groups.filter((g) => checkedGroups.has(g.key));
+    if (!picked.length) return;
+    try {
+      const all = await api.listMessages({
+        ...scopeQuery(),
+        fromEmails: picked.flatMap((g) => g.addresses),
+        limit: 2000,
+      });
+      setCheckedGroups(new Set());
+      await moveMessages(all, to);
+    } catch (e) {
+      toast.error(errorText(e));
+    }
   };
 
   // ----- compose -----
@@ -374,8 +434,12 @@ export default function App() {
     if (draft || settingsOpen || signingIn) return;
     if (t.closest("[role=dialog]:not([data-reader]), [role=alertdialog]")) return;
     const action = matchShortcut(e, readerOpen ? "reader" : "list");
-    // Home and Tasks have no message list: only the app-wide shortcuts apply there.
-    if (pageView && !readerOpen && !(action && APP_WIDE.has(action))) return;
+    // Home and Tasks have no message list, and neither does the sender list: only the
+    // app-wide shortcuts apply there.
+    if ((pageView || bySenders) && !readerOpen && !(action && APP_WIDE.has(action))) {
+      if (bySenders && !pageView && e.key === "Escape" && checkedGroups.size) setCheckedGroups(new Set());
+      return;
+    }
     // While typing, only a modified command-bar shortcut (Ctrl+K) works: plain keys like "/"
     // must type, and Ctrl+A etc. keep their usual meaning in text fields.
     const typing = !!t.closest("input, textarea, select, [contenteditable], [role=menu], [role=listbox]");
@@ -454,6 +518,21 @@ export default function App() {
     setSettingsSection(section ?? (view.kind === "home" ? "home" : view.kind === "tasks" ? "tasks" : view.kind === "calendar" ? "calendar" : undefined));
     setSettingsOpen(true);
   };
+  const senders: SendersProps | undefined =
+    folder === "inbox"
+      ? {
+          on: bySenders,
+          onChange: setSendersMode,
+          groups,
+          checked: checkedGroups,
+          syncedPerAccount,
+          accountCount: accountIds?.length ?? accounts.length,
+          onToggle: toggleGroup,
+          onCheckAll: checkAllGroups,
+          onBulkMove: (to) => void moveGroups(to),
+          onOpen: () => {},
+        }
+      : undefined;
   const viewAccount = view.kind === "account" ? accountById.get(view.id) : undefined;
   const selectedIdx = messages.findIndex((m) => m.id === selectedId);
   // The open message: from the list, or (opened from the command bar) only in `detail`.
@@ -545,6 +624,7 @@ export default function App() {
             onToggleStar={(m) => void toggleStar(m)}
             onLoadMore={() => setLimit((l) => l + PAGE)}
             onAddAccount={addAccount}
+            senders={senders}
           />
           )}
         </SidebarInset>

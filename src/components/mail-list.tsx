@@ -46,6 +46,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AccountChip } from "@/components/account-chip";
 import { ShortcutKbd, ShortcutText } from "@/components/shortcut-kbd";
+import { SelectionSlot } from "@/components/selection-slot";
+import { SenderRows, type SendersProps } from "@/components/sender-list";
 import type { ShortcutId } from "@/shortcuts";
 import type { Account, ComposeMode, Folder, MessageSummary, Provider } from "@/types";
 import { listDate, senderName } from "@/format";
@@ -92,6 +94,47 @@ interface Props {
   onToggleStar: (m: MessageSummary) => void;
   onLoadMore: () => void;
   onAddAccount: (p: Provider) => void;
+  /** The inbox's Messages | Senders toggle and sender groups; absent outside the inbox. */
+  senders?: SendersProps;
+}
+
+const VIEWS = [
+  { id: "messages", label: "Messages" },
+  { id: "senders", label: "Senders" },
+] as const;
+
+/** Tabs with a pill that slides to the active one (stock Tabs, the pill drawn on top). */
+function PillTabs<T extends string>(props: {
+  id: string;
+  value: T;
+  items: readonly { id: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <Tabs value={props.value} onValueChange={(v) => props.onChange(v as T)}>
+      <LayoutGroup id={props.id}>
+        <TabsList>
+          {props.items.map((f) => (
+            <TabsTrigger
+              key={f.id}
+              value={f.id}
+              // The active background is drawn by the sliding pill below instead.
+              className="data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent"
+            >
+              {props.value === f.id && (
+                <motion.span
+                  layoutId="pill"
+                  transition={glide}
+                  className="absolute inset-0 rounded-md bg-background smooth-shadow-ring-xs dark:bg-input/40"
+                />
+              )}
+              <span className="relative">{f.label}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </LayoutGroup>
+    </Tabs>
+  );
 }
 
 /** Moves offered for a message, given the folder it's in (never its own folder). */
@@ -139,9 +182,13 @@ function IconAction(props: {
 }
 
 export function MailList(p: Props) {
-  const nChecked = p.messages.filter((m) => p.checked.has(m.id)).length;
-  const allChecked = nChecked > 0 && nChecked === p.messages.length;
+  const sd = p.senders?.on ? p.senders : undefined; // the sender list is showing
+  const nChecked = sd ? sd.checked.size : p.messages.filter((m) => p.checked.has(m.id)).length;
+  const total = sd ? sd.groups.length : p.messages.length;
+  const allChecked = nChecked > 0 && nChecked === total;
   const selecting = nChecked > 0;
+  const checkAll = sd ? sd.onCheckAll : p.onCheckAll;
+  const bulkMove = sd ? sd.onBulkMove : p.onBulkMove;
 
   return (
     <div className="flex h-full flex-col">
@@ -152,7 +199,7 @@ export function MailList(p: Props) {
             aria-label={allChecked ? "Clear selection" : "Select all"}
             tabIndex={selecting ? 0 : -1}
             checked={allChecked ? true : selecting ? "indeterminate" : false}
-            onCheckedChange={() => p.onCheckAll(!allChecked)}
+            onCheckedChange={() => checkAll(!allChecked)}
           />
         </SelectionSlot>
         <div className="relative flex h-full min-w-0 flex-1 items-center">
@@ -166,23 +213,27 @@ export function MailList(p: Props) {
                 exit={{ opacity: 0, y: -6 }}
                 transition={quick}
               >
-                <span className="text-base font-semibold whitespace-nowrap tabular-nums">{nChecked} selected</span>
+                <span className="text-base font-semibold whitespace-nowrap tabular-nums">
+                  {nChecked} {sd ? (nChecked === 1 ? "sender" : "senders") : ""} selected
+                </span>
                 <ButtonGroup>
                   {movesFrom(p.folder).map((a) => (
-                    <IconAction key={a.to} variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onBulkMove(a.to)}>
+                    <IconAction key={a.to} variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={sd ? undefined : a.shortcut} onClick={() => bulkMove(a.to)}>
                       {a.icon}
                     </IconAction>
                   ))}
                 </ButtonGroup>
-                <ButtonGroup>
-                  <IconAction variant="outline" label="Mark as read" onClick={() => p.onBulkRead(true)}>
-                    <IconMailOpened />
-                  </IconAction>
-                  <IconAction variant="outline" label="Mark as unread" onClick={() => p.onBulkRead(false)}>
-                    <IconMail />
-                  </IconAction>
-                </ButtonGroup>
-                <IconAction label="Clear selection" fixedKey="Escape" onClick={() => p.onCheckAll(false)}>
+                {!sd && (
+                  <ButtonGroup>
+                    <IconAction variant="outline" label="Mark as read" onClick={() => p.onBulkRead(true)}>
+                      <IconMailOpened />
+                    </IconAction>
+                    <IconAction variant="outline" label="Mark as unread" onClick={() => p.onBulkRead(false)}>
+                      <IconMail />
+                    </IconAction>
+                  </ButtonGroup>
+                )}
+                <IconAction label="Clear selection" fixedKey="Escape" onClick={() => checkAll(false)}>
                   <IconX />
                 </IconAction>
               </motion.div>
@@ -215,29 +266,9 @@ export function MailList(p: Props) {
           </AnimatePresence>
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-2">
-          <Tabs value={p.filter} onValueChange={(v) => p.onFilter(v as Filter)}>
-            <LayoutGroup id="mail-filter">
-              <TabsList>
-                {FILTERS.map((f) => (
-                  <TabsTrigger
-                    key={f.id}
-                    value={f.id}
-                    // The active background is drawn by the sliding pill below instead.
-                    className="data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent"
-                  >
-                    {p.filter === f.id && (
-                      <motion.span
-                        layoutId="pill"
-                        transition={glide}
-                        className="absolute inset-0 rounded-md bg-background smooth-shadow-ring-xs dark:bg-input/40"
-                      />
-                    )}
-                    <span className="relative">{f.label}</span>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </LayoutGroup>
-          </Tabs>
+          {/* Hidden while rows are ticked: the bulk bar needs the room. */}
+          {p.senders && !selecting && <PillTabs id="mail-view" value={sd ? "senders" : "messages"} items={VIEWS} onChange={(v) => p.senders?.onChange(v === "senders")} />}
+          <PillTabs id="mail-filter" value={p.filter} items={FILTERS} onChange={p.onFilter} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="sm" onClick={p.onCompose}>
@@ -253,33 +284,20 @@ export function MailList(p: Props) {
       </header>
 
       <motion.div
-        key={p.listKey}
+        key={`${p.listKey}|${sd ? "senders" : "messages"}`}
         className="flex min-h-0 flex-1 flex-col"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={smooth}
       >
-        {p.messages.length === 0 ? <ListEmpty {...p} /> : <MessageRows {...p} selecting={selecting} />}
+        {total === 0 ? (
+          <ListEmpty {...p} />
+        ) : sd ? (
+          <SenderRows s={sd} />
+        ) : (
+          <MessageRows {...p} selecting={selecting} />
+        )}
       </motion.div>
-    </div>
-  );
-}
-
-/**
- * Space for a checkbox that takes no room outside selection mode, so text sits flush
- * left; entering selection mode slides the checkboxes in.
- */
-function SelectionSlot({ show, children, onClick }: { show: boolean; children: ReactNode; onClick?: (e: React.MouseEvent) => void }) {
-  return (
-    <div
-      aria-hidden={!show}
-      onClick={onClick}
-      className={cn(
-        "flex h-6 shrink-0 items-center overflow-hidden transition-[width,opacity] duration-200 ease-(--ease-out-soft)",
-        show ? "w-7 opacity-100" : "pointer-events-none w-0 opacity-0",
-      )}
-    >
-      {children}
     </div>
   );
 }
