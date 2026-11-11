@@ -6,6 +6,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { api, errorText } from "@/api";
 import type { CalendarEvent } from "@/types";
 import { subscribeCalendarUpdates } from "./store";
+import { forgetSeries } from "./repeat";
 import { addDays, daySpan, startOfDay } from "./layout";
 
 /** Days either side of today the Calendar page can scroll to. */
@@ -27,6 +28,8 @@ function set(patch: Partial<EventsState>) {
 }
 
 export async function loadEvents() {
+  // A save or a sync may have changed a series' rule too.
+  forgetSeries();
   const today = startOfDay(Date.now());
   try {
     const events = await api.listCalendarEvents(

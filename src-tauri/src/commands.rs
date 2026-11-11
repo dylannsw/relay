@@ -679,6 +679,12 @@ pub async fn delete_calendar_event(app: AppHandle, state: St<'_>, id: String, sc
     r
 }
 
+/// The repeat rule of the series an event belongs to (None for one-off events).
+#[tauri::command]
+pub async fn calendar_event_series(state: St<'_>, id: String) -> Result<Option<calendar_edit::SeriesInfo>> {
+    calendar_edit::series(&state, &id).await
+}
+
 /// Accept ("accepted"), "tentative" or decline ("declined") an invitation.
 #[tauri::command]
 pub async fn rsvp_calendar_event(app: AppHandle, state: St<'_>, id: String, response: String, scope: Scope) -> Result<()> {

@@ -23,6 +23,7 @@ import type {
   SyncReport,
   TasksConfig,
   TasksSnapshot,
+  SeriesInfo,
 } from "./types";
 
 /** True inside the Tauri window; false when the UI runs in a plain browser (`npm run dev`). */
@@ -78,6 +79,8 @@ export const api = {
     call<void>("update_calendar_event", { id, changes, scope, notify }),
   deleteCalendarEvent: (id: string, scope: EditScope, notify: boolean) =>
     call<void>("delete_calendar_event", { id, scope, notify }),
+  /** The repeat rule of the series an event belongs to (null for one-off events). */
+  calendarEventSeries: (id: string) => call<SeriesInfo | null>("calendar_event_series", { id }),
   /** Reply to an invitation; Google tells the organizer. */
   rsvpCalendarEvent: (id: string, response: "accepted" | "tentative" | "declined", scope: EditScope) =>
     call<void>("rsvp_calendar_event", { id, response, scope }),

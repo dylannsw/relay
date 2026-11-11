@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { IconCalendar, IconClock, IconMapPin, IconUsers, IconX } from "@tabler/icons-react";
+import { IconCalendar, IconClock, IconMapPin, IconRepeat, IconUsers, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { createEvent, isoDate, saveChanges, withTimes } from "@/calendar/edit";
 import { addDays, parseDate } from "@/calendar/layout";
+import { describeRule, type Preset, presetLabel, presetOf, PRESETS, ruleFor, seriesStart, useSeries } from "@/calendar/repeat";
 import type { Attendee, CalendarEvent, CalendarInfo, EventChanges, EventTimes } from "@/types";
 import { calendarLabel, initials, RESPONSE } from "./event-details";
 import { DateField, TimeField } from "./date-time-fields";
@@ -24,6 +25,8 @@ export interface Draft {
   location: string;
   attendees: string[];
   times: EventTimes;
+  /** How it repeats ("RRULE:…"), or null. */
+  recurrence?: string | null;
   /** Create was pressed and the event is on the grid already, so its ghost is hidden. */
   saving?: boolean;
 }
@@ -111,6 +114,23 @@ export function EventEditor(props: {
 
   const times = timesFrom(f);
   const event = props.mode === "edit" ? props.event : null;
+
+  // Repeat: a series' rule is read from Google when it opens. Weekly and monthly presets
+  // count from the series' first day; a one-off event's from its own date.
+  const series = useSeries(event);
+  const base = series ? seriesStart(series) : parseDate(f.startDate || isoDate(new Date()));
+  const initialRepeat: Preset | "custom" | undefined = !event
+    ? props.mode === "new" && props.draft.recurrence
+      ? presetOf([props.draft.recurrence], base)
+      : "none"
+    : !event.recurringEventId
+      ? "none"
+      : series
+        ? presetOf(series.rules, base)
+        : undefined;
+  const [repeatPick, setRepeat] = useState<Preset | null>(null);
+  const repeat = repeatPick ?? initialRepeat;
+  const recurrence = repeat && repeat !== "none" && repeat !== "custom" ? ruleFor(repeat, base) : null;
   // An existing event can only move to calendars of its own account.
   const choices = props.calendars.filter(
     (c) => c.canWrite && (!event || c.accountId === event.accountId) && (!c.hidden || c.id === f.calendarId),
@@ -120,9 +140,9 @@ export function EventEditor(props: {
   const onDraftChange = props.mode === "new" ? props.onDraftChange : null;
   useEffect(() => {
     if (!onDraftChange || typeof times === "string") return;
-    onDraftChange({ calendarId: f.calendarId, title: f.title, location: f.location, attendees: f.guests, times });
+    onDraftChange({ calendarId: f.calendarId, title: f.title, location: f.location, attendees: f.guests, times, recurrence });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f]);
+  }, [f, recurrence]);
 
   const changes: EventChanges = {};
   if (event) {
@@ -132,6 +152,7 @@ export function EventEditor(props: {
     if (typeof times !== "string" && timeKeys.some((k) => f[k] !== initial[k])) changes.times = times;
     if (!sameList(f.guests, initial.guests)) changes.attendees = f.guests;
     if (f.calendarId !== initial.calendarId) changes.calendarId = f.calendarId;
+    if (repeatPick && repeatPick !== initialRepeat) changes.repeat = recurrence ?? "";
   }
   const dirty = props.mode === "new" || Object.keys(changes).length > 0 || (typeof times === "string" && timesChanged(f, initial));
 
@@ -157,7 +178,7 @@ export function EventEditor(props: {
     setSaving(true);
     try {
       if (props.mode === "new") {
-        const draft: Draft = { calendarId: f.calendarId, title: f.title, location: f.location, attendees: f.guests, times };
+        const draft: Draft = { calendarId: f.calendarId, title: f.title, location: f.location, attendees: f.guests, times, recurrence };
         const ok = await createEvent(draft, () => props.onDraftChange({ ...draft, saving: true }));
         if (ok) props.onDone();
         else props.onDraftChange(draft);
@@ -216,6 +237,30 @@ export function EventEditor(props: {
               All day
             </label>
             {typeof times === "string" && <p className="text-destructive">{times}</p>}
+          </div>
+        </FieldRow>
+
+        <FieldRow icon={<IconRepeat />}>
+          <div className="flex flex-col gap-1.5">
+            <Select value={repeat ?? ""} onValueChange={(v) => setRepeat(v as Preset)} disabled={repeat === undefined}>
+              <SelectTrigger className="w-full" aria-label="Repeat">
+                <SelectValue placeholder={series === undefined ? "Loading…" : "Repeats"} />
+              </SelectTrigger>
+              <SelectContent>
+                {PRESETS.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {presetLabel(p, base)}
+                  </SelectItem>
+                ))}
+                {/* A rule set up in Google Calendar that no preset matches: kept unless you pick another. */}
+                {repeat === "custom" || initialRepeat === "custom" ? (
+                  <SelectItem value="custom">{series ? describeRule(series.rules, base) : "Custom"}</SelectItem>
+                ) : null}
+              </SelectContent>
+            </Select>
+            {event?.recurringEventId && repeatPick && repeatPick !== initialRepeat && (
+              <p className="text-muted-foreground">{repeat === "none" ? "Only this event will be kept." : "Changes every event in the series."}</p>
+            )}
           </div>
         </FieldRow>
 
@@ -308,7 +353,15 @@ export function EventEditor(props: {
       {dirty && (
         <div className="flex justify-end gap-2">
           {props.mode === "edit" ? (
-            <Button type="button" variant="ghost" onClick={() => setF(initial)} disabled={saving}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setF(initial);
+                setRepeat(null);
+              }}
+              disabled={saving}
+            >
               Discard
             </Button>
           ) : (

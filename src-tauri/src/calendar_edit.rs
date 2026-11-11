@@ -4,7 +4,7 @@
 //! changes, like a series split or a new Meet link).
 
 use chrono::{DateTime, Duration, Local, NaiveDate, SecondsFormat, TimeZone, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::calendar::{self, CalendarEvent};
@@ -38,6 +38,9 @@ pub struct NewEvent {
     /// Guests' email addresses.
     #[serde(default)]
     pub attendees: Vec<String>,
+    /// How it repeats: one "RRULE:…" line, or None for a one-off event.
+    #[serde(default)]
+    pub recurrence: Option<String>,
 }
 
 /// What to change; fields left out stay as they are.
@@ -51,6 +54,18 @@ pub struct EventChanges {
     pub attendees: Option<Vec<String>>,
     /// Move to another calendar of the same account.
     pub calendar_id: Option<String>,
+    /// A new repeat rule ("RRULE:…"), or "" to stop repeating. Always applies to the whole series.
+    pub repeat: Option<String>,
+}
+
+/// A repeating event's series, as Google stores it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesInfo {
+    /// Google's `recurrence` lines ("RRULE:…", "EXDATE:…").
+    pub rules: Vec<String>,
+    /// The series' first day, local ("2026-10-28"); weekly and monthly rules count from it.
+    pub start_date: String,
 }
 
 /// For an occurrence of a repeating event: change just it, or the whole series.
@@ -102,6 +117,48 @@ fn write_id(e: &CalendarEvent, scope: Scope) -> &str {
 }
 
 // ---------- building Google's JSON ----------
+
+/// A repeat rule from the UI: one RRULE line with only the characters rules use.
+fn check_rule(rule: &str) -> Result<&str> {
+    let rule = rule.trim();
+    let body = rule.strip_prefix("RRULE:").unwrap_or("");
+    let ok = body.starts_with("FREQ=")
+        && body.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || "=;,-+".contains(c));
+    if ok {
+        Ok(rule)
+    } else {
+        Err(msg("That repeat setting isn't one Relay understands."))
+    }
+}
+
+/// The series' `recurrence` with its RRULE swapped for `rule`; skipped dates (EXDATE) stay.
+fn replace_rule(current: &Value, rule: &str) -> Value {
+    let mut lines: Vec<Value> = current["recurrence"]
+        .as_array()
+        .map(|l| l.iter().filter(|x| !x.as_str().unwrap_or("").starts_with("RRULE:")).cloned().collect())
+        .unwrap_or_default();
+    lines.insert(0, rule.into());
+    Value::Array(lines)
+}
+
+/// The local day an event's `start` falls on ("2026-10-28").
+fn start_day(start: &Value) -> Option<String> {
+    if let Some(d) = start["date"].as_str() {
+        return Some(d.to_string());
+    }
+    let dt = DateTime::parse_from_rfc3339(start["dateTime"].as_str()?).ok()?;
+    Some(dt.with_timezone(&Local).date_naive().format("%Y-%m-%d").to_string())
+}
+
+fn times_of(e: &CalendarEvent) -> EventTimes {
+    EventTimes {
+        all_day: e.all_day,
+        start: e.start,
+        end: e.end,
+        start_date: e.start_date.clone(),
+        end_date: e.end_date.clone(),
+    }
+}
 
 fn parse_day(s: &str) -> Result<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| msg(format!("“{s}” isn't a date.")))
@@ -256,6 +313,9 @@ pub async fn create(state: &AppState, input: NewEvent, notify: bool) -> Result<(
     if !guests.is_empty() {
         body["attendees"] = guests.iter().map(|e| json!({ "email": e })).collect();
     }
+    if let Some(rule) = input.recurrence.as_deref().filter(|r| !r.trim().is_empty()) {
+        body["recurrence"] = json!([check_rule(rule)?]);
+    }
     let token = state.access_token(&account).await?;
     gcal::insert_event(&state.http, &token, &meta.remote_id, &without_nulls(body), send(notify)).await?;
     calendar::refresh_calendar(state, &account, &input.calendar_id).await
@@ -268,8 +328,14 @@ pub async fn update(state: &AppState, event_id: &str, changes: EventChanges, sco
         return Err(msg("Only the organizer can change this event. You can still reply to it."));
     }
     let token = state.access_token(&t.account).await?;
+    let repeating = t.event.recurring_event_id.is_some();
+    let repeat = changes.repeat.as_deref().map(str::trim);
+    // A repeat rule belongs to the series, so changing it changes every event in it.
+    let scope = if repeat.is_some() && repeating { Scope::All } else { scope };
     let id = write_id(&t.event, scope).to_string();
-    let series = scope == Scope::All && t.event.recurring_event_id.is_some();
+    let series = scope == Scope::All && repeating;
+    // Turning a series into a one-off event: it keeps this occurrence's times.
+    let ending_series = series && repeat == Some("");
 
     let mut body = json!({});
     if let Some(title) = &changes.title {
@@ -280,12 +346,18 @@ pub async fn update(state: &AppState, event_id: &str, changes: EventChanges, sco
         body["location"] = location.trim().into();
     }
     // Times and guests depend on what Google has now, so read the event first when needed.
-    let current = if (series && changes.times.is_some()) || changes.attendees.is_some() {
+    let current = if (series && (changes.times.is_some() || repeat.is_some())) || changes.attendees.is_some() {
         Some(gcal::get_event(&state.http, &token, &t.calendar_remote, &id).await?)
     } else {
         None
     };
-    if let Some(times) = &changes.times {
+    if ending_series {
+        let times = changes.times.clone().unwrap_or_else(|| times_of(&t.event));
+        let (start, end) = times_json(&times, &t.time_zone)?;
+        body["start"] = start;
+        body["end"] = end;
+        body["recurrence"] = json!([]);
+    } else if let Some(times) = &changes.times {
         if series {
             let shifted = shift_series(current.as_ref().expect("read above"), &t.event, times)?;
             if let Value::Object(m) = shifted {
@@ -297,6 +369,20 @@ pub async fn update(state: &AppState, event_id: &str, changes: EventChanges, sco
             let (start, end) = times_json(times, &t.time_zone)?;
             body["start"] = start;
             body["end"] = end;
+        }
+    }
+    if let Some(rule) = repeat.filter(|r| !r.is_empty()) {
+        let rule = check_rule(rule)?;
+        if series {
+            body["recurrence"] = replace_rule(current.as_ref().expect("read above"), rule);
+        } else {
+            body["recurrence"] = json!([rule]);
+            // Google needs a time zone on a repeating event's times.
+            if body.get("start").is_none() {
+                let (start, end) = times_json(&times_of(&t.event), &t.time_zone)?;
+                body["start"] = start;
+                body["end"] = end;
+            }
         }
     }
     if let Some(guests) = &changes.attendees {
@@ -326,6 +412,24 @@ pub async fn update(state: &AppState, event_id: &str, changes: EventChanges, sco
         calendar::refresh_calendar(state, &t.account, &cal).await?;
     }
     Ok(())
+}
+
+/// The rule of the series an occurrence belongs to; None for one-off events.
+pub async fn series(state: &AppState, event_id: &str) -> Result<Option<SeriesInfo>> {
+    let t = target(state, event_id)?;
+    let Some(series_id) = t.event.recurring_event_id.as_deref() else {
+        return Ok(None);
+    };
+    let token = state.access_token(&t.account).await?;
+    let master = gcal::get_event(&state.http, &token, &t.calendar_remote, series_id).await?;
+    let rules: Vec<String> = master["recurrence"]
+        .as_array()
+        .map(|l| l.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let Some(start_date) = start_day(&master["start"]) else {
+        return Ok(None);
+    };
+    Ok(Some(SeriesInfo { rules, start_date }))
 }
 
 pub async fn delete(state: &AppState, event_id: &str, scope: Scope, notify: bool) -> Result<()> {
@@ -430,6 +534,32 @@ mod tests {
             status: "confirmed".into(), my_response: None, organizer: None, attendees: vec![], html_link: String::new(),
             meet_link: None, can_edit: true,
         }
+    }
+
+    #[test]
+    fn repeat_rules_are_checked() {
+        assert_eq!(check_rule(" RRULE:FREQ=WEEKLY;BYDAY=WE ").unwrap(), "RRULE:FREQ=WEEKLY;BYDAY=WE");
+        assert!(check_rule("FREQ=DAILY").is_err());
+        assert!(check_rule("RRULE:FREQ=DAILY\nEXDATE:20261111").is_err());
+        assert!(check_rule("RRULE:").is_err());
+    }
+
+    #[test]
+    fn new_rule_keeps_skipped_dates() {
+        let current = json!({ "recurrence": ["RRULE:FREQ=DAILY", "EXDATE;TZID=Asia/Singapore:20261111T073000"] });
+        assert_eq!(
+            replace_rule(&current, "RRULE:FREQ=WEEKLY;BYDAY=WE"),
+            json!(["RRULE:FREQ=WEEKLY;BYDAY=WE", "EXDATE;TZID=Asia/Singapore:20261111T073000"])
+        );
+        assert_eq!(replace_rule(&json!({}), "RRULE:FREQ=DAILY"), json!(["RRULE:FREQ=DAILY"]));
+    }
+
+    #[test]
+    fn series_start_day() {
+        assert_eq!(start_day(&json!({ "date": "2026-10-28" })).as_deref(), Some("2026-10-28"));
+        let local = Local.with_ymd_and_hms(2026, 10, 28, 7, 30, 0).unwrap().to_rfc3339();
+        assert_eq!(start_day(&json!({ "dateTime": local })).as_deref(), Some("2026-10-28"));
+        assert_eq!(start_day(&json!({})), None);
     }
 
     #[test]

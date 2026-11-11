@@ -4,7 +4,7 @@
 
 import type {
   Account, Attendee, CalendarConfig, CalendarEvent, CalendarInfo, Config, EditScope, EventChanges, EventColors, NewEvent, Folder, ListQuery, MessageDetail,
-  OutgoingMessage, TasksConfig,
+  OutgoingMessage, SeriesInfo, TasksConfig,
 } from "./types";
 import { formatDate } from "./tasks/tick/date";
 
@@ -347,7 +347,19 @@ const mockEvents: CalendarEvent[] = (() => {
   return list;
 })();
 
-const delay = <T,>(v: T, ms = 120) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), ms));
+const isoDay = (t: number) => {
+  const x = new Date(t);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+};
+
+/** Series rules by recurringEventId, as Google would return them. */
+const mockSeries: Record<string, SeriesInfo> = (() => {
+  const first = mockEvents.find((e) => e.recurringEventId === "yoga")!;
+  const code = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][new Date(first.start).getDay()];
+  return { yoga: { rules: [`RRULE:FREQ=WEEKLY;BYDAY=${code}`], startDate: isoDay(first.start) } };
+})();
+
+const delay =<T,>(v: T, ms = 120) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), ms));
 
 export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   const find = (id: unknown) => messages.find((x) => x.id === id);
@@ -510,9 +522,11 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       const start = t.allDay ? new Date(`${t.startDate}T00:00`).getTime() : t.start;
       const end = t.allDay ? new Date(`${t.endDate}T00:00`).getTime() : t.end;
       console.info("[mock] create event, notify guests:", args.notify, input);
+      const newId = `new-${Date.now()}`;
+      if (input.recurrence) mockSeries[newId] = { rules: [input.recurrence], startDate: isoDay(start) };
       mockEvents.push({
-        id: `${input.calendarId}:new-${Date.now()}`, calendarId: input.calendarId, accountId: input.calendarId.split(":")[0]!,
-        remoteId: `new-${Date.now()}`, recurringEventId: null, icalUid: "", title: input.title.trim() || "(No title)",
+        id: `${input.calendarId}:${newId}`, calendarId: input.calendarId, accountId: input.calendarId.split(":")[0]!,
+        remoteId: newId, recurringEventId: input.recurrence ? newId : null, icalUid: "", title: input.title.trim() || "(No title)",
         location: input.location, description: "", start, end, allDay: t.allDay, startDate: t.startDate, endDate: t.endDate,
         status: "confirmed", myResponse: null, organizer: null, htmlLink: "", meetLink: null, canEdit: true,
         attendees: input.attendees.map((email) => ({ email, name: "", response: "needsAction", optional: false, organizer: false, isYou: false })),
@@ -529,6 +543,22 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       console.info("[mock] update event", args.scope, "notify guests:", args.notify, c);
       if (c.times && series.length > 1 && new Date(c.times.start).toDateString() !== new Date(e.start).toDateString()) {
         return Promise.reject("Relay can't move every event in a series to another day yet. Move just this one here, or change the series in Google Calendar.");
+      }
+      if (c.repeat !== undefined) {
+        const sid = e.recurringEventId;
+        if (sid && c.repeat === "") {
+          // The series becomes this one event.
+          for (let i = mockEvents.length - 1; i >= 0; i--) {
+            if (mockEvents[i] !== e && mockEvents[i]!.recurringEventId === sid) mockEvents.splice(i, 1);
+          }
+          e.recurringEventId = null;
+          delete mockSeries[sid];
+        } else if (sid) {
+          mockSeries[sid] = { ...mockSeries[sid]!, rules: [c.repeat] };
+        } else if (c.repeat) {
+          e.recurringEventId = e.remoteId;
+          mockSeries[e.remoteId] = { rules: [c.repeat], startDate: isoDay(e.start) };
+        }
       }
       const ds = c.times ? c.times.start - e.start : 0;
       const de = c.times ? c.times.end - e.end : 0;
@@ -564,6 +594,10 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
         if (x === e || ((args.scope as EditScope) === "all" && e?.recurringEventId && x.recurringEventId === e.recurringEventId)) mockEvents.splice(i, 1);
       }
       return delay(undefined, 400) as Promise<T>;
+    }
+    case "calendar_event_series": {
+      const e = mockEvents.find((x) => x.id === args.id);
+      return delay(e?.recurringEventId ? (mockSeries[e.recurringEventId] ?? null) : null, 300) as Promise<T>;
     }
     case "rsvp_calendar_event": {
       const e = mockEvents.find((x) => x.id === args.id);

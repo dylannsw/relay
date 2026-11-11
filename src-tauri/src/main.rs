@@ -74,6 +74,7 @@ fn main() {
             commands::update_calendar_event,
             commands::delete_calendar_event,
             commands::rsvp_calendar_event,
+            commands::calendar_event_series,
             commands::search_places,
             commands::add_calendar_feed,
             commands::update_calendar_feed,

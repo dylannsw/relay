@@ -237,6 +237,16 @@ export interface NewEvent {
   times: EventTimes;
   /** Guests' email addresses. */
   attendees: string[];
+  /** How it repeats: one "RRULE:…" line; left out or null for a one-off event. */
+  recurrence?: string | null;
+}
+
+/** A repeating event's series, as Google stores it. */
+export interface SeriesInfo {
+  /** Google's recurrence lines ("RRULE:…", "EXDATE:…"). */
+  rules: string[];
+  /** The series' first day ("2026-10-28"). */
+  startDate: string;
 }
 
 /** Fields to change; anything left out stays as it is. */
@@ -248,6 +258,8 @@ export interface EventChanges {
   attendees?: string[];
   /** Another calendar of the same account. */
   calendarId?: string;
+  /** A new repeat rule ("RRULE:…"), or "" to stop repeating. Always changes the whole series. */
+  repeat?: string;
 }
 
 /** For one occurrence of a repeating event: just it, or the whole series. */

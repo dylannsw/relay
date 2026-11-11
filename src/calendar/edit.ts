@@ -84,7 +84,8 @@ async function chooseNotify(kind: "change" | "new" | "delete"): Promise<boolean 
  */
 export async function saveChanges(e: CalendarEvent, changes: EventChanges, preview?: Partial<CalendarEvent>): Promise<boolean> {
   if (preview) patchEventLocal(e.id, preview);
-  const scope = await chooseScope(e, "Change");
+  // A repeat rule belongs to the series, so there's nothing to choose.
+  const scope = changes.repeat !== undefined && e.recurringEventId ? "all" : await chooseScope(e, "Change");
   const addsGuests = !!changes.attendees?.length;
   const notify = scope && (hasGuests(e) || addsGuests) ? await chooseNotify("change") : false;
   if (!scope || notify === null) {

@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { addDays, daySpan, sameDay } from "@/calendar/layout";
+import { describeRule, seriesStart, useSeries } from "@/calendar/repeat";
 import type { Attendee, CalendarEvent, CalendarInfo, RsvpResponse } from "@/types";
 import { clock } from "./event-style";
 
@@ -49,6 +50,7 @@ export function Row({ icon, children }: { icon: ReactNode; children: ReactNode }
 /** Details of an event you can't change (someone else organizes it, or a view-only calendar). */
 export function ReadOnlyDetails({ event: e, calendar }: { event: CalendarEvent; calendar: CalendarInfo | undefined }) {
   const when = whenText(e);
+  const series = useSeries(e);
   return (
     <>
       <div className="flex items-start gap-3">
@@ -64,7 +66,7 @@ export function ReadOnlyDetails({ event: e, calendar }: { event: CalendarEvent; 
           {e.recurringEventId && (
             <div className="mt-0.5 flex items-center gap-1.5 text-muted-foreground">
               <IconRepeat className="size-3.5" />
-              Repeats
+              {series ? describeRule(series.rules, seriesStart(series)) : "Repeats"}
             </div>
           )}
         </Row>
