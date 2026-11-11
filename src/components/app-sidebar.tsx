@@ -162,7 +162,12 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   return (
     <>
       <SidebarMenuItem>
-        <SidebarMenuButton isActive={view.kind === "home"} onClick={() => onView({ kind: "home" })}>
+        <SidebarMenuButton
+          isActive={view.kind === "home"}
+          onClick={() => onView({ kind: "home" })}
+          // Selected, its icon is Home's own orange-red instead of the accent colour.
+          className="[--sidebar-icon-active:var(--home)]"
+        >
           <IconSmartHome />
           <span>Home</span>
         </SidebarMenuButton>
@@ -219,8 +224,8 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                 <SidebarMenuButton
                   isActive={view.kind === "cleanup"}
                   onClick={() => onView({ kind: "cleanup" })}
-                  // Selected, its icon is the Star button's mustard instead of the accent colour.
-                  className="[--sidebar-icon-active:var(--color-yellow-700)] dark:[--sidebar-icon-active:var(--color-yellow-400)]"
+                  // Selected, its icon is the star colour instead of the accent colour.
+                  className="[--sidebar-icon-active:var(--star)]"
                 >
                   <IconSparkles />
                   <span>Clean up</span>

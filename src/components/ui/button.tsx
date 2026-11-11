@@ -20,9 +20,9 @@ const buttonVariants = cva(
         // Same tinted pill as destructive, in neutral grey (for the actions beside Delete).
         tinted:
           "bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.11] hover:text-foreground focus-visible:border-foreground/30 focus-visible:ring-foreground/10 dark:bg-foreground/10 dark:hover:bg-foreground/[0.16]",
-        // The same pill in mustard yellow (Star).
+        // The same pill in the star colour (Star).
         mustard:
-          "bg-yellow-500/15 text-yellow-700 hover:bg-yellow-500/25 focus-visible:border-yellow-600/40 focus-visible:ring-yellow-500/20 dark:bg-yellow-400/15 dark:text-yellow-400 dark:hover:bg-yellow-400/25",
+          "bg-star/15 text-star hover:bg-star/25 focus-visible:border-star/40 focus-visible:ring-star/20",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

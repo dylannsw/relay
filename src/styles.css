@@ -12,10 +12,16 @@
 /* The one red for "down" and "now": Home's falling-delta badge and the calendar's current-time line. */
 :root {
     --signal-red: #f23c47;
+    /* Star (starred mail, the Star button) and the selected Clean up icon. */
+    --star: #f0ae22;
+    /* The selected Home icon. */
+    --home: #e4583b;
 }
 
 @theme inline {
     --color-signal-red: var(--signal-red);
+    --color-star: var(--star);
+    --color-home: var(--home);
     --font-heading: var(--font-sans);
     /* Settings > Appearance > Font style sets --app-font. */
     --font-sans: var(--app-font, 'Geist Variable', sans-serif);

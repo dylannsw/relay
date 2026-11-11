@@ -588,7 +588,7 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
         <ContextMenuShortcut><ShortcutText id="toggleRead" /></ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => p.onToggleStar(m)}>
-        <IconStar className={cn(m.isStarred && "fill-yellow-400 text-yellow-400")} />
+        <IconStar className={cn(m.isStarred && "fill-star text-star")} />
         {m.isStarred ? "Unstar" : "Star"}
         <ContextMenuShortcut><ShortcutText id="toggleStar" /></ContextMenuShortcut>
       </ContextMenuItem>
