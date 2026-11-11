@@ -94,26 +94,27 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       ? g.addresses[0]
       : null;
 
-  // A group of several emails reads as a stack: one card peeks out behind the row for two
-  // emails, two for three or more. They spread a little on hover, as a hint that it opens.
-  const behind = Math.min(2, g.count - 1);
+  // A group of several emails reads as a stack of three: two cards peek out behind the row.
+  // On hover the stack fans open a little, as a hint that it opens.
+  const behind = g.count > 1 ? 2 : 0;
 
   return (
     <div className="group/stack relative" style={{ paddingBottom: behind * PEEK }}>
-      {Array.from({ length: behind }, (_, i) => {
-        const depth = i + 1;
-        return (
-          <div
-            key={depth}
-            aria-hidden
-            className={cn(
-              "absolute top-3 rounded-xl border border-foreground/10 transition-transform duration-200 ease-(--ease-out-soft)",
-              depth === 1 ? "inset-x-2.5 bg-muted group-hover/stack:translate-y-0.5" : "inset-x-5 bg-muted/60 group-hover/stack:translate-y-1",
-            )}
-            style={{ bottom: (behind - depth) * PEEK }}
-          />
-        );
-      })}
+      {/* Deepest first, so each card paints over the one behind it. Every layer is opaque, or
+          the cards would show through each other (and through the row's hover colour). */}
+      {[2, 1].filter((depth) => depth <= behind).map((depth) => (
+        <div
+          key={depth}
+          aria-hidden
+          className={cn(
+            "absolute top-3 rounded-xl border border-foreground/10 transition-transform duration-300 ease-(--ease-out-soft)",
+            depth === 1
+              ? "inset-x-2.5 bg-[color-mix(in_oklab,var(--muted)_80%,var(--card))] group-hover/stack:translate-y-1"
+              : "inset-x-5 bg-[color-mix(in_oklab,var(--muted)_40%,var(--card))] group-hover/stack:translate-y-2",
+          )}
+          style={{ bottom: (behind - depth) * PEEK }}
+        />
+      ))}
     <div
       data-id={g.key}
       role="button"
@@ -129,7 +130,9 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
         }
       }}
       className={cn(
-        "group/row relative flex cursor-default items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50",
+        // Hover mixes the accent into the card instead of layering a see-through accent over it,
+        // so the cards stacked behind never show through.
+        "group/row relative flex cursor-default items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-[color-mix(in_oklab,var(--accent)_50%,var(--card))]",
         checked && "border-foreground/20 bg-muted hover:bg-muted",
       )}
     >
