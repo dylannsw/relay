@@ -9,11 +9,14 @@ import { SelectionSlot } from "@/components/selection-slot";
 import type { Folder, SenderGroup } from "@/types";
 import { listDate } from "@/format";
 
-/** Everything the inbox's Senders view needs from the app; absent outside the inbox. */
+/** Everything the Clean up page needs from the app; absent on every other mail view. */
 export interface SendersProps {
-  /** True while the Senders half of the Messages | Senders toggle is showing. */
-  on: boolean;
-  onChange: (on: boolean) => void;
+  /** The account being tidied, or null for every account. */
+  accountId: string | null;
+  onAccount: (id: string | null) => void;
+  /** Whose senders are grouped: the inbox's or the archive's. */
+  folder: "inbox" | "archive";
+  onFolder: (f: "inbox" | "archive") => void;
   groups: SenderGroup[];
   /** Keys of the groups ticked for whole-group actions. */
   checked: Set<string>;
@@ -37,14 +40,19 @@ export interface SendersProps {
   onKeepLatest: () => void;
 }
 
-/** "From your latest 100 emails": what the Senders view can and can't see. */
+/** "From your latest 100 emails": what Clean up can and can't see. */
 export function SyncedNote({ s, className }: { s: SendersProps; className?: string }) {
+  // Archive keeps at most 50 synced messages per account (see `folder_max` in sync.rs).
+  const n = s.folder === "archive" ? Math.min(50, s.syncedPerAccount) : s.syncedPerAccount;
   return (
     <p className={cn("text-sm text-muted-foreground", className)}>
-      From your latest {s.syncedPerAccount} emails{s.accountCount > 1 ? " per account" : ""}
+      From your latest {n} {s.folder === "archive" ? "archived " : ""}emails{s.accountCount > 1 ? " per account" : ""}
     </p>
   );
 }
+
+/** How far each card behind a group's row peeks out below it, in px. */
+const PEEK = 6;
 
 export function SenderRows({ s }: { s: SendersProps }) {
   const selecting = s.checked.size > 0;
@@ -86,7 +94,26 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       ? g.addresses[0]
       : null;
 
+  // A group of several emails reads as a stack: one card peeks out behind the row for two
+  // emails, two for three or more. They spread a little on hover, as a hint that it opens.
+  const behind = Math.min(2, g.count - 1);
+
   return (
+    <div className="group/stack relative" style={{ paddingBottom: behind * PEEK }}>
+      {Array.from({ length: behind }, (_, i) => {
+        const depth = i + 1;
+        return (
+          <div
+            key={depth}
+            aria-hidden
+            className={cn(
+              "absolute top-3 rounded-xl border border-foreground/10 transition-transform duration-200 ease-(--ease-out-soft)",
+              depth === 1 ? "inset-x-2.5 bg-muted group-hover/stack:translate-y-0.5" : "inset-x-5 bg-muted/60 group-hover/stack:translate-y-1",
+            )}
+            style={{ bottom: (behind - depth) * PEEK }}
+          />
+        );
+      })}
     <div
       data-id={g.key}
       role="button"
@@ -102,7 +129,7 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
         }
       }}
       className={cn(
-        "group/row flex cursor-default items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50",
+        "group/row relative flex cursor-default items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50",
         checked && "border-foreground/20 bg-muted hover:bg-muted",
       )}
     >
@@ -136,6 +163,7 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
         </div>
         {addresses && <div className="line-clamp-1 text-sm text-muted-foreground">{addresses}</div>}
       </div>
+    </div>
     </div>
   );
 }

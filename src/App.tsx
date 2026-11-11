@@ -58,8 +58,9 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
-  /** The inbox's Messages | Senders toggle (Senders only exists for inboxes). */
-  const [sendersMode, setSendersMode] = useState(false);
+  /** Clean up: the account being tidied (null = every account) and which folder's senders. */
+  const [cleanupAccount, setCleanupAccount] = useState<string | null>(null);
+  const [cleanupFolder, setCleanupFolder] = useState<"inbox" | "archive">("inbox");
   const [groups, setGroups] = useState<SenderGroup[]>([]);
   /** The sender group opened from the list (a snapshot; its live counts come from `groups`). */
   const [group, setGroup] = useState<SenderGroup | null>(null);
@@ -73,15 +74,23 @@ export default function App() {
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const pageView = isPageView(view);
+  const bySenders = view.kind === "cleanup";
+  // Clean up starts on the account you were last looking at; a removed account falls back to all.
+  useEffect(() => {
+    if (view.kind === "account") setCleanupAccount(view.id);
+  }, [view]);
+  const cleanupId = cleanupAccount && accountById.has(cleanupAccount) ? cleanupAccount : null;
   const accountIds = useMemo(() => {
+    if (view.kind === "cleanup") return cleanupId ? [cleanupId] : undefined;
     if (view.kind === "account") return [view.id];
     if (view.kind === "label") return accounts.filter((a) => a.label === view.label).map((a) => a.id);
     return undefined; // all inboxes (the Tasks pages keep the mail list on all inboxes too)
-  }, [view, accounts]);
+  }, [view, accounts, cleanupId]);
   // Stable key so a background account refresh doesn't refetch the list needlessly.
   const accountKey = accountIds?.join(",") ?? "*";
-  const folder: Folder = view.kind === "account" ? view.folder : "inbox";
-  const bySenders = sendersMode && folder === "inbox";
+  const folder: Folder = view.kind === "account" ? view.folder : view.kind === "cleanup" ? cleanupFolder : "inbox";
+  // Clean up has no All | Unread | Starred filter: it always groups everything.
+  const listFilter: Filter = bySenders ? "all" : filter;
 
   const refreshAccounts = useCallback(async () => {
     try {
@@ -96,11 +105,11 @@ export default function App() {
     (): ListQuery => ({
       accountIds: accountKey === "*" ? undefined : accountKey ? accountKey.split(",") : [],
       folder,
-      unreadOnly: filter === "unread",
-      starredOnly: filter === "starred",
+      unreadOnly: listFilter === "unread",
+      starredOnly: listFilter === "starred",
       search: debouncedSearch.trim() || undefined,
     }),
-    [accountKey, folder, filter, debouncedSearch],
+    [accountKey, folder, listFilter, debouncedSearch],
   );
 
   const refreshGroups = useCallback(async () => {
@@ -118,7 +127,7 @@ export default function App() {
     [bySenders, group, narrow],
   );
   /** Identifies the list the current query asks for; `listKey` equals it once that list has loaded. */
-  const wantedKey = `${accountKey}|${folder}|${filter}|${debouncedSearch}|${fromEmails ? `${group?.key}|${narrow ?? ""}` : ""}`;
+  const wantedKey = `${accountKey}|${folder}|${listFilter}|${debouncedSearch}|${fromEmails ? `${group?.key}|${narrow ?? ""}` : ""}`;
 
   const refreshMessages = useCallback(async () => {
     try {
@@ -158,7 +167,7 @@ export default function App() {
     setChecked(new Set());
     setCheckedGroups(new Set());
     checkAnchor.current = null;
-  }, [accountKey, folder, filter, debouncedSearch, group?.key, narrow]);
+  }, [accountKey, folder, listFilter, debouncedSearch, group?.key, narrow]);
   // Another account, folder or mode closes the open sender group.
   useEffect(() => {
     setGroup(null);
@@ -571,7 +580,9 @@ export default function App() {
   // ----- render -----
 
   const viewTitle =
-    view.kind === "all" || pageView
+    view.kind === "cleanup"
+      ? "Clean up"
+      : view.kind === "all" || pageView
       ? "All inboxes"
       : view.kind === "label"
         ? view.label
@@ -582,10 +593,12 @@ export default function App() {
     setSettingsOpen(true);
   };
   const senders: SendersProps | undefined =
-    folder === "inbox"
+    bySenders
       ? {
-          on: bySenders,
-          onChange: setSendersMode,
+          accountId: cleanupId,
+          onAccount: setCleanupAccount,
+          folder: cleanupFolder,
+          onFolder: setCleanupFolder,
           groups,
           checked: checkedGroups,
           syncedPerAccount,
@@ -673,14 +686,14 @@ export default function App() {
             onSync={syncNow}
             onCompose={() => startCompose("new")}
             search={search}
-            filter={filter}
+            filter={listFilter}
             onFilter={setFilter}
             messages={messages}
             accounts={accounts}
             accountById={accountById}
             selectedId={selectedId}
             checked={checked}
-            showAccount={view.kind !== "account" && accounts.length > 1}
+            showAccount={view.kind !== "account" && !(bySenders && cleanupId) && accounts.length > 1}
             canLoadMore={messages.length >= limit}
             onOpen={(m) => void openMessage(m)}
             onMove={(m, to) => void moveMessage(m, to)}

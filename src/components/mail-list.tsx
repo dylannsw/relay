@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -99,10 +100,30 @@ interface Props {
   senders?: SendersProps;
 }
 
-const VIEWS = [
-  { id: "messages", label: "Messages" },
-  { id: "senders", label: "Senders" },
+const CLEANUP_FOLDERS = [
+  { id: "inbox", label: "Inbox" },
+  { id: "archive", label: "Archived" },
 ] as const;
+
+/** Clean up's account picker: one account, or all of them at once. */
+function AccountPicker({ s, accounts }: { s: SendersProps; accounts: Account[] }) {
+  if (accounts.length < 2) return null;
+  return (
+    <Select value={s.accountId ?? "*"} onValueChange={(v) => s.onAccount(v === "*" ? null : v)}>
+      <SelectTrigger size="sm" className="min-w-0 max-w-60" aria-label="Account to clean up">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="*">All accounts</SelectItem>
+        {accounts.map((a) => (
+          <SelectItem key={a.id} value={a.id}>
+            {a.email}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** Tabs with a pill that slides to the active one (stock Tabs, the pill drawn on top). */
 function PillTabs<T extends string>(props: {
@@ -187,8 +208,8 @@ function IconAction(props: {
 }
 
 export function MailList(p: Props) {
-  const sd = p.senders?.on && !p.senders.group ? p.senders : undefined; // the sender list is showing
-  const gv = p.senders?.on && p.senders.group ? { ...p.senders, group: p.senders.group } : undefined; // a group is open
+  const sd = p.senders && !p.senders.group ? p.senders : undefined; // the sender list is showing
+  const gv = p.senders?.group ? { ...p.senders, group: p.senders.group } : undefined; // a group is open
   const mode = sd ? "senders" : gv ? "group" : "messages";
   const nChecked = sd ? sd.checked.size : p.messages.filter((m) => p.checked.has(m.id)).length;
   const total = sd ? sd.groups.length : p.messages.length;
@@ -257,8 +278,9 @@ export function MailList(p: Props) {
                 exit={{ opacity: 0, y: -6 }}
                 transition={quick}
               >
-                <h1 className="truncate text-lg font-semibold">{p.title}</h1>
+                <h1 className={cn("truncate text-lg font-semibold", p.senders && "shrink-0")}>{p.title}</h1>
                 {p.account && <AccountChip account={p.account} className="min-w-0" />}
+                {p.senders && <AccountPicker s={p.senders} accounts={p.accounts} />}
                 {/* Beside what it refreshes; muted grey like the window controls. */}
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -279,9 +301,13 @@ export function MailList(p: Props) {
           </>
         )}
         <div className="ml-3 flex shrink-0 items-center gap-2">
-          {/* Hidden while rows are ticked: the bulk bar needs the room. */}
-          {p.senders && !selecting && !gv && <PillTabs id="mail-view" value={sd ? "senders" : "messages"} items={VIEWS} triggerClass="px-2" onChange={(v) => p.senders?.onChange(v === "senders")} />}
-          <PillTabs id="mail-filter" value={p.filter} items={FILTERS} onChange={p.onFilter} />
+          {/* Clean up swaps the filter for Inbox | Archived. Hidden while rows are ticked (the
+              bulk bar needs the room) and inside a group (it belongs to the sender list). */}
+          {p.senders ? (
+            !selecting && !gv && <PillTabs id="cleanup-folder" value={p.senders.folder} items={CLEANUP_FOLDERS} onChange={p.senders.onFolder} />
+          ) : (
+            <PillTabs id="mail-filter" value={p.filter} items={FILTERS} onChange={p.onFilter} />
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button size="sm" onClick={p.onCompose}>
@@ -628,7 +654,8 @@ function AddressChip({ active, onClick, children }: { active: boolean; onClick: 
 
 /** Under an open group's title: the bulk actions on its ticked mail, and the addresses to narrow by. */
 function GroupToolbar({ s, p, nChecked }: { s: SendersProps & { group: SenderGroup }; p: Props; nChecked: number }) {
-  const total = p.messages.length;
+  // Until the group's mail loads, `messages` still holds the previous list: count from the group.
+  const total = s.ready ? p.messages.length : s.group.count;
   const allChecked = nChecked > 0 && nChecked === total;
   const addresses = s.group.addresses;
   return (

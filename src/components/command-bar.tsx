@@ -14,6 +14,7 @@ import {
   IconSearch,
   IconSettings,
   IconSmartHome,
+  IconSparkles,
   IconStar,
   IconSun,
   IconX,
@@ -148,6 +149,7 @@ export function CommandBar(p: Props) {
       { id: "go-home", label: "Home", keywords: "overview dashboard start", icon: <IconSmartHome />, run: () => p.onNavigate({ kind: "home" }) },
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
       { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <IconCalendar />, run: () => p.onNavigate({ kind: "calendar" }) },
+      { id: "go-cleanup", label: "Clean up", keywords: "senders group bulk delete tidy declutter", icon: <IconSparkles />, run: () => p.onNavigate({ kind: "cleanup" }) },
       ...taskSections.map((section) => ({
         id: `go-section-${section}`,
         label: section,

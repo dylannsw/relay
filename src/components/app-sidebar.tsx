@@ -10,6 +10,7 @@ import {
   IconLogin2,
   IconSettings,
   IconSmartHome,
+  IconSparkles,
   IconTag,
   IconUser,
   type TablerIcon,
@@ -48,7 +49,9 @@ export type View =
   | { kind: "calendar" }
   | { kind: "all" }
   | { kind: "label"; label: string }
-  | { kind: "account"; id: string; folder: Folder };
+  | { kind: "account"; id: string; folder: Folder }
+  /** Sender groups of one account's (or every account's) inbox or archive, for bulk tidying. */
+  | { kind: "cleanup" };
 
 /** Home, Tasks and Calendar: pages without a message list. */
 export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks" || v.kind === "calendar";
@@ -226,6 +229,12 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                     </SidebarMenuItem>
                   );
                 })}
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={view.kind === "cleanup"} onClick={() => onView({ kind: "cleanup" })}>
+                  <IconSparkles />
+                  <span>Clean up</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
