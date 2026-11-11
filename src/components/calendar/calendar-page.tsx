@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring, useVelocity } from "motion/react";
-import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin } from "@tabler/icons-react";
+import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { ease, glide, smooth } from "@/lib/motion";
@@ -84,10 +84,14 @@ const HOUR_KEY = "relay.calendar.hour";
 const GUTTER = 72;
 /** Day names row, and one row of the all-day strip. */
 const DAY_HEAD = 46;
-const BAR = 22;
-const BAR_GAP = 2;
+const BAR = 26;
+/** Space between stacked all-day bars, and under the last one, so a bar in the next lane sits
+ * wholly below the row (clipped) until the row grows to show it. */
+const BAR_GAP = 4;
 /** All-day rows shown at most; more on a day collapse into "+N". */
 const MAX_LANES = 3;
+/** Space above the first all-day bar, matching the gap below the last. */
+const STRIP_TOP = BAR_GAP;
 const DAY_COUNTS = [4, 5, 6, 7] as const;
 const DAYS_KEY = "relay.calendar.days";
 
@@ -129,6 +133,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   const scroller = useRef<HTMLDivElement>(null);
   /** The first column in view (fractional while scrolling), for drawing. */
   const [pos, setPos] = useState(RANGE_DAYS);
+  /** The first day in view once scrolling has come to rest; the all-day row is sized from it. */
+  const [settled, setSettled] = useState(RANGE_DAYS);
   /**
    * The first day in view as of the last finished scroll. Resizing (window, day count, the
    * panel sliding open) keeps this day first; reading it back from scrollLeft mid-resize would
@@ -183,6 +189,13 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
    * to the nearest whole day, so the view glides into place instead of jumping to it.
    */
   const glider = useRef({ target: 0, current: 0, raf: 0, last: 0, idle: 0 });
+  /** Resting on a whole day: the all-day row may now resize to fit it. */
+  const noteSettled = useCallback((el: HTMLElement) => {
+    const w = colWRef.current;
+    if (!w) return;
+    const p = el.scrollLeft / w;
+    if (Math.abs(p - Math.round(p)) < 0.02) setSettled(Math.round(p));
+  }, []);
   const stopGlide = () => {
     const g = glider.current;
     cancelAnimationFrame(g.raf);
@@ -198,6 +211,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       cancelAnimationFrame(g.raf);
       g.raf = 0;
       el.scrollLeft = g.target;
+      noteSettled(el);
       return;
     }
     if (g.raf) return;
@@ -211,9 +225,11 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       if (Math.abs(g.target - g.current) < 0.5) g.current = g.target;
       el.scrollLeft = g.current;
       g.raf = g.current === g.target ? 0 : requestAnimationFrame(tick);
+      // The last step is often too small to fire a scroll event, so note the landing here.
+      if (!g.raf) noteSettled(el);
     };
     g.raf = requestAnimationFrame(tick);
-  }, []);
+  }, [noteSettled]);
   /** Glide to whole day `i` (clamped) and make it the anchor. */
   const settleOn = useCallback(
     (i: number) => {
@@ -249,6 +265,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     el.scrollLeft = anchor.current * colW;
     glider.current.target = glider.current.current = el.scrollLeft;
     setPos(anchor.current);
+    setSettled(anchor.current);
   }, [colW, todayIdx]);
 
   // Scrolled some other way (keyboard, a focused element pulled into view): settle on a day too.
@@ -326,6 +343,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     const el = scroller.current;
     if (!el || !colW) return;
     setPos(el.scrollLeft / colW);
+    if (!glider.current.raf) noteSettled(el);
   };
 
   const goTo = useCallback((idx: number) => settleOn(idx), [settleOn]);
@@ -601,10 +619,16 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   }, [display, origin]);
 
   const bars = useMemo(() => laneBars(display), [display]);
-  // The all-day row's height comes from every loaded all-day event, not just the ones in view,
-  // so scrolling to a day with one never makes the row (and the hours under it) jump.
-  const lanes = Math.min(MAX_LANES, bars.reduce((n, b) => Math.max(n, b.lane + 1), 0));
-  const stripH = lanes ? lanes * (BAR + BAR_GAP) + 6 : 0;
+  // The all-day row fits the days in view, but only once scrolling has settled on a day, and
+  // then eases to its new height, so the hours under it never jitter mid-scroll. Bars keep
+  // their lanes from the whole range, so none changes row as you scroll.
+  const lanes = useMemo(() => {
+    const from = addDays(origin, settled);
+    const to = addDays(origin, settled + days);
+    const inView = bars.filter((b) => b.first < to && b.end > from);
+    return Math.min(MAX_LANES, inView.reduce((n, b) => Math.max(n, b.lane + 1), 0));
+  }, [bars, origin, settled, days]);
+  const stripH = useEased(lanes ? STRIP_TOP + lanes * (BAR + BAR_GAP) : 0);
   const headH = DAY_HEAD + stripH;
   live.current.headH = headH;
   const viewFrom = addDays(origin, first);
@@ -762,7 +786,9 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
 
               {/* All-day events: a row of their own, the same height wherever you scroll. */}
               {stripH > 0 && (
-                <div className="relative border-b" style={{ height: stripH }}>
+                // Clipped (not overflow-hidden, which would break the sticky label): mid-scroll,
+                // bars in lanes below the row's current height wait for it to grow.
+                <div className="relative overflow-clip border-b" style={{ height: stripH }}>
                   <div
                     className="sticky left-0 z-30 flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ width: GUTTER }}
@@ -800,12 +826,13 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                             style={{
                               left: GUTTER + a * colW + 2,
                               width: (z - a) * colW - 5,
-                              top: 3 + b.lane * (BAR + BAR_GAP),
+                              top: STRIP_TOP + b.lane * (BAR + BAR_GAP),
                               height: BAR,
                               ...(isDraft ? draftStyle(barCal, dark) : eventStyle(b.event, barCal, dark, selected === b.event.id)),
                             }}
                           >
                             <span className="truncate">{b.event.title}</span>
+                            {b.event.recurringEventId && <RepeatMark className="ml-1 size-3" />}
                           </button>
                         );
                       })}
@@ -1141,8 +1168,11 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
             )}
             {roomy ? (
               <>
-                <span className={cn("truncate text-[14px] leading-snug font-semibold", e.myResponse === "declined" && "line-through")}>
-                  {e.title}
+                <span className="flex min-w-0 items-center gap-1">
+                  <span className={cn("truncate text-[14px] leading-snug font-semibold", e.myResponse === "declined" && "line-through")}>
+                    {e.title}
+                  </span>
+                  {e.recurringEventId && <RepeatMark className="size-3.5" />}
                 </span>
                 <span className="truncate leading-snug text-(color:--event-muted)">{timeRange(e)}</span>
                 {withPlace && (
@@ -1153,9 +1183,11 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
                 )}
               </>
             ) : (
-              <span className="truncate leading-snug">
-                <span className={cn("text-[14px] font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
-                <span className="text-(color:--event-muted)"> {timeRange(e, true)}</span>
+              // Title, repeat mark and time on one line; the time only gets the room left, so it gives way first.
+              <span className="flex min-w-0 items-center gap-1 leading-snug">
+                <span className={cn("min-w-0 truncate text-[14px] font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
+                {e.recurringEventId && <RepeatMark className="size-3.5" />}
+                <span className="w-0 min-w-0 flex-1 truncate text-(color:--event-muted)">{timeRange(e, true)}</span>
               </span>
             )}
           </button>
@@ -1163,6 +1195,34 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
       })}
     </>
   );
+}
+
+/** `target`, eased towards over a short animation whenever it changes (straight there with reduced motion). */
+function useEased(target: number): number {
+  const [value, setValue] = useState(target);
+  const current = useRef(target);
+  useEffect(() => {
+    if (current.current === target) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      current.current = target;
+      setValue(target);
+      return;
+    }
+    const a = animate(current.current, target, {
+      ...smooth,
+      onUpdate: (v) => {
+        current.current = v;
+        setValue(v);
+      },
+    });
+    return () => a.stop();
+  }, [target]);
+  return value;
+}
+
+/** After a repeating event's name; stays whole while the name beside it truncates. */
+function RepeatMark({ className }: { className?: string }) {
+  return <IconRepeat aria-label="Repeats" role="img" className={cn("shrink-0 text-(color:--event-muted)", className)} />;
 }
 
 /** The current time across every day in view, bolder through today with a dot where it starts. */
