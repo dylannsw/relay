@@ -282,6 +282,19 @@ export default function App() {
       else if (readerOpen) void openMessage(next);
       else setSelectedId(next.id);
     }
+    // Emptying the open sender group steps straight back to the sender list (or, when it's
+    // narrowed to one address, back to all its addresses), instead of showing an empty list
+    // while the moves finish on the server. Not when more of the group is still unloaded.
+    const emptied = bySenders && group && messages.length < limit && messages.every((m) => ids.has(m.id));
+    if (emptied && narrow) {
+      setNarrow(null);
+    } else if (emptied) {
+      const key = group.key;
+      setGroups((gs) => gs.filter((g) => g.key !== key));
+      clearSelection();
+      setNarrow(null);
+      setGroup(null);
+    }
     setMessages((ms) => ms.filter((x) => !ids.has(x.id)));
     setChecked((c) => new Set([...c].filter((id) => !ids.has(id))));
     for (const m of moving) {
