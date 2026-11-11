@@ -5,7 +5,9 @@
 /* Smooth stacked shadows for every shadow-* utility, plus smooth-shadow-ring-* for elevated surfaces. */
 @import "./shadow-plugin.css";
 
-@custom-variant dark (&:is(.dark *));
+/* Dark covers the whole app in Dark, and everything outside the frames in Mixed (the framed
+   content, marked .frame, stays light there). */
+@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *));
 
 /* The one red for "down" and "now": Home's falling-delta badge and the calendar's current-time line. */
 :root {
@@ -67,7 +69,11 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
+:root,
+/* Mixed theme: the framed content (main panel, email/compose/settings cards) keeps the light colours. */
+.mixed .frame {
+    color-scheme: light;
+    --smooth-ring-color: rgba(0, 0, 0, 0.05);
     /* Relay's accent: the logo blue. Filled buttons, checked boxes, links and unread dots. */
     --brand: var(--accent-light, #3451d1);
     /* Text on the accent: white, or near-black when a light custom colour needs it. */
@@ -126,7 +132,10 @@
     --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.dark {
+.dark,
+/* Mixed theme: everything outside the frames is dark. */
+.mixed {
+    color-scheme: dark;
     /* A touch brighter so filled controls stand out on dark surfaces. */
     --brand: var(--accent-dark, #4462e4);
     --brand-foreground: var(--accent-dark-fg, oklch(0.985 0 0));
@@ -178,6 +187,11 @@
   body {
     @apply bg-background text-foreground;
     }
+  /* Mixed theme: text inherits body's colour already resolved to the dark theme's near-white,
+     so the light frames restate it from their own (light) variables. */
+  .mixed .frame {
+    @apply text-foreground;
+    }
   html {
     @apply font-sans;
     }
@@ -217,7 +231,8 @@
   /* Light mode: icons are never darker than mid-grey, so ones that inherit near-black
      text colour don't read as solid black. Lighter colours (muted grey, chip colours,
      white icons on filled buttons) are already above the floor and stay as they are. */
-  :root:not(.dark) .tabler-icon {
+  :root:not(.dark, .mixed) .tabler-icon,
+  .mixed .frame .tabler-icon {
     color: oklch(from currentColor max(l, 0.5) c h);
   }
   /* Native scrollbars match the thin ScrollArea ones. */

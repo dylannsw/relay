@@ -498,7 +498,7 @@ export default function App() {
           onReconnect={addAccount}
           onOpenSettings={() => openSettings()}
         />
-        <SidebarInset className="min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0">
+        <SidebarInset className="frame min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0">
           {view.kind === "home" ? (
             <HomePage
               accounts={accounts}

@@ -1346,7 +1346,7 @@ function SettingRow({ title, description, children, stacked }: {
 const THEMES = [
   { id: "light", label: "Light" },
   { id: "dark", label: "Dark" },
-  { id: "system", label: "Match Windows" },
+  { id: "mixed", label: "Mixed" },
 ] as const;
 
 const PREVIEW = {
@@ -1407,7 +1407,7 @@ function ThemeCard({ id, label, selected, onSelect }: {
         )}
       >
         {id === "dark" ? <MiniRelay mode="dark" /> : <MiniRelay mode="light" />}
-        {id === "system" && (
+        {id === "mixed" && (
           // Half light, half dark.
           <span className="absolute inset-0 [clip-path:inset(0_0_0_50%)]">
             <MiniRelay mode="dark" />
@@ -1435,7 +1435,7 @@ function ThemeCard({ id, label, selected, onSelect }: {
 function AppearanceTab() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   const prefs = useAppearance();
-  const current = theme ?? "system";
+  const current = theme ?? "mixed";
   const font = FONTS.find((x) => x.id === prefs.font);
   const missingFont = font?.needs && !isFontInstalled(font.needs) ? font : null;
 

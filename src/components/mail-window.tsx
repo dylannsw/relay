@@ -57,7 +57,7 @@ export function MailWindow({
       {/* Without a header, the content shows its own CloseButton (the email card puts it beside the subject). */}
       <div
         className={cn(
-          "mx-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background text-foreground smooth-shadow-ring-xs",
+          "frame mx-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-background text-foreground smooth-shadow-ring-xs",
           !(title || icon) && "mt-2",
         )}
       >

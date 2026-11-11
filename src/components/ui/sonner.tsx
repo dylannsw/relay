@@ -12,21 +12,35 @@ import {
 import { useAppearance } from "@/appearance"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  // Toasts float outside the frames, so Mixed shows them dark.
+  const { resolvedTheme } = useTheme()
   const { toastPosition } = useAppearance()
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={resolvedTheme === "light" ? "light" : "dark"}
       position={toastPosition}
       className="toaster group"
+      // Icon colours follow the toast's own theme (not the page's), since
+      // Mixed shows dark toasts over a light app. Each keeps ≥3:1 on the
+      // popover background.
       icons={{
-        success: <IconCircleCheckFilled className="size-5.5" />,
-        info: <IconInfoCircleFilled className="size-5.5" />,
-        warning: <IconAlertTriangleFilled className="size-5.5" />,
-        error: <IconAlertOctagonFilled className="size-5.5" />,
+        success: (
+          <IconCircleCheckFilled className="size-5.5 text-emerald-600 group-data-[sonner-theme=dark]:text-emerald-400" />
+        ),
+        info: (
+          <IconInfoCircleFilled className="size-5.5 text-blue-600 group-data-[sonner-theme=dark]:text-blue-400" />
+        ),
+        warning: (
+          <IconAlertTriangleFilled className="size-5.5 text-amber-600 group-data-[sonner-theme=dark]:text-amber-400" />
+        ),
+        error: (
+          <IconAlertOctagonFilled className="size-5.5 text-red-600 group-data-[sonner-theme=dark]:text-red-400" />
+        ),
         // Tabler has no filled loader; the outline spinner stays.
-        loading: <IconLoader2 className="size-5.5 animate-spin" />,
+        loading: (
+          <IconLoader2 className="size-5.5 animate-spin text-muted-foreground" />
+        ),
       }}
       style={
         {
