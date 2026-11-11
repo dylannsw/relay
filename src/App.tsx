@@ -61,6 +61,10 @@ export default function App() {
   /** The inbox's Messages | Senders toggle (Senders only exists for inboxes). */
   const [sendersMode, setSendersMode] = useState(false);
   const [groups, setGroups] = useState<SenderGroup[]>([]);
+  /** The sender group opened from the list (a snapshot; its live counts come from `groups`). */
+  const [group, setGroup] = useState<SenderGroup | null>(null);
+  /** One of the open group's addresses the list is narrowed to. */
+  const [narrow, setNarrow] = useState<string | null>(null);
   /** Sender rows ticked for whole-group actions. */
   const [checkedGroups, setCheckedGroups] = useState<Set<string>>(() => new Set());
   /** How many messages each account keeps synced; the Senders view only sees those. */
@@ -108,17 +112,25 @@ export default function App() {
     }
   }, [bySenders, scopeQuery]);
 
+  // Inside a sender group the list shows only that group's mail (or one of its addresses).
+  const fromEmails = useMemo(
+    () => (bySenders && group ? (narrow ? [narrow] : group.addresses) : undefined),
+    [bySenders, group, narrow],
+  );
+  /** Identifies the list the current query asks for; `listKey` equals it once that list has loaded. */
+  const wantedKey = `${accountKey}|${folder}|${filter}|${debouncedSearch}|${fromEmails ? `${group?.key}|${narrow ?? ""}` : ""}`;
+
   const refreshMessages = useCallback(async () => {
     try {
-      const list = await api.listMessages({ ...scopeQuery(), limit });
+      const list = await api.listMessages({ ...scopeQuery(), fromEmails, limit });
       setMessages(list);
       // Set together with the data (not when the view changes), so a new folder's list
       // replaces the old one in one step instead of the old rows animating out first.
-      setListKey(`${accountKey}|${folder}|${filter}|${debouncedSearch}`);
+      setListKey(wantedKey);
     } catch (e) {
       toast.error(errorText(e));
     }
-  }, [scopeQuery, accountKey, folder, filter, debouncedSearch, limit]);
+  }, [scopeQuery, fromEmails, wantedKey, limit]);
 
   const refreshAll = useRef(() => {});
   refreshAll.current = () => {
@@ -146,7 +158,17 @@ export default function App() {
     setChecked(new Set());
     setCheckedGroups(new Set());
     checkAnchor.current = null;
-  }, [accountKey, folder, filter, debouncedSearch]);
+  }, [accountKey, folder, filter, debouncedSearch, group?.key, narrow]);
+  // Another account, folder or mode closes the open sender group.
+  useEffect(() => {
+    setGroup(null);
+    setNarrow(null);
+  }, [accountKey, folder, bySenders]);
+  // A group opens with all its mail ticked, ready to act on or trim down.
+  useEffect(() => {
+    if (bySenders && group && listKey === wantedKey && messages.length) checkAll(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listKey]);
   // Look for a new version of Relay on launch and every few hours; installing waits for the user.
   useEffect(
     () =>
@@ -188,6 +210,7 @@ export default function App() {
     if (inInbox) bumpUnread(m.accountId, read ? -1 : 1);
     try {
       await api.setRead(m.id, read);
+      void refreshGroups(); // sender rows show unread counts
     } catch (e) {
       patchMessage(m.id, { isRead: !read });
       if (inInbox) bumpUnread(m.accountId, read ? 1 : -1);
@@ -311,6 +334,33 @@ export default function App() {
       return next;
     });
   const checkAllGroups = (on: boolean) => setCheckedGroups(on ? new Set(groups.map((g) => g.key)) : new Set());
+
+  const openGroup = (g: SenderGroup) => {
+    clearSelection();
+    setNarrow(null);
+    setGroup(g);
+  };
+  const closeGroup = () => {
+    clearSelection();
+    setChecked(new Set());
+    setNarrow(null);
+    setGroup(null);
+    void refreshGroups();
+  };
+  /** Ticks everything in the open group except its newest message. */
+  const keepLatest = () => {
+    setChecked(new Set(messages.slice(1).map((m) => m.id)));
+    checkAnchor.current = null;
+  };
+  const liveGroup = group ? (groups.find((g) => g.key === group.key) ?? group) : null;
+  // When moving mail empties the open group (or the address it's narrowed to), step back.
+  useEffect(() => {
+    if (!group || !bySenders) return;
+    const live = groups.find((g) => g.key === group.key);
+    if (!live) closeGroup();
+    else if (narrow && !live.addresses.includes(narrow)) setNarrow(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
 
   /** Moves every message of the ticked groups (all of them, not just the ones on screen). */
   const moveGroups = async (to: Folder) => {
@@ -436,7 +486,7 @@ export default function App() {
     const action = matchShortcut(e, readerOpen ? "reader" : "list");
     // Home and Tasks have no message list, and neither does the sender list: only the
     // app-wide shortcuts apply there.
-    if ((pageView || bySenders) && !readerOpen && !(action && APP_WIDE.has(action))) {
+    if ((pageView || (bySenders && !group)) && !readerOpen && !(action && APP_WIDE.has(action))) {
       if (bySenders && !pageView && e.key === "Escape" && checkedGroups.size) setCheckedGroups(new Set());
       return;
     }
@@ -449,6 +499,7 @@ export default function App() {
     // (The email card closes itself on Escape.)
     if (e.key === "Escape" && !readerOpen) {
       if (checked.size) checkAll(false);
+      else if (bySenders && group) closeGroup();
       else clearSelection();
       return;
     }
@@ -530,7 +581,13 @@ export default function App() {
           onToggle: toggleGroup,
           onCheckAll: checkAllGroups,
           onBulkMove: (to) => void moveGroups(to),
-          onOpen: () => {},
+          onOpen: openGroup,
+          group: liveGroup,
+          ready: listKey === wantedKey,
+          onBack: closeGroup,
+          narrow,
+          onNarrow: setNarrow,
+          onKeepLatest: keepLatest,
         }
       : undefined;
   const viewAccount = view.kind === "account" ? accountById.get(view.id) : undefined;

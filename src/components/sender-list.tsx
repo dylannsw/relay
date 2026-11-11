@@ -25,6 +25,16 @@ export interface SendersProps {
   /** Moves every message of the ticked groups. */
   onBulkMove: (to: Folder) => void;
   onOpen: (g: SenderGroup) => void;
+  /** The group opened from the list, with current counts (null while the list shows). */
+  group: SenderGroup | null;
+  /** True once the open group's messages have loaded. */
+  ready: boolean;
+  onBack: () => void;
+  /** The address the open group is narrowed to, if any. */
+  narrow: string | null;
+  onNarrow: (address: string | null) => void;
+  /** Ticks everything in the open group but its newest message. */
+  onKeepLatest: () => void;
 }
 
 /** "From your latest 100 emails": what the Senders view can and can't see. */

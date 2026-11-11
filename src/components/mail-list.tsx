@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   IconArchive,
   IconArrowBackUp,
+  IconArrowLeft,
   IconArrowBackUpDouble,
   IconArrowForwardUp,
   IconCopy,
@@ -47,9 +48,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AccountChip } from "@/components/account-chip";
 import { ShortcutKbd, ShortcutText } from "@/components/shortcut-kbd";
 import { SelectionSlot } from "@/components/selection-slot";
-import { SenderRows, type SendersProps } from "@/components/sender-list";
+import { SenderRows, SyncedNote, type SendersProps } from "@/components/sender-list";
 import type { ShortcutId } from "@/shortcuts";
-import type { Account, ComposeMode, Folder, MessageSummary, Provider } from "@/types";
+import type { Account, ComposeMode, Folder, MessageSummary, Provider, SenderGroup } from "@/types";
 import { listDate, senderName } from "@/format";
 import { FOLDERS, folderLabel } from "@/folders";
 
@@ -109,6 +110,8 @@ function PillTabs<T extends string>(props: {
   value: T;
   items: readonly { id: T; label: string }[];
   onChange: (v: T) => void;
+  /** Extra classes for each trigger (e.g. tighter padding). */
+  triggerClass?: string;
 }) {
   return (
     <Tabs value={props.value} onValueChange={(v) => props.onChange(v as T)}>
@@ -119,7 +122,7 @@ function PillTabs<T extends string>(props: {
               key={f.id}
               value={f.id}
               // The active background is drawn by the sliding pill below instead.
-              className="data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent"
+              className={cn("data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent", props.triggerClass)}
             >
               {props.value === f.id && (
                 <motion.span
@@ -156,11 +159,13 @@ function IconAction(props: {
   variant?: "ghost" | "outline" | "tinted";
   size?: "icon-sm" | "icon-xs";
   destructive?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
+          disabled={props.disabled}
           // Delete is a tinted red pill; the moves beside it get the same pill in the brand colour.
           variant={props.destructive ? "destructive" : (props.variant ?? "ghost")}
           size={props.size ?? "icon-sm"}
@@ -182,7 +187,9 @@ function IconAction(props: {
 }
 
 export function MailList(p: Props) {
-  const sd = p.senders?.on ? p.senders : undefined; // the sender list is showing
+  const sd = p.senders?.on && !p.senders.group ? p.senders : undefined; // the sender list is showing
+  const gv = p.senders?.on && p.senders.group ? { ...p.senders, group: p.senders.group } : undefined; // a group is open
+  const mode = sd ? "senders" : gv ? "group" : "messages";
   const nChecked = sd ? sd.checked.size : p.messages.filter((m) => p.checked.has(m.id)).length;
   const total = sd ? sd.groups.length : p.messages.length;
   const allChecked = nChecked > 0 && nChecked === total;
@@ -193,6 +200,10 @@ export function MailList(p: Props) {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-14 shrink-0 items-center border-b px-4">
+        {gv ? (
+          <GroupTitle s={gv} />
+        ) : (
+          <>
         {/* Select-all only exists in selection mode (Ctrl-click a row to start one). */}
         <SelectionSlot show={selecting}>
           <Checkbox
@@ -265,9 +276,11 @@ export function MailList(p: Props) {
             )}
           </AnimatePresence>
         </div>
+          </>
+        )}
         <div className="ml-3 flex shrink-0 items-center gap-2">
           {/* Hidden while rows are ticked: the bulk bar needs the room. */}
-          {p.senders && !selecting && <PillTabs id="mail-view" value={sd ? "senders" : "messages"} items={VIEWS} onChange={(v) => p.senders?.onChange(v === "senders")} />}
+          {p.senders && !selecting && !gv && <PillTabs id="mail-view" value={sd ? "senders" : "messages"} items={VIEWS} triggerClass="px-2" onChange={(v) => p.senders?.onChange(v === "senders")} />}
           <PillTabs id="mail-filter" value={p.filter} items={FILTERS} onChange={p.onFilter} />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -284,13 +297,26 @@ export function MailList(p: Props) {
       </header>
 
       <motion.div
-        key={`${p.listKey}|${sd ? "senders" : "messages"}`}
+        key={`${p.listKey}|${mode}`}
         className="flex min-h-0 flex-1 flex-col"
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={smooth}
       >
-        {total === 0 ? (
+        {gv ? (
+          <>
+            <GroupToolbar s={gv} p={p} nChecked={nChecked} />
+            {!gv.ready ? (
+              <div className="flex flex-1 items-center justify-center">
+                <Spinner />
+              </div>
+            ) : p.messages.length === 0 ? (
+              <ListEmpty {...p} />
+            ) : (
+              <MessageRows {...p} selecting groupMode />
+            )}
+          </>
+        ) : total === 0 ? (
           <ListEmpty {...p} />
         ) : sd ? (
           <SenderRows s={sd} />
@@ -302,7 +328,7 @@ export function MailList(p: Props) {
   );
 }
 
-function MessageRows(p: Props & { selecting: boolean }) {
+function MessageRows(p: Props & { selecting: boolean; groupMode?: boolean }) {
   const listRef = useRef<HTMLDivElement>(null);
 
   // Keep the highlighted row visible during keyboard navigation.
@@ -344,7 +370,7 @@ function MessageRows(p: Props & { selecting: boolean }) {
   );
 }
 
-function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean }) {
+function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean; groupMode?: boolean }) {
   const account = p.accountById.get(m.accountId);
   const highlighted = m.id === p.selectedId;
   const checked = p.checked.has(m.id);
@@ -362,7 +388,8 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
       onClick={(e) => {
         // Ctrl-click starts (or adds to) a selection, Shift-click selects a range, and once
         // anything is selected a plain click ticks rows too. Otherwise a click opens the email.
-        if (e.shiftKey || e.ctrlKey || e.metaKey || p.selecting) {
+        // (In a sender group everything starts ticked, so a plain click still opens the email.)
+        if (e.shiftKey || e.ctrlKey || e.metaKey || (p.selecting && !p.groupMode)) {
           e.preventDefault();
           p.onToggleCheck(m, e.shiftKey);
         } else {
@@ -566,6 +593,85 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
         Copy sender address
       </ContextMenuItem>
     </ContextMenuContent>
+  );
+}
+
+/** Title of an open sender group: back to the list, the group's name and how many messages it holds. */
+function GroupTitle({ s }: { s: SendersProps & { group: SenderGroup } }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground" onClick={s.onBack}>
+            <IconArrowLeft />
+            <span className="sr-only">Back to senders</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Back to senders</TooltipContent>
+      </Tooltip>
+      <h1 className="truncate text-lg font-semibold">{s.group.name}</h1>
+      <Badge variant="secondary" className="tabular-nums">
+        {s.group.count}
+      </Badge>
+    </div>
+  );
+}
+
+/** One address of an open group; click to narrow the list to it. */
+function AddressChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <Button variant={active ? "default" : "outline"} size="xs" aria-pressed={active} onClick={onClick} className="max-w-full">
+      <span className="truncate">{children}</span>
+    </Button>
+  );
+}
+
+/** Under an open group's title: the bulk actions on its ticked mail, and the addresses to narrow by. */
+function GroupToolbar({ s, p, nChecked }: { s: SendersProps & { group: SenderGroup }; p: Props; nChecked: number }) {
+  const total = p.messages.length;
+  const allChecked = nChecked > 0 && nChecked === total;
+  const addresses = s.group.addresses;
+  return (
+    <div className="flex shrink-0 flex-col gap-2.5 border-b px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Checkbox
+          aria-label={allChecked ? "Clear selection" : "Select all"}
+          checked={allChecked ? true : nChecked > 0 ? "indeterminate" : false}
+          onCheckedChange={() => p.onCheckAll(!allChecked)}
+        />
+        <span className="text-base font-semibold whitespace-nowrap tabular-nums">
+          {nChecked} of {total} selected
+        </span>
+        <ButtonGroup>
+          {movesFrom(p.folder).map((a) => (
+            <IconAction key={a.to} variant="tinted" destructive={a.to === "trash"} disabled={nChecked === 0} label={a.label} shortcut={a.shortcut} onClick={() => p.onBulkMove(a.to)}>
+              {a.icon}
+            </IconAction>
+          ))}
+        </ButtonGroup>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="sm" disabled={total < 2} onClick={s.onKeepLatest}>
+              Keep latest
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Tick everything except the newest message</TooltipContent>
+        </Tooltip>
+        <SyncedNote s={s} className="ml-auto" />
+      </div>
+      {addresses.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          <AddressChip active={s.narrow === null} onClick={() => s.onNarrow(null)}>
+            All addresses
+          </AddressChip>
+          {addresses.map((a) => (
+            <AddressChip key={a} active={s.narrow === a} onClick={() => s.onNarrow(s.narrow === a ? null : a)}>
+              {a}
+            </AddressChip>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
