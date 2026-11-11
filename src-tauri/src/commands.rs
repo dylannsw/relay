@@ -19,6 +19,7 @@ use crate::models::{
     Provider, SyncReport,
 };
 use crate::state::AppState;
+use crate::senders::{self, SenderGroup};
 use crate::sync::{self, MAIL_UPDATED};
 use crate::{crypt, db, feeds, gmail, graph, oauth, places};
 
@@ -220,6 +221,15 @@ pub fn update_account(state: St<'_>, id: String, label: String, color: String) -
 #[tauri::command]
 pub fn list_messages(state: St<'_>, query: ListQuery) -> Result<Vec<MessageSummary>> {
     state.db(|c| db::list_messages(c, &query))
+}
+
+/// The Senders view: the query's synced messages grouped by sender (its limit is ignored).
+#[tauri::command]
+pub fn list_sender_groups(state: St<'_>, query: ListQuery) -> Result<Vec<SenderGroup>> {
+    state.db(|c| {
+        let rows = db::sender_rows(c, &query)?;
+        Ok(senders::group_senders(&rows, &db::account_emails(c)?))
+    })
 }
 
 struct Ctx {

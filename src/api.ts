@@ -20,6 +20,7 @@ import type {
   NoteKind,
   OutgoingMessage,
   Provider,
+  SenderGroup,
   SyncReport,
   TasksConfig,
   TasksSnapshot,
@@ -46,6 +47,8 @@ export const api = {
     call<Account>("update_account", { id, label, color }),
 
   listMessages: (query: ListQuery) => call<MessageSummary[]>("list_messages", { query }),
+  /** The same query as `listMessages` (its limit ignored), grouped by sender. */
+  listSenderGroups: (query: ListQuery) => call<SenderGroup[]>("list_sender_groups", { query }),
   getMessage: (id: string) => call<MessageDetail>("get_message", { id }),
   downloadAttachment: (messageId: string, attachmentId: string) =>
     call<string>("download_attachment", { messageId, attachmentId }),

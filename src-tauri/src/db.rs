@@ -11,6 +11,7 @@ use crate::models::{
     local_id, Account, Address, Attachment, FetchedBody, Folder, ListQuery, MessageDetail, MessageSummary,
     Provider,
 };
+use crate::senders::SenderRow;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS accounts (
@@ -504,18 +505,29 @@ pub fn set_starred(c: &Connection, id: &str, starred: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn list_messages(c: &Connection, q: &ListQuery) -> Result<Vec<MessageSummary>> {
-    let mut sql = format!("SELECT {SUMMARY_COLS} FROM messages WHERE folder = ?");
+/// The WHERE clause shared by the message list and the sender groups. `None` means the
+/// query can match nothing (an empty account or sender list).
+fn message_filter(q: &ListQuery) -> Option<(String, Vec<Value>)> {
+    let mut sql = String::from(" WHERE folder = ?");
     let mut args: Vec<Value> = vec![Value::Text(q.folder.as_str().into())];
 
     if let Some(ids) = &q.account_ids {
         if ids.is_empty() {
-            return Ok(Vec::new());
+            return None;
         }
         sql.push_str(" AND account_id IN (");
         sql.push_str(&vec!["?"; ids.len()].join(","));
         sql.push(')');
         args.extend(ids.iter().cloned().map(Value::Text));
+    }
+    if let Some(emails) = &q.from_emails {
+        if emails.is_empty() {
+            return None;
+        }
+        sql.push_str(" AND lower(from_email) IN (");
+        sql.push_str(&vec!["?"; emails.len()].join(","));
+        sql.push(')');
+        args.extend(emails.iter().map(|e| Value::Text(e.to_lowercase())));
     }
     if q.unread_only {
         sql.push_str(" AND is_read = 0");
@@ -538,12 +550,48 @@ pub fn list_messages(c: &Connection, q: &ListQuery) -> Result<Vec<MessageSummary
             args.push(Value::Text(pattern.clone()));
         }
     }
-    sql.push_str(" ORDER BY date DESC LIMIT ? OFFSET ?");
+    Some((sql, args))
+}
+
+pub fn list_messages(c: &Connection, q: &ListQuery) -> Result<Vec<MessageSummary>> {
+    let Some((filter, mut args)) = message_filter(q) else {
+        return Ok(Vec::new());
+    };
+    let sql = format!("SELECT {SUMMARY_COLS} FROM messages{filter} ORDER BY date DESC LIMIT ? OFFSET ?");
     args.push(Value::Integer(q.limit.unwrap_or(200).min(2000) as i64));
     args.push(Value::Integer(q.offset.unwrap_or(0) as i64));
 
     let mut stmt = c.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args), row_to_summary)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// What the Senders view groups: sender and subject of every synced message matching the
+/// query (its limit is ignored), newest first.
+pub fn sender_rows(c: &Connection, q: &ListQuery) -> Result<Vec<SenderRow>> {
+    let Some((filter, args)) = message_filter(q) else {
+        return Ok(Vec::new());
+    };
+    let sql = format!(
+        "SELECT from_name, from_email, subject, date, is_read FROM messages{filter} ORDER BY date DESC"
+    );
+    let mut stmt = c.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(args), |r| {
+        Ok(SenderRow {
+            name: r.get(0)?,
+            email: r.get(1)?,
+            subject: r.get(2)?,
+            date: r.get(3)?,
+            is_read: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Email addresses of every account, to tell the user's own domains from outside senders.
+pub fn account_emails(c: &Connection) -> Result<Vec<String>> {
+    let mut stmt = c.prepare("SELECT email FROM accounts")?;
+    let rows = stmt.query_map([], |r| r.get(0))?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 

@@ -19,6 +19,7 @@ mod mime;
 mod models;
 mod oauth;
 mod places;
+mod senders;
 mod state;
 mod sync;
 mod tasks;
@@ -54,6 +55,7 @@ fn main() {
             commands::remove_account,
             commands::update_account,
             commands::list_messages,
+            commands::list_sender_groups,
             commands::get_message,
             commands::download_attachment,
             commands::set_read,

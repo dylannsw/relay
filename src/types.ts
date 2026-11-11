@@ -123,8 +123,26 @@ export interface ListQuery {
   unreadOnly?: boolean;
   starredOnly?: boolean;
   search?: string;
+  /** Only mail from these sender addresses (the members of a sender group). */
+  fromEmails?: string[];
   limit?: number;
   offset?: number;
+}
+
+/** Synced mail grouped by sender for the Senders view; mirrors senders.rs. */
+export interface SenderGroup {
+  /** Lowercase registrable domain, or the full address for free-mail and own-domain senders. */
+  key: string;
+  /** The domain, or a single address's display name. */
+  name: string;
+  /** True when the group is a whole domain rather than one address. */
+  isDomain: boolean;
+  count: number;
+  unreadCount: number;
+  latestSubject: string;
+  latestDate: number;
+  /** Every distinct address in the group, most recent sender first. */
+  addresses: string[];
 }
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";

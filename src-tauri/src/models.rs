@@ -159,6 +159,8 @@ pub struct ListQuery {
     pub unread_only: bool,
     pub starred_only: bool,
     pub search: Option<String>,
+    /// Only mail from these sender addresses (the members of a sender group).
+    pub from_emails: Option<Vec<String>>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }

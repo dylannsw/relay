@@ -3,7 +3,7 @@
 // signing in to real accounts. The Tauri app never loads this data.
 
 import type {
-  Account, Attendee, CalendarConfig, CalendarEvent, CalendarInfo, Config, EditScope, EventChanges, EventColors, NewEvent, Folder, ListQuery, MessageDetail,
+  Account, Attendee, SenderGroup, CalendarConfig, CalendarEvent, CalendarInfo, Config, EditScope, EventChanges, EventColors, NewEvent, Folder, ListQuery, MessageDetail,
   OutgoingMessage, SeriesInfo, TasksConfig,
 } from "./types";
 import { formatDate } from "./tasks/tick/date";
@@ -131,6 +131,23 @@ let messages: MessageDetail[] = [
   m("a4", "Library hold expired", "Library", "library@university.edu", 60, true, "Your hold on 'Design of Everyday Things' has expired.", false, false, "trash"),
   m("a1", "You've won a prize!!!", "Prize Center", "winner@prize.example", 4, false, "Click here to claim your reward before it expires.", false, false, "spam"),
   m("a2", "Urgent: verify your account", "Security Team", "security@verify.example", 15, false, "We noticed unusual activity. Verify your account now.", false, false, "spam"),
+  // Bulk senders, spread over subdomains and accounts, so the Senders view has something to group.
+  ...[
+    ["a1", "Your cart is waiting", "ShopMart", "offers@mail.shopmart.com", 3, false],
+    ["a1", "Weekend flash sale: 40% off", "ShopMart", "deals@news.shopmart.com", 27, false],
+    ["a1", "New arrivals you'll love", "ShopMart", "offers@mail.shopmart.com", 52, true],
+    ["a2", "Order shipped", "ShopMart Orders", "orders@shopmart.com", 75, true],
+    ["a1", "Last chance: free shipping", "ShopMart", "deals@news.shopmart.com", 99, true],
+    ["a1", "Your weekly digest", "Medium Daily Digest", "noreply@medium.com", 6, false],
+    ["a1", "Stories picked for you", "Medium Daily Digest", "noreply@medium.com", 30, false],
+    ["a1", "Top stories this week", "Medium Daily Digest", "noreply@medium.com", 54, true],
+    ["a2", "[studio/app] Pull request merged", "GitHub", "notifications@github.com", 8, true],
+    ["a2", "[studio/app] New issue opened", "GitHub", "notifications@github.com", 34, true],
+    ["a1", "Welcome to the community", "Kiwi Learning", "hello@kiwi-learn.co.uk", 12, false],
+    ["a1", "Your lesson streak is at risk", "Kiwi Learning", "reminders@mail.kiwi-learn.co.uk", 38, false],
+  ].map(([account, subject, name, email, hours, read]) =>
+    m(account as string, subject as string, name as string, email as string, hours as number, read as boolean, "Sample bulk mail for the Senders view."),
+  ),
 ];
 
 function m(
@@ -151,11 +168,67 @@ function m(
   };
 }
 
+/** Messages a query selects, newest first (the query's limit is left to the caller). */
+function matching(q: ListQuery): MessageDetail[] {
+  const s = q.search?.toLowerCase();
+  const from = q.fromEmails?.map((e) => e.toLowerCase());
+  return messages
+    .filter((x) => x.folder === (q.folder ?? "inbox"))
+    .filter((x) => !q.accountIds || q.accountIds.includes(x.accountId))
+    .filter((x) => !from || from.includes(x.from.email.toLowerCase()))
+    .filter((x) => !q.unreadOnly || !x.isRead)
+    .filter((x) => !q.starredOnly || x.isStarred)
+    .filter((x) => !s || `${x.subject} ${x.from.name} ${x.from.email} ${x.snippet}`.toLowerCase().includes(s))
+    .sort((a, b) => b.date - a.date);
+}
+
 function withCounts(): Account[] {
   return accounts.map((a) => ({
     ...a,
     unreadCount: messages.filter((x) => x.accountId === a.id && x.folder === "inbox" && !x.isRead).length,
   }));
+}
+
+// ----- Senders view: a TypeScript copy of senders.rs, so the browser preview groups the same way -----
+
+const FREE_MAIL = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com",
+  "ymail.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com",
+]);
+const FREE_MAIL_LABELS = new Set(["gmail", "hotmail", "outlook", "live", "yahoo"]);
+/** Second-level labels under a country code (shop.co.uk), enough for the sample data. */
+const SECOND_LEVEL = new Set(["co", "com", "org", "net", "ac", "edu", "gov"]);
+
+function registrableDomain(email: string): string | null {
+  const host = email.split("@")[1]?.trim().toLowerCase();
+  if (!host) return null;
+  const labels = host.split(".");
+  if (labels.length <= 2) return host;
+  const n = labels[labels.length - 1]!.length === 2 && SECOND_LEVEL.has(labels[labels.length - 2]!) ? 3 : 2;
+  return labels.slice(-n).join(".");
+}
+
+function mockSenderGroups(list: MessageDetail[]): SenderGroup[] {
+  const own = accounts.map((a) => registrableDomain(a.email));
+  const groups = new Map<string, SenderGroup>();
+  for (const x of [...list].sort((a, b) => b.date - a.date)) {
+    const address = x.from.email.trim().toLowerCase();
+    const domain = registrableDomain(address);
+    const grouped = !!domain && !FREE_MAIL.has(domain) && !FREE_MAIL_LABELS.has(domain.split(".")[0]!) && !own.includes(domain);
+    const key = grouped ? domain : address;
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        key, name: grouped || !x.from.name.trim() ? key : x.from.name.trim(), isDomain: grouped,
+        count: 0, unreadCount: 0, latestSubject: x.subject, latestDate: x.date, addresses: [],
+      };
+      groups.set(key, g);
+    }
+    g.count++;
+    if (!x.isRead) g.unreadCount++;
+    if (!g.addresses.includes(address)) g.addresses.push(address);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count || b.latestDate - a.latestDate);
 }
 
 
@@ -417,18 +490,13 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       return delay(undefined) as Promise<T>;
     }
     case "list_messages": {
-      const q = args.query as ListQuery;
-      const s = q.search?.toLowerCase();
-      const list = messages
-        .filter((x) => x.folder === (q.folder ?? "inbox"))
-        .filter((x) => !q.accountIds || q.accountIds.includes(x.accountId))
-        .filter((x) => !q.unreadOnly || !x.isRead)
-        .filter((x) => !q.starredOnly || x.isStarred)
-        .filter((x) => !s || `${x.subject} ${x.from.name} ${x.from.email} ${x.snippet}`.toLowerCase().includes(s))
-        .sort((a, b) => b.date - a.date)
-        .map(({ bodyHtml: _b, bodyText: _t, attachments: _a, ...summary }) => summary);
+      const list = matching(args.query as ListQuery).map(
+        ({ bodyHtml: _b, bodyText: _t, attachments: _a, ...summary }) => summary,
+      );
       return delay(list, 60) as Promise<T>;
     }
+    case "list_sender_groups":
+      return delay(mockSenderGroups(matching(args.query as ListQuery)), 60) as Promise<T>;
     case "get_message":
       return delay(find(args.id)) as Promise<T>;
     case "set_read":
