@@ -32,6 +32,7 @@ Tab, type the task, pick its section and status with the arrow keys, press Enter
    types the character there, so no keystroke is lost.
 5. **Enter** from any row adds the task with `addTask(text, section, undefined, status)`, shows
    a toast, and closes the bar. Enter with an empty name does nothing.
+   It also fires the same shockwave and sound as adding a task on Home (see "Shockwave" below).
 6. **Tab** again, or **Backspace** on an empty input, returns to normal search. **Esc** closes the
    bar as usual.
 
@@ -49,6 +50,25 @@ Typing `#doing` or `#priority` at the end of the name sets the Status row to mat
 existing `splitStatus` in `src/tasks/tick/parse.ts`. The tag is removed from the name shown in the
 row logic and saved through `status` as usual, so it isn't written twice. Removing the tag sets
 Status back to what it was before.
+
+### Shockwave
+
+Adding a task from the bar plays the same glow and sound as Home's add-task box: the
+`Shockwave` component (`src/components/home/shockwave.tsx`) and `playShockwave()`
+(`src/lib/sfx.ts`, which already respects Settings → Appearance → Sound effects).
+
+- **Only after the task is saved.** Fire it when `addTask` succeeds, like Home does, so a failed
+  write shows the error toast without a celebration.
+- **Origin:** the command bar's input. Read its `getBoundingClientRect()` before the bar closes
+  and pass it to `fire()`, so the wave starts where you pressed Enter.
+- **After the bar closes.** The bar's dimmed overlay would hide the wave, so close the bar first
+  and fire once the overlay has gone (or as it fades), keeping `SHOCKWAVE_DELAY`.
+- **Works on every page.** `Shockwave` is mounted only on Home and the Tasks board today and
+  draws over its parent element. The bar can be opened from mail and calendar too, so mount one
+  `Shockwave` at app level around the main content in `src/App.tsx` and expose its `fire` (a
+  ref or small context) to the command bar. Home and Tasks can keep their own, or switch to the
+  shared one if that's simpler. Check the wave still lines up with the page edges there, since
+  it measures and frames itself against its parent.
 
 ## Where the code goes
 
@@ -82,5 +102,7 @@ input" rule on that row only).
 - From any page: Ctrl+K, Tab, type, Enter adds the task to the last used section and status.
 - ↑/↓/←/→ behave as above, including ↓ on Status wrapping to the input.
 - `#doing` / `#priority` in the name updates the Status row.
+- Adding a task from the bar plays the shockwave and its sound on any page (sound only when
+  sound effects are on), starting from the bar's input.
 - Home's box and the command bar share the last used section and status.
 - With no vault, task mode explains how to connect one.
