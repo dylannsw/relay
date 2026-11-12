@@ -63,12 +63,22 @@ Adding a task from the bar plays the same glow and sound as Home's add-task box:
   and pass it to `fire()`, so the wave starts where you pressed Enter.
 - **After the bar closes.** The bar's dimmed overlay would hide the wave, so close the bar first
   and fire once the overlay has gone (or as it fades), keeping `SHOCKWAVE_DELAY`.
-- **Works on every page.** `Shockwave` is mounted only on Home and the Tasks board today and
-  draws over its parent element. The bar can be opened from mail and calendar too, so mount one
-  `Shockwave` at app level around the main content in `src/App.tsx` and expose its `fire` (a
-  ref or small context) to the command bar. Home and Tasks can keep their own, or switch to the
-  shared one if that's simpler. Check the wave still lines up with the page edges there, since
-  it measures and frames itself against its parent.
+- **Spreads across the whole window, not one frame.** The command bar's overlay
+  (`DialogOverlay` in `src/components/ui/dialog.tsx`, `fixed inset-0` with a backdrop blur)
+  covers the entire app: title bar, sidebar and page. So this wave covers the same area and
+  runs out to the window's edges, with the edge line of light along the window's border. Home's
+  and the Tasks board's waves stay as they are, stopping at their content frame.
+- **How:** `Shockwave` measures and frames itself against its parent element (`root` in
+  `fire()`) and takes the edge line's corner radii from that parent's parent. Mount a second
+  instance at the window root in `src/App.tsx` (a full-window, `fixed inset-0`, pointer-events
+  none container above the app but below toasts) and expose its `fire` (a ref or small context)
+  to the command bar. This also makes it work from mail and calendar, where no `Shockwave` is
+  mounted today. Things to check there:
+  - The edge line's corner radii should match the window's corners (Windows 11 rounds them),
+    not the content frame's. If the parent has no radius, pass the radii in instead.
+  - The bend (displacement) layer has to distort the whole window behind it, not only a page.
+  - The `.halo-glint` borders it lights up are queried inside `root`; at window level that picks
+    up every glint in the app, which is the intended look but worth a visual check.
 
 ## Where the code goes
 
@@ -102,7 +112,8 @@ input" rule on that row only).
 - From any page: Ctrl+K, Tab, type, Enter adds the task to the last used section and status.
 - ↑/↓/←/→ behave as above, including ↓ on Status wrapping to the input.
 - `#doing` / `#priority` in the name updates the Status row.
-- Adding a task from the bar plays the shockwave and its sound on any page (sound only when
+- Adding a task from the bar plays the shockwave across the whole window, out to its edges,
+  and its sound, on any page (sound only when
   sound effects are on), starting from the bar's input.
 - Home's box and the command bar share the last used section and status.
 - With no vault, task mode explains how to connect one.
