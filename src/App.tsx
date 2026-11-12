@@ -7,7 +7,7 @@ import { folderLabel } from "@/folders";
 import { loadShortcuts, matchShortcut, type ShortcutId } from "@/shortcuts";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TitleBar } from "@/components/title-bar";
-import { AppSidebar, isPageView, type View } from "@/components/app-sidebar";
+import { AppSidebar, isPageView, stepSidebarView, type View } from "@/components/app-sidebar";
 import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
 import { CalendarPage } from "@/components/calendar/calendar-page";
@@ -397,8 +397,9 @@ export default function App() {
   }, [groups]);
 
   /** Moves every message of the ticked groups (all of them, not just the ones on screen). */
-  const moveGroups = async (to: Folder) => {
-    const picked = groups.filter((g) => checkedGroups.has(g.key));
+  /** Moves every synced email of the ticked groups (or just `only`, from a right-click). */
+  const moveGroups = async (to: Folder, only?: SenderGroup[]) => {
+    const picked = only ?? groups.filter((g) => checkedGroups.has(g.key));
     if (!picked.length) return;
     try {
       const all = await api.listMessages({
@@ -517,6 +518,13 @@ export default function App() {
     const t = e.target as HTMLElement;
     if (draft || settingsOpen || signingIn) return;
     if (t.closest("[role=dialog]:not([data-reader]), [role=alertdialog]")) return;
+    // Ctrl+Tab / Ctrl+Shift+Tab: the next or previous sidebar item, from anywhere (even while typing).
+    if (e.key === "Tab" && e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      setView(stepSidebarView(accounts, view, e.shiftKey ? -1 : 1));
+      clearSelection();
+      return;
+    }
     const action = matchShortcut(e, readerOpen ? "reader" : "list");
     // Home and Tasks have no message list, and neither does the sender list: only the
     // app-wide shortcuts apply there.
@@ -619,6 +627,7 @@ export default function App() {
           onToggle: toggleGroup,
           onCheckAll: checkAllGroups,
           onBulkMove: (to) => void moveGroups(to),
+          onMoveGroup: (g, to) => void moveGroups(to, [g]),
           onOpen: openGroup,
           group: liveGroup,
           ready: listKey === wantedKey,
@@ -685,7 +694,7 @@ export default function App() {
               }}
             />
           ) : view.kind === "tasks" ? (
-            <TasksPage section={view.section} onOpenSettings={() => openSettings("tasks")} />
+            <TasksPage onOpenSettings={() => openSettings("tasks")} />
           ) : view.kind === "calendar" ? (
             <CalendarPage onOpenSettings={() => openSettings("calendar")} />
           ) : (

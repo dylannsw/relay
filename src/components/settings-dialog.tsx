@@ -95,6 +95,7 @@ import { ShortcutKbd } from "@/components/shortcut-kbd";
 import { ColorPicker } from "@/components/color-picker";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { playShockwave } from "@/lib/sfx";
 import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/updater";
 import { appIconSrc, useAppIcon } from "@/app-icon";
 import { api, errorText, isTauri } from "@/api";
@@ -1590,6 +1591,14 @@ function AppearanceTab() {
           <Button variant="outline" onClick={testToast}>
             Test
           </Button>
+        </div>
+      </SettingRow>
+      <SettingRow title="Sound effects" description="Play a sound with the glow when you add a task or complete one on the board.">
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="outline" onClick={() => playShockwave(true)}>
+            Test
+          </Button>
+          <Switch checked={prefs.sounds} onCheckedChange={(on) => setAppearance({ sounds: on })} aria-label="Sound effects" />
         </div>
       </SettingRow>
     </div>

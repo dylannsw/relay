@@ -48,6 +48,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "transparent",
           "--border-radius": "var(--radius-xl)",
+          // Sonner's injected stylesheet gives the toaster a fixed system font stack; set the
+          // app's font (Settings > Appearance > Font style) inline so it wins.
+          fontFamily: "var(--font-sans)",
         } as React.CSSProperties
       }
       toastOptions={{
@@ -55,6 +58,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
           toast: "cn-toast !border-0 !smooth-shadow-ring-lg !gap-2.5 !px-3 !py-2.5",
           // Sonner fixes its icon slot at 16px; widen it for the 22px icons.
           icon: "!m-0 !size-5.5",
+          // The headline in semibold (Sonner's own is 500); the description stays regular.
+          title: "!font-semibold",
         },
       }}
       {...props}

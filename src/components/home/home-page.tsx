@@ -63,9 +63,10 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
     <div className="relative flex h-full flex-col">
       <ScrollArea ref={scroller} className="min-h-0 flex-1">
         <div className="flex flex-col" style={{ minHeight: height || undefined }}>
-          {/* The banner reaches 2.5rem under the greeting (where its fade is faintest); it starts
-              that much taller than the space below, so the greeting and overview stay centred. */}
-          <HomeBanner className="min-h-32 flex-[1_1_2.5rem]" />
+          {/* The banner reaches 2.5rem under the greeting (where its fade is faintest). It takes
+              1.6× the spare room the space below does, so it's taller and the greeting and overview
+              sit a little below centre; never shorter than 11rem. */}
+          <HomeBanner className="min-h-44 flex-[1.6_1_2.5rem]" />
           <div className={`${COLUMN} relative -mt-10 flex flex-col gap-6`}>
             <HomeWelcome name={greetingName(t.displayName, accounts.map((a) => a.displayName))} />
             <HomeOverview
@@ -92,8 +93,8 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
               onOpenCalendar={onOpenCalendar}
             />
           </div>
-          {/* Grows as much as the banner above, so the greeting and overview sit centred
-              between the top and the add-task box (never closer than 30px to it). */}
+          {/* Shares the spare room with the banner above (which takes more), keeping the overview
+              off the add-task box (never closer than 30px to it). */}
           <div className="min-h-[30px] flex-1" />
         </div>
       </ScrollArea>

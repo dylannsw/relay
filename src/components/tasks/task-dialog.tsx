@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { IconTrash } from "@tabler/icons-react";
+import { IconCircleCheck, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -10,23 +10,28 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/api";
 import { addTask, editTask } from "@/tasks/store";
-import { sectionKey, type ParsedTask } from "@/tasks/tick";
+import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
+import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 
 const NEW_SECTION = "\u0000new";
 
 /**
- * A task's name, section and note, like Add Task / Manage Task in Tick's Raycast extension.
+ * A task's name, section, board status and note, like Add Task / Manage Task in Tick's Raycast extension.
  * Without `task` it adds a new one. Moving takes the task and its note to the end of the other
  * section; an empty note removes it.
  */
-export function TaskDialog({ task, section: initialSection, sections, onClose, onDelete }: {
+export function TaskDialog({ task, section: initialSection, status: initialStatus, sections, onClose, onDelete, onComplete }: {
   task?: ParsedTask;
+  /** Preselected status for a new task (Backlog if not given). */
+  status?: TaskStatus;
   /** Preselected section for a new task. */
   section?: string;
   /** Section choices: the default section first, then every heading. */
   sections: string[];
   onClose: () => void;
   onDelete?: () => void;
+  /** Completes the task (archives it to the Completed note, like ticking it). */
+  onComplete?: () => void;
 }) {
   const [text, setText] = useState(task?.text ?? "");
   const wanted = task?.section ?? initialSection ?? sections[0] ?? "";
@@ -34,6 +39,7 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
   const [section, setSection] = useState(current);
   const [newSection, setNewSection] = useState("");
   const [note, setNote] = useState(task?.note ?? "");
+  const [status, setStatus] = useState<TaskStatus>(task?.status ?? initialStatus ?? "backlog");
   const [saving, setSaving] = useState(false);
   const choices = !current || sections.some((s) => sectionKey(s) === sectionKey(current)) ? sections : [current, ...sections];
   const target = section === NEW_SECTION ? newSection.trim() : section;
@@ -43,11 +49,11 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
     setSaving(true);
     try {
       if (!task) {
-        const added = await addTask(text, target, note);
+        const added = await addTask(text, target, note, status);
         toast.success(`Added to ${added}`, { description: text.trim() });
       } else {
         const moved = sectionKey(target) !== sectionKey(task.section);
-        const landed = await editTask(task, { text, section: target, note });
+        const landed = await editTask(task, { text, section: target, note, status });
         toast.success(moved ? `Moved to ${landed ?? target}` : "Task saved");
       }
       onClose();
@@ -59,7 +65,7 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <form
           className="flex flex-col gap-5"
           onSubmit={(e) => {
@@ -69,39 +75,57 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
         >
           <DialogHeader>
             <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
-            <DialogDescription className="sr-only">The task's name, section and note.</DialogDescription>
+            <DialogDescription className="sr-only">The task's name, section, status and note.</DialogDescription>
           </DialogHeader>
           <FieldGroup className="gap-4">
             <Field>
               <FieldLabel htmlFor="task-text">Task</FieldLabel>
               <Input id="task-text" value={text} onChange={(e) => setText(e.target.value)} placeholder="What needs to be done?" autoFocus />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="task-section">Section</FieldLabel>
-              <Select value={section} onValueChange={setSection}>
-                <SelectTrigger id="task-section" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {choices.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                  <SelectSeparator />
-                  <SelectItem value={NEW_SECTION}>New section…</SelectItem>
-                </SelectContent>
-              </Select>
-              {section === NEW_SECTION && (
-                <Input
-                  aria-label="New section name"
-                  value={newSection}
-                  onChange={(e) => setNewSection(e.target.value)}
-                  placeholder="Section name"
-                  autoFocus
-                />
-              )}
-            </Field>
+            <div className="grid grid-cols-[1fr_auto] items-start gap-3">
+              <Field>
+                <FieldLabel htmlFor="task-section">Section</FieldLabel>
+                <Select value={section} onValueChange={setSection}>
+                  <SelectTrigger id="task-section" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {choices.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                    <SelectSeparator />
+                    <SelectItem value={NEW_SECTION}>New section…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {section === NEW_SECTION && (
+                  <Input
+                    aria-label="New section name"
+                    value={newSection}
+                    onChange={(e) => setNewSection(e.target.value)}
+                    placeholder="Section name"
+                    autoFocus
+                  />
+                )}
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="task-status">Status</FieldLabel>
+                <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+                  <SelectTrigger id="task-status" className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((st) => (
+                      <SelectItem key={st} value={st}>
+                        <StatusIcon status={st} />
+                        {STATUS_META[st].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
             <Field>
               <FieldLabel htmlFor="task-note">Note</FieldLabel>
               <Textarea
@@ -109,7 +133,7 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={task ? "Write anything. Leave empty to remove notes." : "Optional."}
-                className="min-h-28"
+                className="min-h-48"
                 onKeyDown={(e) => {
                   // Ctrl+Enter saves from the note too (Enter adds a line there).
                   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -121,11 +145,21 @@ export function TaskDialog({ task, section: initialSection, sections, onClose, o
             </Field>
           </FieldGroup>
           <DialogFooter className="items-center sm:justify-between">
-            {task && onDelete ? (
-              <Button type="button" variant="destructive" onClick={onDelete}>
-                <IconTrash />
-                Delete
-              </Button>
+            {task && (onDelete || onComplete) ? (
+              <div className="flex gap-2">
+                {onComplete && (
+                  <Button type="button" variant="success" onClick={onComplete}>
+                    <IconCircleCheck />
+                    Complete
+                  </Button>
+                )}
+                {onDelete && (
+                  <Button type="button" variant="destructive" onClick={onDelete}>
+                    <IconTrash />
+                    Delete
+                  </Button>
+                )}
+              </div>
             ) : (
               <span />
             )}

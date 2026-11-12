@@ -3,7 +3,7 @@ import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSprin
 import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { ease, glide, smooth } from "@/lib/motion";
+import { ease, glide, smooth, tilt, trail } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
@@ -958,10 +958,8 @@ function landingLabel(d: Extract<Drag, { kind: "move" }>): string {
  * land in shows underneath), tilts with how fast it's moving, and names the landing time. Once
  * dropped it glides into its new place on the grid, then hands over to the real card.
  */
-/** How the lifted card trails the pointer: critically damped, settling in about 110 ms. */
-const TRAIL = { stiffness: 900, damping: 52, mass: 0.75 };
-/** How the tilt follows speed: quick and critically damped, so it never wobbles. */
-const TILT = { stiffness: 1000, damping: 63 };
+const TRAIL = trail;
+const TILT = tilt;
 
 function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLanded }: {
   event: CalendarEvent;

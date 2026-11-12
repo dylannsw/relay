@@ -23,6 +23,10 @@ const buttonVariants = cva(
         // The same pill in the star colour (Star).
         mustard:
           "bg-star/15 text-star hover:bg-star/25 focus-visible:border-star/40 focus-visible:ring-star/20",
+        // The same pill in green (Complete). The text keeps the hue but is clamped in lightness
+        // (darker in light mode, lighter in dark) so it reads at ≥ 4.5:1, like tinted chips.
+        success:
+          "bg-[color-mix(in_srgb,var(--chip-green)_14%,transparent)] text-[oklch(from_var(--chip-green)_min(l,0.5)_c_h)] hover:bg-[color-mix(in_srgb,var(--chip-green)_24%,transparent)] focus-visible:border-(--chip-green)/40 focus-visible:ring-(--chip-green)/20 dark:bg-[color-mix(in_srgb,var(--chip-green)_20%,transparent)] dark:text-[oklch(from_var(--chip-green)_max(l,0.8)_c_h)] dark:hover:bg-[color-mix(in_srgb,var(--chip-green)_30%,transparent)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

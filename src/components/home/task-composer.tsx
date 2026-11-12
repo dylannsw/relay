@@ -21,11 +21,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText } from "@/api";
 import { addTask } from "@/tasks/store";
-import { sectionKey } from "@/tasks/tick";
+import { sectionKey, type TaskStatus } from "@/tasks/tick";
+import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 import { chooseVault } from "@/components/tasks/tasks-setup";
 
 /** The section last added to, preselected until Relay restarts. */
 let lastSection: string | undefined;
+/** The board column last added to (Relay only), preselected until Relay restarts. */
+let lastStatus: TaskStatus = "backlog";
 
 /**
  * Home's add-task box: a tray holding the input, with the section picker and the note button
@@ -35,7 +38,7 @@ let lastSection: string | undefined;
  * Corners are concentric: each frame's radius is the radius inside it plus the gap between.
  * Buttons (8px) sit 6px inside the input (14px, rounded-xl), which sits 6px inside the tray
  * (20px); the buttons under the input sit 12px from the tray's edge to match its corners. Enter adds "- [ ] task" (and its note, indented under it) at the end of
- * the chosen section of Tick's to-do note; Shift+Enter in the title opens the note.
+ * the chosen section of Tick's to-do note, tagged with the chosen board status; Shift+Enter in the title opens the note.
  */
 export function TaskComposer({ sections, ready, vaultPath, className, onAdded }: {
   /** Choices: the default section first, then every heading. */
@@ -55,6 +58,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
   const [noteOpen, setNoteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [chosen, setChosen] = useState("");
+  const [status, setStatus] = useState<TaskStatus>(lastStatus);
 
   // "/" jumps to the input, unless you're already typing somewhere or a dialog/menu is open.
   useEffect(() => {
@@ -99,7 +103,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
     }
     setBusy(true);
     try {
-      const added = await addTask(value, section, note.trim() || undefined);
+      const added = await addTask(value, section, note.trim() || undefined, status);
       lastSection = added;
       setText("");
       setNote("");
@@ -199,6 +203,8 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                     variant={text.trim() ? "default" : "secondary"}
                     className="rounded-md"
                     disabled={busy}
+                    // Enter adds the task, so Tab skips this and goes from the title (and note) to the section.
+                    tabIndex={-1}
                   >
                     {busy ? <Spinner /> : <IconArrowUp />}
                     <span className="sr-only">Add task</span>
@@ -232,6 +238,34 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                     {sectionKey(s) === sectionKey(section) && <IconCheck className="ml-auto" />}
                   </DropdownMenuItem>
                 ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground">
+                  <StatusIcon status={status} />
+                  <span>{STATUS_META[status].label}</span>
+                  <IconChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-44">
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                {STATUSES.map((st) => {
+                  return (
+                    <DropdownMenuItem
+                      key={st}
+                      onSelect={() => {
+                        setStatus(st);
+                        lastStatus = st;
+                        requestAnimationFrame(() => input.current?.focus());
+                      }}
+                    >
+                      <StatusIcon status={st} />
+                      {STATUS_META[st].label}
+                      {st === status && <IconCheck className="ml-auto" />}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
             <Tooltip>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
@@ -45,7 +45,7 @@ import { useTodayEvents } from "@/calendar/events";
  */
 export type View =
   | { kind: "home" }
-  | { kind: "tasks"; section?: string }
+  | { kind: "tasks" }
   | { kind: "calendar" }
   | { kind: "all" }
   | { kind: "label"; label: string }
@@ -78,6 +78,46 @@ interface Props {
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
+/** Account groups in sidebar order: Personal, Work, School, then any others A–Z. */
+function sortedLabels(accounts: Account[]): string[] {
+  return [...new Set(accounts.map((a) => a.label))].sort((a, b) => {
+    const ia = LABEL_ORDER.indexOf(a);
+    const ib = LABEL_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+  });
+}
+
+/**
+ * The sidebar's top-level items, top to bottom, for Ctrl+Tab: each account counts once, as its
+ * inbox (its other folders aren't stops of their own).
+ */
+export function sidebarViews(accounts: Account[]): View[] {
+  return [
+    { kind: "home" },
+    { kind: "tasks" },
+    { kind: "calendar" },
+    { kind: "all" },
+    { kind: "cleanup" },
+    ...sortedLabels(accounts).map((label): View => ({ kind: "label", label })),
+    ...accounts.map((a): View => ({ kind: "account", id: a.id, folder: "inbox" })),
+  ];
+}
+
+/** The view `step` items after (or before, when negative) `current` in the sidebar, wrapping round. */
+export function stepSidebarView(accounts: Account[], current: View, step: number): View {
+  const views = sidebarViews(accounts);
+  // A filtered Tasks list or another of an account's folders counts as that item.
+  const at = views.findIndex((v) =>
+    v.kind === "account" && current.kind === "account"
+      ? v.id === current.id
+      : v.kind === "label" && current.kind === "label"
+        ? v.label === current.label
+        : v.kind === current.kind,
+  );
+  const i = at < 0 ? (step > 0 ? -1 : 0) : at;
+  return views[(i + step + views.length) % views.length]!;
+}
+
 /** An account that expands to its Inbox, Deleted, Archived and Spam folders. */
 function AccountItem({ account: a, view, onView, onReconnect }: {
   account: Account;
@@ -87,13 +127,32 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
 }) {
   const viewing = view.kind === "account" && view.id === a.id;
   const [open, setOpen] = useState(viewing);
-  // Opening one of this account's folders from elsewhere (or on launch) expands it.
+  /** Expanded by going to it (Ctrl+Tab, the command bar…), not by you: it closes again when you move on. */
+  const autoOpened = useRef(viewing);
+  // Going to one of this account's folders from elsewhere (or on launch) expands it; moving on to
+  // another item closes it again, unless you opened or closed it yourself meanwhile.
   useEffect(() => {
-    if (viewing) setOpen(true);
+    if (viewing) {
+      setOpen((was) => {
+        if (!was) autoOpened.current = true;
+        return true;
+      });
+    } else if (autoOpened.current) {
+      autoOpened.current = false;
+      setOpen(false);
+    }
   }, [viewing]);
 
   return (
-    <Collapsible asChild open={open} onOpenChange={setOpen} className="group/collapsible">
+    <Collapsible
+      asChild
+      open={open}
+      onOpenChange={(next) => {
+        autoOpened.current = false; // your choice now: it stays as you left it
+        setOpen(next);
+      }}
+      className="group/collapsible"
+    >
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
@@ -113,7 +172,8 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
-        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        {/* Opening takes 220ms, closing a quicker 140ms (getting out of the way shouldn't make you wait), on the app's curve. */}
+        <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
           {/* Indented so the folder icons line up under the address, beside the dot. */}
           <SidebarMenuSub className="pl-6.5">
             {a.lastError && (
@@ -192,11 +252,7 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 
 export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
-  const labels = [...new Set(accounts.map((a) => a.label))].sort((a, b) => {
-    const ia = LABEL_ORDER.indexOf(a);
-    const ib = LABEL_ORDER.indexOf(b);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
-  });
+  const labels = sortedLabels(accounts);
 
   return (
     <Sidebar variant="inset" className={className}>

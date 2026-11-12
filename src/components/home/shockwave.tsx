@@ -1,5 +1,6 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { currentHaloPalette, type Rgb } from "@/halo";
+import { playShockwave } from "@/lib/sfx";
 
 export interface ShockwaveHandle {
   /**
@@ -10,6 +11,13 @@ export interface ShockwaveHandle {
 }
 
 // Timing and shape match the shockwave in the Zen theme's floating URL bar (zia-urlbar.uc.js).
+// The sizes below (ring, start radius, bend) are for Home in a 1320×840 window (Relay's earlier default,
+// so a page about 1057×789, 1320px corner to corner). Each run scales them by the page's
+// diagonal against that, so the wave looks and moves the same at any window size or display
+// scaling; the edge line and bevel stay hairlines in px.
+const REF_DIAGONAL = 1320;
+const MIN_SCALE = 0.6;
+const MAX_SCALE = 2.2;
 /** Width of one ring, in px. */
 const RING = 110;
 /** The band is drawn across ± this many ring widths round its middle, ending fully clear. */
@@ -18,10 +26,10 @@ const REACH = 4.5;
 const START_R = 40;
 /** The wave leaves the add-task box as its press dips. */
 export const SHOCKWAVE_DELAY = 60;
-/** The sweep: fast at first, all but still by the end. */
-const DURATION = 1000;
-/** The fade: (1 − u^2.2)^1.6 over this long, so it eases out to nothing rather than cutting at 1s. */
-const FADE_MS = 1250;
+/** The sweep: fast at first, all but still by the end (slower than Zen's 1s, so it reads as a calm sweep). */
+const DURATION = 1450;
+/** The fade: (1 − u^2.2)^1.6 over this long, so it eases out to nothing rather than cutting at the sweep's end. */
+const FADE_MS = 1800;
 /** Reduced motion: fades in and out in place at half strength. */
 const SOFT_MS = 600;
 /** The bend: its largest push (px), how wide the lens is (z = x · spread), and where it fades out. */
@@ -31,8 +39,23 @@ const BEND_EDGE = 56;
 const BEND_CENTRE = 220;
 /** Displacement-map scale: map values 0–1 move the page up to ±MAP/2 px. */
 const MAP = 32;
-/** The lens is ~0 this far either side of the band's middle (z = 3). */
-const BEND_REACH = (3 / LENS_SPREAD) * RING;
+/** The lens is ~0 this many ring widths either side of the band's middle (z = 3). */
+const BEND_REACH = 3 / LENS_SPREAD;
+
+/** The px sizes for one run, scaled to a page `w` × `h`. */
+function sizes(w: number, h: number) {
+  const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.hypot(w, h) / REF_DIAGONAL));
+  return {
+    ring: RING * s,
+    startR: START_R * s,
+    bend: BEND * s,
+    bendEdge: BEND_EDGE * s,
+    bendCentre: BEND_CENTRE * s,
+    map: MAP * s,
+    bendReach: BEND_REACH * RING * s,
+  };
+}
+type Sizes = ReturnType<typeof sizes>;
 /** The field image is drawn at 1/FIELD_STEP size; it's smooth, so the filter scales it up. */
 const FIELD_STEP = 4;
 /** Entries in the bend's lookup table: one per level of the field's 8-bit distance. */
@@ -72,13 +95,13 @@ const rgb = (c: Rgb, alpha: string) => `rgb(${c.map((v) => Math.round(Math.min(2
  * `--halo-r` plus x ring-widths (never inside the centre), so moving the halo each frame only
  * changes that variable. The ends are fully clear, so nothing shows past the band.
  */
-function gradient(cx: number, cy: number, stop: (x: number) => string) {
+function gradient(cx: number, cy: number, ring: number, stop: (x: number) => string) {
   const stops: string[] = [];
   const count = REACH * 8 + 1;
   for (let i = 0; i < count; i++) {
     const x = -REACH + i / 4;
     const color = i === 0 || i === count - 1 ? "transparent" : stop(x);
-    stops.push(`${color} max(0px, calc(var(--halo-r) + ${(x * RING).toFixed(1)}px))`);
+    stops.push(`${color} max(0px, calc(var(--halo-r) + ${(x * ring).toFixed(1)}px))`);
   }
   return `radial-gradient(circle at ${cx.toFixed(1)}px ${cy.toFixed(1)}px, ${stops.join(", ")})`;
 }
@@ -88,8 +111,8 @@ function gradient(cx: number, cy: number, stop: (x: number) => string) {
  * is the same as tinting toward them 20% brighter); dark mode adds light (a screen blend). Their
  * strength over time is the layer's opacity.
  */
-function ringGradient(cx: number, cy: number, rings: readonly Rgb[], dark: boolean) {
-  return gradient(cx, cy, (x) => {
+function ringGradient(cx: number, cy: number, ring: number, rings: readonly Rgb[], dark: boolean) {
+  return gradient(cx, cy, ring, (x) => {
     const fade = Math.exp(-1.1 * (x / 2) ** 2);
     const c = ringColor(rings, x);
     return dark ? rgb(c, (fade * 0.45).toFixed(4)) : rgb(c.map((v) => v * 1.2) as unknown as Rgb, (fade * 0.24).toFixed(4));
@@ -97,8 +120,8 @@ function ringGradient(cx: number, cy: number, rings: readonly Rgb[], dark: boole
 }
 
 /** The light borders catch as the halo passes: the ring colour mixed 20% toward white, faint. */
-function glintGradient(cx: number, cy: number, rings: readonly Rgb[], dark: boolean) {
-  return gradient(cx, cy, (x) => {
+function glintGradient(cx: number, cy: number, ring: number, rings: readonly Rgb[], dark: boolean) {
+  return gradient(cx, cy, ring, (x) => {
     const a = Math.exp(-1.4 * (x / 2) ** 2) * (dark ? 0.14 : 0.3);
     const c = ringColor(rings, x).map((v) => v + (255 - v) * 0.2) as unknown as Rgb;
     return rgb(c, `calc(var(--halo-s) * ${a.toFixed(4)})`);
@@ -106,8 +129,8 @@ function glintGradient(cx: number, cy: number, rings: readonly Rgb[], dark: bool
 }
 
 /** The line of light along the page's edge: the band in whiter colours. */
-function edgeGradient(cx: number, cy: number, rings: readonly Rgb[]) {
-  return gradient(cx, cy, (x) => {
+function edgeGradient(cx: number, cy: number, ring: number, rings: readonly Rgb[]) {
+  return gradient(cx, cy, ring, (x) => {
     const c = ringColor(rings, x).map((v) => v + (255 - v) * EDGE_WHITE) as unknown as Rgb;
     return rgb(c, (Math.exp(-1.4 * (x / 2) ** 2) * EDGE_PEAK).toFixed(4));
   });
@@ -143,9 +166,9 @@ function edgeMask(w: number, h: number, radii: readonly number[]) {
 }
 
 /** How far the lens pushes the page (px, away from the centre) at distance d when the halo's middle is at r. */
-function push(d: number, r: number) {
-  const z = ((d - r) / RING) * LENS_SPREAD;
-  return BEND * 2.33 * z * Math.exp(-z * z);
+function push(d: number, r: number, px: Sizes) {
+  const z = ((d - r) / px.ring) * LENS_SPREAD;
+  return px.bend * 2.33 * z * Math.exp(-z * z);
 }
 
 const smoothstep = (e0: number, e1: number, v: number) => {
@@ -164,7 +187,7 @@ const bevel = (dist: number) => (dist < BEVEL_IN ? (1 - Math.max(0, dist) / BEVE
  * - bevel: red and green hold which way, and how far (as a share of BEVEL), to read further in
  *   near each edge.
  */
-function fieldImages(w: number, h: number, cx: number, cy: number, dMax: number) {
+function fieldImages(w: number, h: number, cx: number, cy: number, dMax: number, px: Sizes) {
   const cw = Math.ceil(w / FIELD_STEP) + 1;
   const ch = Math.ceil(h / FIELD_STEP) + 1;
   const make = () => {
@@ -185,7 +208,7 @@ function fieldImages(w: number, h: number, cx: number, cy: number, dMax: number)
       const dx = x - cx;
       const dy = y - cy;
       const d = Math.hypot(dx, dy) || 1;
-      const f = smoothstep(0, BEND_EDGE, Math.min(x, w - x, y, h - y)) * smoothstep(0, BEND_CENTRE, d);
+      const f = smoothstep(0, px.bendEdge, Math.min(x, w - x, y, h - y)) * smoothstep(0, px.bendCentre, d);
       const o = (j * cw + i) * 4;
       lens.img.data[o] = byte((dx / d) * f);
       lens.img.data[o + 1] = byte((dy / d) * f);
@@ -236,6 +259,9 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
   const bevelField = useRef<SVGFEImageElement>(null);
   const bevelR = useRef<SVGFEFuncRElement>(null);
   const bevelG = useRef<SVGFEFuncGElement>(null);
+  const mapR = useRef<SVGFEDisplacementMapElement>(null);
+  const mapG = useRef<SVGFEDisplacementMapElement>(null);
+  const mapB = useRef<SVGFEDisplacementMapElement>(null);
   const stop = useRef<(() => void) | null>(null);
 
   useEffect(() => () => stop.current?.(), []);
@@ -257,6 +283,8 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
         const box = root.getBoundingClientRect();
         // Nothing to sweep across (the window is minimised or the page hidden).
         if (box.width < 1 || box.height < 1) return;
+        // Its sound, with the glow (also with reduced motion: the glow still shows, softly).
+        playShockwave();
         // From the origin's centre (the add-task box), or the bottom middle of the page.
         const cx = origin ? origin.left + origin.width / 2 - box.left : box.width / 2;
         const cy = origin ? origin.top + origin.height / 2 - box.top : box.height - 40;
@@ -266,9 +294,18 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
           Math.hypot(cx, box.height - cy),
           Math.hypot(box.width - cx, box.height - cy),
         );
-        const growth = Math.max(0, far + RING / 2 - START_R);
+        const px = sizes(box.width, box.height);
+        const growth = Math.max(0, far + px.ring / 2 - px.startR);
+        // The lens's displacement range grows with its push, so the push never clips.
+        for (const [fe, k] of [
+          [mapR.current, 1.08],
+          [mapG.current, 1],
+          [mapB.current, 0.92],
+        ] as const) {
+          fe?.setAttribute("scale", String(px.map * k));
+        }
 
-        el.style.background = ringGradient(cx, cy, rings, dark);
+        el.style.background = ringGradient(cx, cy, px.ring, rings, dark);
         el.style.mixBlendMode = dark ? "screen" : "normal";
         el.style.opacity = "0";
         el.style.display = "block";
@@ -283,7 +320,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
               )
             : [0, 0, 0, 0];
           line.style.display = reduce ? "none" : "block";
-          line.style.background = reduce ? "" : edgeGradient(cx, cy, rings);
+          line.style.background = reduce ? "" : edgeGradient(cx, cy, px.ring, rings);
           line.style.maskImage = reduce ? "" : edgeMask(box.width, box.height, radii);
         }
 
@@ -291,7 +328,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
         const glints = reduce ? [] : [...root.querySelectorAll<HTMLElement>(".halo-glint, .halo-glint-inset, .halo-glint-fill")];
         for (const g of glints) {
           const r = g.getBoundingClientRect();
-          g.style.setProperty("--halo-glint", glintGradient(box.left + cx - r.left, box.top + cy - r.top, rings, dark));
+          g.style.setProperty("--halo-glint", glintGradient(box.left + cx - r.left, box.top + cy - r.top, px.ring, rings, dark));
         }
         if (glints.length) root.dataset.halo = "";
         // Everything that reads --halo-r / --halo-s (they don't inherit; see styles.css): the ring
@@ -299,8 +336,8 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
         const readers = [el, ...(line ? [line] : []), ...glints];
 
         // The bend: the field covers every distance the lens reaches during the run.
-        const dMax = START_R + growth + BEND_REACH;
-        const images = reduce ? null : fieldImages(box.width, box.height, cx, cy, dMax);
+        const dMax = px.startR + growth + px.bendReach;
+        const images = reduce ? null : fieldImages(box.width, box.height, cx, cy, dMax, px);
         let live = true;
         // Per frame, distance → how far: the lens's push (signed), and the bevel's share where the band is.
         const tables = (radius: number, strength: number) => {
@@ -308,8 +345,8 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
           const edgeIn: string[] = [];
           for (let k = 0; k < TABLE; k++) {
             const d = (k / (TABLE - 1)) * dMax;
-            lens.push(((1 - (push(d, radius) * strength) / (MAP / 2)) / 2).toFixed(4));
-            const x = (d - radius) / RING;
+            lens.push(((1 - (push(d, radius, px) * strength) / (px.map / 2)) / 2).toFixed(4));
+            const x = (d - radius) / px.ring;
             edgeIn.push(((1 + strength * Math.exp(-1.1 * (x / 2) ** 2)) / 2).toFixed(4));
           }
           const l = lens.join(" ");
@@ -320,7 +357,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
           bevelG.current?.setAttribute("tableValues", e);
         };
         if (images && field.current && bevelField.current) {
-          tables(START_R, 0);
+          tables(px.startR, 0);
           for (const [fe, url] of [
             [field.current, images.lens],
             [bevelField.current, images.bevel],
@@ -376,12 +413,12 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
             let radius: number;
             let strength: number;
             if (reduce) {
-              radius = START_R + growth * 0.4;
+              radius = px.startR + growth * 0.4;
               strength = 0.5 * Math.sin((Math.PI * elapsed) / SOFT_MS);
             } else {
               // Fast at first, slow near the far edge; in over the first 30ms, then the fade's long, easing tail.
               const t = elapsed / DURATION;
-              radius = START_R + (growth * (1 - 2 ** (-9 * t))) / (1 - 2 ** -9);
+              radius = px.startR + (growth * (1 - 2 ** (-9 * t))) / (1 - 2 ** -9);
               strength = Math.min(1, t / 0.03) * (1 - (elapsed / FADE_MS) ** 2.2) ** 1.6;
             }
             for (const r of readers) {
@@ -423,9 +460,10 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
           <feComposite in="bevelField" in2="bevelAmount" operator="arithmetic" k1="2" k2="-1" k3="-1" k4="1" result="bevelMap" />
           <feDisplacementMap in="SourceGraphic" in2="bevelMap" scale={BEVEL * 2} xChannelSelector="R" yChannelSelector="G" result="bevelled" />
           {/* Then the lens, three times for the colour split. */}
-          <feDisplacementMap in="bevelled" in2="map" scale={MAP * 1.08} xChannelSelector="R" yChannelSelector="G" result="red" />
-          <feDisplacementMap in="bevelled" in2="map" scale={MAP} xChannelSelector="R" yChannelSelector="G" result="green" />
-          <feDisplacementMap in="bevelled" in2="map" scale={MAP * 0.92} xChannelSelector="R" yChannelSelector="G" result="blue" />
+          {/* Their scales are set each run, to the page's size. */}
+          <feDisplacementMap ref={mapR} in="bevelled" in2="map" scale={MAP * 1.08} xChannelSelector="R" yChannelSelector="G" result="red" />
+          <feDisplacementMap ref={mapG} in="bevelled" in2="map" scale={MAP} xChannelSelector="R" yChannelSelector="G" result="green" />
+          <feDisplacementMap ref={mapB} in="bevelled" in2="map" scale={MAP * 0.92} xChannelSelector="R" yChannelSelector="G" result="blue" />
           <feColorMatrix in="red" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="redOnly" />
           <feColorMatrix in="green" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="greenOnly" />
           <feColorMatrix in="blue" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blueOnly" />

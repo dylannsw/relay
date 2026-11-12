@@ -1,5 +1,16 @@
 // Copied from tick/shared/src/edit.ts by scripts/sync-tick.mjs. Do not edit: change Tick, then run npm run sync:tick.
-import { insertAtSectionEnd, minIndent, scan, sectionKey, splitNote, type TaskBlock } from "./parse";
+import {
+  insertAtSectionEnd,
+  joinStatus,
+  minIndent,
+  parseTaskLine,
+  scan,
+  sectionKey,
+  splitNote,
+  splitStatus,
+  type TaskBlock,
+  type TaskStatus,
+} from "./parse";
 
 /** Collapse whitespace so a task or heading always stays on one line. */
 function oneLine(text: string): string {
@@ -20,7 +31,8 @@ export interface AddTaskResult {
  *   otherwise at the end of the note.
  * - Blank `section` → the default section (heading created at the end if missing).
  * An optional `note` (any number of lines) is stored as indented lines under the task.
- * Only the touched lines change; everything else is preserved byte for byte.
+ * An optional `status` is written as the trailing tag (a tag typed at the end of `task` is used
+ * when no status is given). Only the touched lines change; everything else is kept byte for byte.
  */
 export function addTask(
   content: string,
@@ -28,11 +40,13 @@ export function addTask(
   section: string | undefined,
   defaultSection: string,
   note?: string,
+  status?: TaskStatus,
 ): AddTaskResult {
-  const text = oneLine(task);
-  if (!text) throw new Error("Task text is empty.");
+  const typed = splitStatus(oneLine(task));
+  if (!typed.text) throw new Error("Task text is empty.");
 
-  const block = [`- [ ] ${text}`, ...splitNote(note).map((l) => (l === "" ? "" : `  ${l}`))];
+  const line = `- [ ] ${joinStatus(typed.text, status ?? typed.status)}`;
+  const block = [line, ...splitNote(note).map((l) => (l === "" ? "" : `  ${l}`))];
   return insertInSection(content, block, sectionName(section, defaultSection), defaultSection);
 }
 
@@ -73,14 +87,35 @@ function insertInSection(content: string, block: string[], wanted: string, defau
   };
 }
 
-/** The open task with this text nearest the hinted line, ignoring lines already taken. */
+/**
+ * The open task with this text nearest the hinted line, ignoring lines already taken. The text
+ * may be given with or without the status tag (ParsedTask.text has none).
+ */
 function closestOpen(open: TaskBlock[], used: Set<number>, target: CompleteTarget): TaskBlock | undefined {
   let best: TaskBlock | undefined;
   for (const t of open) {
-    if (used.has(t.line) || t.text !== target.text) continue;
+    if (used.has(t.line) || (t.text !== target.text && splitStatus(t.text).text !== target.text)) continue;
     if (!best || Math.abs(t.line - target.line) < Math.abs(best.line - target.line)) best = t;
   }
   return best;
+}
+
+/** A task line with its status tag (and the whitespace before it) cut off; other lines unchanged. */
+export function withoutStatus(line: string): string {
+  return setLineStatus(line, "backlog") ?? line;
+}
+
+/**
+ * A task line ("- [ ]" or "- [x]") rewritten to carry `status`: its tag replaced, added or
+ * removed. Everything before the text is kept as it was. Undefined for a line that is not a task.
+ */
+export function setLineStatus(line: string, status: TaskStatus): string | undefined {
+  const task = parseTaskLine(line);
+  if (!task) return undefined;
+  const prefix = /^- \[[ xX]\][ \t]+/.exec(line)?.[0] ?? "";
+  const current = splitStatus(task.text);
+  if (current.status === status) return line;
+  return prefix + joinStatus(current.text, status);
 }
 
 export interface CompleteTarget {
@@ -97,8 +132,8 @@ export interface CompleteResult {
 }
 
 /**
- * Rewrite "- [ ]" to "- [x]" for each target. The task is matched by text; if
- * several open tasks share the text, the one closest to the original line wins.
+ * Rewrite "- [ ]" to "- [x]" for each target, dropping its status tag. The task is matched by
+ * text; if several open tasks share the text, the one closest to the original line wins.
  */
 export function completeTasks(content: string, defaultSection: string, targets: CompleteTarget[]): CompleteResult {
   const { lines, eol, tasks } = scan(content, defaultSection);
@@ -113,7 +148,7 @@ export function completeTasks(content: string, defaultSection: string, targets: 
       continue;
     }
     used.add(best.line);
-    lines[best.line] = (lines[best.line] ?? "").replace(/^- \[ \]/, "- [x]");
+    lines[best.line] = withoutStatus((lines[best.line] ?? "").replace(/^- \[ \]/, "- [x]"));
   }
 
   return { content: used.size > 0 ? lines.join(eol) : content, completed: used.size, missing };
@@ -171,6 +206,8 @@ export interface TaskChanges {
   section?: string;
   /** The whole new note; empty removes it. */
   note?: string;
+  /** New status; "backlog" removes the tag. Left undefined, the task keeps its tag. */
+  status?: TaskStatus;
 }
 
 export interface EditTaskResult {
@@ -202,11 +239,17 @@ export function editTask(
   if (!task) return { content, updated: false };
 
   let taskLine = lines[task.line] ?? "";
+  const current = splitStatus(task.text);
+  let { text, status } = current;
   if (changes.text !== undefined) {
-    const text = oneLine(changes.text);
-    if (!text) throw new Error("Task text is empty.");
-    if (text !== task.text) taskLine = `- [ ] ${text}`;
+    // A status tag typed at the end of the new text counts as setting the status.
+    const typed = splitStatus(oneLine(changes.text));
+    if (!typed.text) throw new Error("Task text is empty.");
+    text = typed.text;
+    if (typed.status !== "backlog") status = typed.status;
   }
+  if (changes.status !== undefined) status = changes.status;
+  if (text !== current.text || status !== current.status) taskLine = `- [ ] ${joinStatus(text, status)}`;
 
   let children = lines.slice(task.line + 1, task.end);
   if (changes.note !== undefined) {

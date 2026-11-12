@@ -1,9 +1,19 @@
 import { AnimatePresence, motion } from "motion/react";
+import { toast } from "sonner";
+import { IconArchive, IconCopy, IconEye, IconInbox, IconSquareCheck, IconTrash, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { quick, smooth } from "@/lib/motion";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionSlot } from "@/components/selection-slot";
 import type { Folder, SenderGroup } from "@/types";
@@ -27,6 +37,8 @@ export interface SendersProps {
   onCheckAll: (on: boolean) => void;
   /** Moves every message of the ticked groups. */
   onBulkMove: (to: Folder) => void;
+  /** Moves every message of one group (its right-click menu). */
+  onMoveGroup: (g: SenderGroup, to: Folder) => void;
   onOpen: (g: SenderGroup) => void;
   /** The group opened from the list, with current counts (null while the list shows). */
   group: SenderGroup | null;
@@ -98,6 +110,8 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
   const behind = g.count > 1 ? 2 : 0;
 
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild>
     <div className="relative" style={{ paddingBottom: behind * PEEK }}>
       {/* Deepest first, so each card paints over the one behind it. Every layer is opaque, or
           the cards would show through each other (and through the row's hover colour). */}
@@ -170,5 +184,84 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       </div>
     </div>
     </div>
+    </ContextMenuTrigger>
+    <SenderMenu g={g} s={s} />
+    </ContextMenu>
+  );
+}
+
+/** The moves a group's emails can make from the folder Clean up is showing. */
+function groupMoves(folder: "inbox" | "archive") {
+  return [
+    folder === "inbox"
+      ? { to: "archive" as const, label: "Archive", icon: <IconArchive /> }
+      : { to: "inbox" as const, label: "Move to inbox", icon: <IconInbox /> },
+    { to: "trash" as const, label: "Delete", icon: <IconTrash /> },
+  ];
+}
+
+const emails = (n: number) => `${n} ${n === 1 ? "email" : "emails"}`;
+
+/**
+ * Right-click menu for a sender: open it, move all its emails, tick it, or copy its address.
+ * Right-clicking one of several ticked senders acts on all of them, like the mail list's menu.
+ */
+function SenderMenu({ g, s }: { g: SenderGroup; s: SendersProps }) {
+  const ticked = s.groups.filter((x) => s.checked.has(x.key));
+  if (s.checked.has(g.key) && ticked.length > 1) {
+    const total = ticked.reduce((n, x) => n + x.count, 0);
+    return (
+      <ContextMenuContent className="w-60">
+        <ContextMenuLabel>
+          {ticked.length} senders · {emails(total)}
+        </ContextMenuLabel>
+        {groupMoves(s.folder).map((a) => (
+          <ContextMenuItem key={a.to} variant={a.to === "trash" ? "destructive" : "default"} onSelect={() => s.onBulkMove(a.to)}>
+            {a.icon}
+            {a.label}
+          </ContextMenuItem>
+        ))}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => s.onCheckAll(false)}>
+          <IconX />
+          Clear selection
+        </ContextMenuItem>
+      </ContextMenuContent>
+    );
+  }
+  const checked = s.checked.has(g.key);
+  // A domain group copies its domain; a single sender, its address.
+  const copyText = g.isDomain ? g.name : (g.addresses[0] ?? g.name);
+  return (
+    <ContextMenuContent className="w-60">
+      <ContextMenuItem onSelect={() => s.onOpen(g)}>
+        <IconEye />
+        Open
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuLabel>All {emails(g.count)}</ContextMenuLabel>
+      {groupMoves(s.folder).map((a) => (
+        <ContextMenuItem key={a.to} variant={a.to === "trash" ? "destructive" : "default"} onSelect={() => s.onMoveGroup(g, a.to)}>
+          {a.icon}
+          {a.label}
+        </ContextMenuItem>
+      ))}
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => s.onToggle(g)}>
+        <IconSquareCheck />
+        {checked ? "Deselect" : "Select"}
+      </ContextMenuItem>
+      <ContextMenuItem
+        onSelect={() =>
+          void navigator.clipboard.writeText(copyText).then(
+            () => toast.success("Copied", { description: copyText }),
+            () => toast.error("Couldn't copy to the clipboard."),
+          )
+        }
+      >
+        <IconCopy />
+        {g.isDomain ? "Copy domain" : "Copy address"}
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 }

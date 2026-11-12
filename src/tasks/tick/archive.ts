@@ -1,10 +1,10 @@
 // Copied from tick/shared/src/archive.ts by scripts/sync-tick.mjs. Do not edit: change Tick, then run npm run sync:tick.
-import { detectEol, insertAtSectionEnd, scan, sectionKey } from "./parse";
+import { detectEol, insertAtSectionEnd, scan, sectionKey, splitStatus } from "./parse";
 
 /** A finished task lifted out of the to-do note, with its indented children. */
 export interface CompletedTask {
   section: string;
-  /** Task text without the "- [x] " prefix. */
+  /** Task text without the "- [x] " prefix and without a status tag. */
   text: string;
   /** Indented lines that belonged to the task, unchanged. */
   children: string[];
@@ -31,7 +31,7 @@ export function extractCompleted(
 
   for (const t of tasks) {
     if (!t.done) continue;
-    const task: CompletedTask = { section: t.section, text: t.text, children: lines.slice(t.line + 1, t.end) };
+    const task: CompletedTask = { section: t.section, text: splitStatus(t.text).text, children: lines.slice(t.line + 1, t.end) };
     if (filter && !filter(task)) continue;
     completed.push(task);
     taken.push({ start: t.line, end: t.end });
@@ -51,7 +51,7 @@ export function addToCompletedNote(content: string, dateTitle: string, tasks: Co
   if (tasks.length === 0) return content;
   const eol = detectEol(content);
   const { lines, headings } = scan(content, "");
-  const block = tasks.flatMap((t) => [`- [x] ${t.text} (${t.section})`, ...t.children]);
+  const block = tasks.flatMap((t) => [`- [x] ${splitStatus(t.text).text} (${t.section})`, ...t.children]);
 
   const today = headings.find((h) => sectionKey(h.title) === sectionKey(dateTitle));
   if (today) return insertAtSectionEnd(lines, today.line, block).join(eol);

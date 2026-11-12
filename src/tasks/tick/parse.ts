@@ -1,8 +1,36 @@
 // Copied from tick/shared/src/parse.ts by scripts/sync-tick.mjs. Do not edit: change Tick, then run npm run sync:tick.
+/** Where a task sits on a Kanban board. Backlog has no tag; the others are a trailing "#doing" / "#priority". */
+export type TaskStatus = "backlog" | "doing" | "priority";
+
+export const TASK_STATUSES: readonly TaskStatus[] = ["backlog", "doing", "priority"];
+
+// One or more status tags at the very end of the text, each after whitespace.
+const STATUS_TAIL = /(?:[ \t]+#(?:doing|priority))+$/i;
+const LAST_STATUS = /#(doing|priority)$/i;
+
+/**
+ * Split a task's text into the text without its status tag, and the status. The tag must be the
+ * last whitespace-separated token; case is ignored. If several trail the text, the last one wins
+ * and all of them are removed. A "#doing" anywhere else is ordinary text.
+ */
+export function splitStatus(text: string): { text: string; status: TaskStatus } {
+  const tail = STATUS_TAIL.exec(text);
+  if (!tail || tail.index === 0) return { text, status: "backlog" };
+  const status = (LAST_STATUS.exec(tail[0])?.[1] ?? "").toLowerCase() as TaskStatus;
+  return { text: text.slice(0, tail.index), status };
+}
+
+/** Task text with the lowercase tag for `status` appended (nothing for backlog). `text` must have no tag. */
+export function joinStatus(text: string, status: TaskStatus): string {
+  return status === "backlog" ? text : `${text} #${status}`;
+}
+
 /** One open task in the to-do note. `line` is the 0-based index of its "- [ ]" line. */
 export interface ParsedTask {
   section: string;
+  /** The task's text without its status tag. */
   text: string;
+  status: TaskStatus;
   line: number;
   /**
    * The task's note: every indented line under it, de-indented, with blank lines between
@@ -14,6 +42,7 @@ export interface ParsedTask {
 /** A top-level task plus the indented lines that belong to it. */
 export interface TaskBlock {
   section: string;
+  /** The text exactly as on the line, status tag included. */
   text: string;
   done: boolean;
   /** 0-based index of the "- [ ]" / "- [x]" line. */
@@ -40,6 +69,12 @@ const HEADING = /^##[ \t]+(\S.*?)[ \t]*$/;
 const TASK = /^- \[([ xX])\][ \t]+(\S.*?)[ \t]*$/;
 const CHILD = /^[ \t]+\S/;
 const FENCE = /^(```|~~~)/;
+
+/** A top-level "- [ ]" / "- [x]" line's text (status tag included) and whether it is done. */
+export function parseTaskLine(line: string): { text: string; done: boolean } | undefined {
+  const task = TASK.exec(line);
+  return task ? { text: task[2] ?? "", done: task[1] !== " " } : undefined;
+}
 
 export function detectEol(content: string): string {
   return content.includes("\r\n") ? "\r\n" : "\n";
@@ -113,7 +148,7 @@ export function parseTasks(content: string, defaultSection: string): ParsedTask[
     .filter((t) => !t.done)
     .map((t) => ({
       section: t.section,
-      text: t.text,
+      ...splitStatus(t.text),
       line: t.line,
       note: noteFromChildren(lines.slice(t.line + 1, t.end)),
     }));

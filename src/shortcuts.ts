@@ -66,6 +66,8 @@ export const FIXED_SHORTCUTS: { label: string; key: string }[] = [
   { label: "Close, or clear the selection", key: "Escape" },
   { label: "Send message", key: "ctrl+Enter" },
   { label: "Toggle sidebar", key: "ctrl+b" },
+  { label: "Next sidebar item", key: "ctrl+Tab" },
+  { label: "Previous sidebar item", key: "ctrl+shift+Tab" },
   { label: "Add to selection", key: "ctrl+Click" },
   { label: "Select a range", key: "shift+Click" },
   { label: "Calendar: go to today", key: "t" },
@@ -76,7 +78,7 @@ export const FIXED_SHORTCUTS: { label: string; key: string }[] = [
 
 const DEFS = new Map(SHORTCUTS.map((d) => [d.id, d]));
 /** Keys a shortcut can't use: they already mean something everywhere. */
-const RESERVED = new Set(["Escape", "Tab", "shift+Tab", "ctrl+b", "ctrl+Enter"]);
+const RESERVED = new Set(["Escape", "Tab", "shift+Tab", "ctrl+Tab", "ctrl+shift+Tab", "ctrl+b", "ctrl+Enter"]);
 
 // ----- store -----
 

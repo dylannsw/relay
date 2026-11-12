@@ -6,7 +6,6 @@ import {
   IconChecklist,
   IconEdit,
   IconFilter,
-  IconFolder,
   IconInbox,
   IconLayoutSidebar,
   IconMoon,
@@ -33,7 +32,6 @@ import { FOLDERS } from "@/folders";
 import { listDate, senderName } from "@/format";
 import { matchShortcut, type ShortcutId } from "@/shortcuts";
 import type { Account, MessageSummary } from "@/types";
-import { useTasks } from "@/tasks/store";
 
 interface Props {
   open: boolean;
@@ -142,7 +140,6 @@ export function CommandBar(p: Props) {
     [p.onCompose, p.onSync, p.onFilter, p.onSettings, resolvedTheme, setTheme, toggleSidebar],
   );
 
-  const taskSections = useTasks().sections;
   const destinations: Entry[] = useMemo(() => {
     const labels = [...new Set(p.accounts.map((a) => a.label))];
     return [
@@ -150,15 +147,6 @@ export function CommandBar(p: Props) {
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
       { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <IconCalendar />, run: () => p.onNavigate({ kind: "calendar" }) },
       { id: "go-cleanup", label: "Clean up", keywords: "senders group bulk delete tidy declutter", icon: <IconSparkles />, run: () => p.onNavigate({ kind: "cleanup" }) },
-      ...taskSections.map((section) => ({
-        id: `go-section-${section}`,
-        label: section,
-        keywords: "tasks section category to-do",
-        hint: "Tasks",
-        icon: <IconFolder />,
-        onlyWhenSearching: true,
-        run: () => p.onNavigate({ kind: "tasks", section }),
-      })),
       { id: "go-all", label: "All inboxes", keywords: "home everything", icon: <IconInbox />, shortcut: "goAll", run: () => p.onNavigate({ kind: "all" }) },
       ...labels.map((label) => ({
         id: `go-label-${label}`,
@@ -179,7 +167,7 @@ export function CommandBar(p: Props) {
         })),
       ),
     ];
-  }, [p.accounts, p.onNavigate, taskSections]);
+  }, [p.accounts, p.onNavigate]);
 
   const shownActions = q ? actions.filter((e) => matches(e, q)) : actions;
   // Without a query, list just each account's inbox; typing reveals the other folders.

@@ -112,10 +112,12 @@ export interface AppearancePrefs {
   toastPosition: ToastPosition;
   /** The icon shown in the title bar and on the taskbar. */
   appIcon: AppIconId;
+  /** Play sound effects (the shockwave's). */
+  sounds: boolean;
 }
 
 const KEY = "relay.appearance";
-const DEFAULTS: AppearancePrefs = { accent: "blue", customAccent: "", font: "default", toastPosition: "bottom-right", appIcon: DEFAULT_APP_ICON };
+const DEFAULTS: AppearancePrefs = { accent: "blue", customAccent: "", font: "default", toastPosition: "bottom-right", appIcon: DEFAULT_APP_ICON, sounds: true };
 
 let prefs: AppearancePrefs = DEFAULTS;
 const listeners = new Set<() => void>();
@@ -133,6 +135,7 @@ function read(): AppearancePrefs {
       font: FONTS.some((x) => x.id === saved.font) ? saved.font : DEFAULTS.font,
       toastPosition: TOAST_POSITIONS.some((x) => x.id === saved.toastPosition) ? saved.toastPosition : DEFAULTS.toastPosition,
       appIcon: APP_ICONS.some((x) => x.id === saved.appIcon) ? saved.appIcon : DEFAULTS.appIcon,
+      sounds: typeof saved.sounds === "boolean" ? saved.sounds : DEFAULTS.sounds,
     };
   } catch {
     return DEFAULTS;
@@ -182,4 +185,9 @@ export function useAppearance(): AppearancePrefs {
     },
     () => prefs,
   );
+}
+
+/** The current choices, outside React (e.g. whether to play a sound). */
+export function getAppearance(): AppearancePrefs {
+  return prefs;
 }

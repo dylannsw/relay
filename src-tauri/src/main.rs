@@ -30,7 +30,19 @@ use std::sync::Arc;
 use tauri::Manager;
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // One Relay at a time: opening it again brings the running window forward instead. Must be
+    // the first plugin. Left out of dev builds, which share the identifier and would otherwise
+    // just focus the installed Relay.
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }));
+    builder
         .plugin(tauri_plugin_opener::init())
         // Self-updates: checks the endpoint in tauri.conf.json, verifies the signature, installs.
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -38,6 +50,18 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         // Folder and picture pickers (the vault folder, the Tasks banner).
         .plugin(tauri_plugin_dialog::init())
+        // Opens where you left it: the window's size, position and maximized state are saved on
+        // close and restored at launch (tauri.conf.json's size is only for the very first run).
+        // Not the rest of what the plugin can restore: decorations and visibility are Relay's to set.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .build(),
+        )
         .setup(|app| {
             let state = Arc::new(state::AppState::init(app.handle())?);
             app.manage(state.clone());
