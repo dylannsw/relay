@@ -165,7 +165,7 @@ function PillTabs<T extends string>(props: {
 function movesFrom(folder: Folder): { to: Folder; label: string; icon: ReactNode; shortcut: ShortcutId }[] {
   return [
     folder !== "inbox" && { to: "inbox" as const, label: "Move to inbox", icon: <IconInbox />, shortcut: "moveInbox" as const },
-    folder !== "archive" && { to: "archive" as const, label: "Archive", icon: <IconArchive />, shortcut: "archive" as const },
+    folder !== "archive" && { to: "archive" as const, label: "Archive", icon: <IconArchive className="translate-y-[0.5px]" />, shortcut: "archive" as const },
     folder !== "trash" && { to: "trash" as const, label: "Delete", icon: <IconTrash />, shortcut: "delete" as const },
   ].filter((x) => !!x);
 }
@@ -220,7 +220,7 @@ export function MailList(p: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center border-b px-4">
+      <header className="flex h-14 shrink-0 items-center px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
         {gv ? (
           <GroupTitle s={gv} />
         ) : (
@@ -258,7 +258,7 @@ export function MailList(p: Props) {
                 {!sd && (
                   <ButtonGroup>
                     <IconAction variant="outline" label="Mark as read" onClick={() => p.onBulkRead(true)}>
-                      <IconMailOpened />
+                      <IconMailOpened className="-translate-y-px" />
                     </IconAction>
                     <IconAction variant="outline" label="Mark as unread" onClick={() => p.onBulkRead(false)}>
                       <IconMail />
@@ -425,7 +425,9 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
       className={cn(
         "group/row flex cursor-default rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 data-[state=open]:border-foreground/15 data-[state=open]:bg-accent/60",
         highlighted && "bg-muted hover:bg-muted",
-        checked && "border-foreground/20 bg-muted hover:bg-muted",
+        // Selected: the same sky frame and sky-tinted card colour as a selected task card.
+        checked &&
+          "border-sky-400 bg-[color-mix(in_srgb,var(--card)_92%,var(--color-sky-400))] hover:border-sky-400 hover:bg-[color-mix(in_srgb,var(--card)_89%,var(--color-sky-400))] dark:border-sky-400 dark:bg-[color-mix(in_srgb,var(--card)_86%,var(--color-sky-400))] dark:hover:border-sky-400 dark:hover:bg-[color-mix(in_srgb,var(--card)_82%,var(--color-sky-400))]",
       )}
     >
       <SelectionSlot

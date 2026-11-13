@@ -1105,7 +1105,7 @@ function MonthTitle({ month, year }: { month: string; year: string }) {
 
 function PageHeader({ title, children }: { title: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+    <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
       <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
       {children}
     </header>

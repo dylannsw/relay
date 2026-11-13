@@ -667,7 +667,7 @@ export default function App() {
           onOpenChange={setCommandOpen}
           search={search}
           onSearch={setSearch}
-          scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
+          scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle === "All inboxes" ? "All Inboxes" : viewTitle}
           searchMessages={searchMessages}
           accounts={accounts}
           accountById={accountById}

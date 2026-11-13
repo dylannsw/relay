@@ -200,7 +200,7 @@ export function ColorPicker({ value, onChange, label, presets, className }: {
                   if (c) setHex(c, true);
                 }}
                 onBlur={() => setFields(fieldsOf(hex, format))}
-                className="h-7 min-w-0 px-1.5 text-center text-xs tabular-nums"
+                className="h-8 min-w-0 px-1.5 text-center text-xs tabular-nums"
               />
             ))}
           </div>

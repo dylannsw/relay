@@ -712,7 +712,7 @@ export function CommandBar(p: Props) {
             <div ref={bodyRef}>
             <CommandList
               ref={scrollFades}
-              className={cn("cb-list px-3 pt-1 pb-3.5", swaps > 0 && "cb-swap")}
+              className={cn("cb-list px-1 pt-1 pb-3.5", swaps > 0 && "cb-swap")}
               style={{ maxHeight: "min(25rem, 52svh)", scrollPaddingBlock: "8px 24px" }}
             >
               <CommandEmpty className="cb-muted py-10">Nothing matches “{q}”.</CommandEmpty>

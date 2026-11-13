@@ -109,7 +109,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
+    --radius: 0.5rem;
     --sidebar: oklch(0.955 0 0);
     --sidebar-foreground: oklch(0.3 0 0);
     --sidebar-primary: var(--brand);
@@ -624,6 +624,9 @@
 }
 
 /* Key hints: no fill of their own, a hairline across the top; keys are ringed 24px squircles that sink while held. */
+.cb-input-row {
+  border-bottom: 1px solid var(--cb-footer-line);
+}
 .cb-footer {
   border-top: 1px solid var(--cb-footer-line);
   color: var(--cb-text-muted);

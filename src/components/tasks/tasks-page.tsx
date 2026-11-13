@@ -464,6 +464,10 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     endDrag.current = cancel;
   };
 
+  const pickedCount = useRef(0);
+  if (picked.length > 0) pickedCount.current = picked.length;
+  const anyPicked = picked.length > 0;
+
   const chip = (section: string) => sectionChip(section, t.sections, t.settings.defaultSection);
   /** A section's chip label: the default section ("no category") in Title Case, others as written. */
   const label = (section: string) =>
@@ -471,14 +475,30 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <div ref={page} className="relative flex h-full flex-col overflow-hidden">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+      {/* The bottom line is an inset shadow, not border-b, so the content box stays 56px: with a 1px border
+          the 36px selection group sits at 9.5px and snaps up half a pixel when its scale animation ends. */}
+      <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold">Tasks</h1>
-        {picked.length > 0 && (
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <span className="tabular-nums">{picked.length} selected</span>
+        {/* Always mounted so it can fade in and out; the count holds its last value while fading. It
+            springs in from its right edge with a light bounce (like the command bar's task-mode values)
+            and fades straight out; a spring picks up from wherever it is, so quick reselects don't
+            restart it. Under reduced motion (MotionConfig) only the fade is left. */}
+        <motion.div
+          inert={!anyPicked}
+          initial={false}
+          animate={anyPicked ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
+          // From 0.9 this peaks about 1% past full size: a bounce you feel, without the text going soft.
+          transition={
+            anyPicked
+              ? { type: "spring", duration: 0.3, bounce: 0.4, opacity: { duration: 0.15, ease: "easeOut" } }
+              : { duration: 0.12, ease: "easeOut" }
+          }
+          className={cn("flex origin-right items-center gap-3 text-sm text-muted-foreground", !anyPicked && "pointer-events-none")}
+        >
+            <span className="tabular-nums">{pickedCount.current} selected</span>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="secondary" size="sm" onClick={() => copyForClaude()}>
+                <Button variant="outline" className="shrink-0" onClick={() => copyForClaude()}>
                   <IconBrandOpenai />
                   Copy as Prompt
                 </Button>
@@ -487,8 +507,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                 Copy selected tasks as a prompt <ShortcutKbd id="copyTasks" />
               </TooltipContent>
             </Tooltip>
-          </div>
-        )}
+        </motion.div>
       </header>
 
       <div
@@ -532,11 +551,6 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                   partly out of view is cut along a clean card-shaped edge, not the column's border. */}
               <ScrollArea className="column-scroll mx-1.5 mb-1.5 min-h-0 flex-1 rounded-[8px] [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
                 <div className="flex flex-col">
-                  {cards.length === 0 && gapAt < 0 && (
-                    <div className="flex h-20 items-center justify-center rounded-[8px] border border-dashed text-sm text-muted-foreground">
-                      {status === "backlog" ? "Nothing waiting" : "Drag a task here"}
-                    </div>
-                  )}
                   <AnimatePresence initial={false} custom={presence}>
                     {cards.map(({ task, key }, i) => {
                       return (
