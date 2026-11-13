@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useRef, type Ref } from "react";
 import { currentHaloPalette, type Rgb } from "@/halo";
 import { playShockwave } from "@/lib/sfx";
 
@@ -60,6 +60,7 @@ type Sizes = ReturnType<typeof sizes>;
 const FIELD_STEP = 4;
 /** Entries in the bend's lookup table: one per level of the field's 8-bit distance. */
 const TABLE = 256;
+/** Each instance gets its own filter id (this plus a suffix), so two on screen never share one. */
 const FILTER_ID = "relay-halo-bend";
 /** The line of light along the page's edge where the band meets it: the rings 45% toward white. */
 const EDGE_PEAK = 0.85;
@@ -249,7 +250,22 @@ function fieldImages(w: number, h: number, cx: number, cy: number, dMax: number,
  * see styles.css. With reduced motion there's no bend and no glints: the halo fades in and out in
  * place at half strength.
  */
-export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
+export function Shockwave({ ref, radii, scope }: {
+  ref?: Ref<ShockwaveHandle>;
+  /**
+   * The edge line's corner radii in px (top-left, top-right, bottom-right, bottom-left), read each
+   * run. Without it they're the parent's parent's (the framed content's); a window-wide wave passes the window's.
+   */
+  radii?: () => number[];
+  /**
+   * Where the `.halo-glint` borders are found and `data-halo` is set. Without it, the parent; a
+   * window-wide wave is an overlay beside the app rather than around it, so it passes the app's root.
+   */
+  scope?: () => HTMLElement | null;
+}) {
+  const filterId = `${FILTER_ID}-${useId().replace(/W/g, "")}`;
+  const props = useRef({ radii, scope });
+  props.current = { radii, scope };
   const layer = useRef<HTMLDivElement>(null);
   const bendLayer = useRef<HTMLDivElement>(null);
   const edge = useRef<HTMLDivElement>(null);
@@ -314,7 +330,9 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
         const line = edge.current;
         if (line) {
           const framed = root.parentElement ? getComputedStyle(root.parentElement) : null;
-          const radii = framed
+          const radii = props.current.radii
+            ? props.current.radii()
+            : framed
             ? [framed.borderTopLeftRadius, framed.borderTopRightRadius, framed.borderBottomRightRadius, framed.borderBottomLeftRadius].map(
                 (r) => parseFloat(r) || 0,
               )
@@ -325,12 +343,13 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
         }
 
         // Each bordered element gets the glint gradient in its own coordinates.
-        const glints = reduce ? [] : [...root.querySelectorAll<HTMLElement>(".halo-glint, .halo-glint-inset, .halo-glint-fill")];
+        const lit = props.current.scope?.() ?? root;
+        const glints = reduce ? [] : [...lit.querySelectorAll<HTMLElement>(".halo-glint, .halo-glint-inset, .halo-glint-fill")];
         for (const g of glints) {
           const r = g.getBoundingClientRect();
           g.style.setProperty("--halo-glint", glintGradient(box.left + cx - r.left, box.top + cy - r.top, px.ring, rings, dark));
         }
-        if (glints.length) root.dataset.halo = "";
+        if (glints.length) lit.dataset.halo = "";
         // Everything that reads --halo-r / --halo-s (they don't inherit; see styles.css): the ring
         // layer, its edge line and each glint.
         const readers = [el, ...(line ? [line] : []), ...glints];
@@ -372,7 +391,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
             const probe = new Image();
             probe.onload = () => {
               if (--waiting > 0 || !live) return;
-              bend.style.backdropFilter = `url(#${FILTER_ID})`;
+              bend.style.backdropFilter = `url(#${filterId})`;
               bend.style.display = "block";
             };
             probe.src = url;
@@ -395,7 +414,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
             line.style.background = "";
             line.style.maskImage = "";
           }
-          delete root.dataset.halo;
+          delete lit.dataset.halo;
           for (const r of readers) {
             r.style.removeProperty("--halo-r");
             r.style.removeProperty("--halo-s");
@@ -434,7 +453,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
         frame = requestAnimationFrame(tick);
       },
     }),
-    [],
+    [filterId],
   );
 
   return (
@@ -443,7 +462,7 @@ export function Shockwave({ ref }: { ref?: Ref<ShockwaveHandle> }) {
           table turns distance into how far to push, and the arithmetic multiplies the two:
           2ab − a − b + 1 = ½ + ½(2a − 1)(2b − 1). Everything is in sRGB so 0.5 means "stay". */}
       <svg aria-hidden className="pointer-events-none absolute size-0">
-        <filter id={FILTER_ID} x="0" y="0" width="1" height="1" colorInterpolationFilters="sRGB">
+        <filter id={filterId} x="0" y="0" width="1" height="1" colorInterpolationFilters="sRGB">
           <feImage ref={field} x="0" y="0" preserveAspectRatio="none" result="field" />
           <feColorMatrix in="field" type="matrix" values="0 0 1 0 0  0 0 1 0 0  0 0 1 0 0  0 0 0 0 1" result="distance" />
           <feComponentTransfer in="distance" result="amount">

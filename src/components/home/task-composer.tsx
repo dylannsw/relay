@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { IconArrowUp, IconCheck, IconChevronDown, IconFolder, IconFolderOpen, IconNotes } from "@tabler/icons-react";
+import { IconArrowUp, IconCheck, IconChevronDown, IconFolderFilled, IconFolderOpen, IconNotes } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,15 +20,10 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorText } from "@/api";
-import { addTask } from "@/tasks/store";
+import { addTask, lastTask } from "@/tasks/store";
 import { sectionKey, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 import { chooseVault } from "@/components/tasks/tasks-setup";
-
-/** The section last added to, preselected until Relay restarts. */
-let lastSection: string | undefined;
-/** The board column last added to (Relay only), preselected until Relay restarts. */
-let lastStatus: TaskStatus = "backlog";
 
 /**
  * Home's add-task box: a tray holding the input, with the section picker and the note button
@@ -58,7 +53,9 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
   const [noteOpen, setNoteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [chosen, setChosen] = useState("");
-  const [status, setStatus] = useState<TaskStatus>(lastStatus);
+  // The last status used (here or in the command bar); setting it re-renders this box.
+  const [, setStatus] = useState<TaskStatus>(lastTask.status);
+  const status = lastTask.status;
 
   // "/" jumps to the input, unless you're already typing somewhere or a dialog/menu is open.
   useEffect(() => {
@@ -75,9 +72,9 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Keep the chosen section (or the last one used) while it exists; otherwise the default section.
+  // Keep the last section used (here or in the command bar) while it exists; otherwise the default section.
   const section =
-    [chosen, lastSection ?? ""].map((k) => sections.find((s) => sectionKey(s) === sectionKey(k))).find(Boolean) ??
+    [lastTask.section ?? "", chosen].map((k) => sections.find((s) => sectionKey(s) === sectionKey(k))).find(Boolean) ??
     sections[0] ??
     "";
 
@@ -104,7 +101,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
     setBusy(true);
     try {
       const added = await addTask(value, section, note.trim() || undefined, status);
-      lastSection = added;
+      lastTask.section = added;
       setText("");
       setNote("");
       setNoteOpen(false);
@@ -190,7 +187,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                   placeholder="Add a note…"
                   aria-label="Task note"
                   rows={1}
-                  className="max-h-32 min-h-0 pt-1 pr-4 pb-0 pl-[18px] text-sm text-muted-foreground placeholder:text-muted-foreground/60 md:text-sm"
+                  className="no-scrollbar max-h-32 min-h-0 pt-1 pr-4 pb-0 pl-[18px] text-sm text-muted-foreground placeholder:text-muted-foreground/60 md:text-sm"
                 />
               </div>
             </div>
@@ -217,8 +214,8 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
           <div className="flex items-center gap-1 p-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="max-w-64 text-muted-foreground">
-                  <IconFolder />
+                <Button type="button" variant="outline" size="sm" className="max-w-64 text-muted-foreground">
+                  <IconFolderFilled />
                   <span className="truncate">{section}</span>
                   <IconChevronDown />
                 </Button>
@@ -230,7 +227,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                     key={s}
                     onSelect={() => {
                       setChosen(s);
-                      lastSection = s;
+                      lastTask.section = s;
                       requestAnimationFrame(() => input.current?.focus());
                     }}
                   >
@@ -242,7 +239,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
             </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground">
+                <Button type="button" variant="outline" size="sm" className="text-muted-foreground">
                   <StatusIcon status={status} />
                   <span>{STATUS_META[status].label}</span>
                   <IconChevronDown />
@@ -256,7 +253,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                       key={st}
                       onSelect={() => {
                         setStatus(st);
-                        lastStatus = st;
+                        lastTask.status = st;
                         requestAnimationFrame(() => input.current?.focus());
                       }}
                     >
@@ -273,13 +270,13 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon-sm"
+                  size="sm"
                   aria-pressed={noteOpen}
                   onClick={() => (noteOpen ? closeNote() : openNote())}
                   className="text-muted-foreground aria-pressed:bg-foreground/[0.07] aria-pressed:text-foreground dark:aria-pressed:bg-foreground/10"
                 >
                   <IconNotes />
-                  <span className="sr-only">{noteOpen ? "Remove note" : "Add a note"}</span>
+                  Note
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{noteOpen ? "Remove note" : "Add a note (Shift+Enter)"}</TooltipContent>

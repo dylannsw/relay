@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/api";
-import { addTask, editTask } from "@/tasks/store";
+import { editTask } from "@/tasks/store";
 import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 
@@ -17,15 +17,10 @@ const NEW_SECTION = "\u0000new";
 
 /**
  * A task's name, section, board status and note, like Add Task / Manage Task in Tick's Raycast extension.
- * Without `task` it adds a new one. Moving takes the task and its note to the end of the other
- * section; an empty note removes it.
+ * Moving takes the task and its note to the end of the other section; an empty note removes it.
  */
-export function TaskDialog({ task, section: initialSection, status: initialStatus, sections, onClose, onDelete, onComplete }: {
-  task?: ParsedTask;
-  /** Preselected status for a new task (Backlog if not given). */
-  status?: TaskStatus;
-  /** Preselected section for a new task. */
-  section?: string;
+export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
+  task: ParsedTask;
   /** Section choices: the default section first, then every heading. */
   sections: string[];
   onClose: () => void;
@@ -33,13 +28,13 @@ export function TaskDialog({ task, section: initialSection, status: initialStatu
   /** Completes the task (archives it to the Completed note, like ticking it). */
   onComplete?: () => void;
 }) {
-  const [text, setText] = useState(task?.text ?? "");
-  const wanted = task?.section ?? initialSection ?? sections[0] ?? "";
+  const [text, setText] = useState(task.text);
+  const wanted = task.section;
   const current = sections.find((s) => sectionKey(s) === sectionKey(wanted)) ?? wanted;
   const [section, setSection] = useState(current);
   const [newSection, setNewSection] = useState("");
-  const [note, setNote] = useState(task?.note ?? "");
-  const [status, setStatus] = useState<TaskStatus>(task?.status ?? initialStatus ?? "backlog");
+  const [note, setNote] = useState(task.note);
+  const [status, setStatus] = useState<TaskStatus>(task.status);
   const [saving, setSaving] = useState(false);
   const choices = !current || sections.some((s) => sectionKey(s) === sectionKey(current)) ? sections : [current, ...sections];
   const target = section === NEW_SECTION ? newSection.trim() : section;
@@ -48,14 +43,9 @@ export function TaskDialog({ task, section: initialSection, status: initialStatu
     if (!text.trim() || !target || saving) return;
     setSaving(true);
     try {
-      if (!task) {
-        const added = await addTask(text, target, note, status);
-        toast.success(`Added to ${added}`, { description: text.trim() });
-      } else {
-        const moved = sectionKey(target) !== sectionKey(task.section);
-        const landed = await editTask(task, { text, section: target, note, status });
-        toast.success(moved ? `Moved to ${landed ?? target}` : "Task saved");
-      }
+      const moved = sectionKey(target) !== sectionKey(task.section);
+      const landed = await editTask(task, { text, section: target, note, status });
+      toast.success(moved ? `Moved to ${landed ?? target}` : "Task saved");
       onClose();
     } catch (e) {
       toast.error(errorText(e));
@@ -74,7 +64,7 @@ export function TaskDialog({ task, section: initialSection, status: initialStatu
           }}
         >
           <DialogHeader>
-            <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
+            <DialogTitle>Edit task</DialogTitle>
             <DialogDescription className="sr-only">The task's name, section, status and note.</DialogDescription>
           </DialogHeader>
           <FieldGroup className="gap-4">
@@ -132,7 +122,7 @@ export function TaskDialog({ task, section: initialSection, status: initialStatu
                 id="task-note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder={task ? "Write anything. Leave empty to remove notes." : "Optional."}
+                placeholder="Write anything. Leave empty to remove notes."
                 className="min-h-48"
                 onKeyDown={(e) => {
                   // Ctrl+Enter saves from the note too (Enter adds a line there).
@@ -145,7 +135,7 @@ export function TaskDialog({ task, section: initialSection, status: initialStatu
             </Field>
           </FieldGroup>
           <DialogFooter className="items-center sm:justify-between">
-            {task && (onDelete || onComplete) ? (
+            {onDelete || onComplete ? (
               <div className="flex gap-2">
                 {onComplete && (
                   <Button type="button" variant="success" onClick={onComplete}>
@@ -169,7 +159,7 @@ export function TaskDialog({ task, section: initialSection, status: initialStatu
               </Button>
               <Button type="submit" disabled={!text.trim() || !target || saving}>
                 {saving && <Spinner />}
-                {task ? "Save" : "Add task"}
+                Save
               </Button>
             </div>
           </DialogFooter>

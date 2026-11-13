@@ -29,12 +29,15 @@ const buttonVariants = cva(
           "bg-[color-mix(in_srgb,var(--chip-green)_14%,transparent)] text-[oklch(from_var(--chip-green)_min(l,0.5)_c_h)] hover:bg-[color-mix(in_srgb,var(--chip-green)_24%,transparent)] focus-visible:border-(--chip-green)/40 focus-visible:ring-(--chip-green)/20 dark:bg-[color-mix(in_srgb,var(--chip-green)_20%,transparent)] dark:text-[oklch(from_var(--chip-green)_max(l,0.8)_c_h)] dark:hover:bg-[color-mix(in_srgb,var(--chip-green)_30%,transparent)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // Optical balance: an icon's box has empty space around the glyph, so the side with an icon
+      // gets 4px less padding than the text side and both edges look even (data-icon-start/end
+      // are set by Button from what it renders).
       size: {
         default:
-          "h-9 gap-2 px-3.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
-        xs: "h-7 gap-1.5 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
-        sm: "h-8 gap-1.5 rounded-[min(var(--radius-md),12px)] px-3 text-[0.875rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-2.5 has-data-[icon=inline-start]:pl-2.5 [&_svg:not([class*='size-'])]:size-4",
-        lg: "h-10 gap-2 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
+          "h-9 gap-2 px-3.5 data-icon-end:pr-2.5 data-icon-start:pl-2.5",
+        xs: "h-7 gap-1.5 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg data-icon-end:pr-1.5 data-icon-start:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-8 gap-1.5 rounded-[min(var(--radius-md),12px)] px-3 text-[0.875rem] in-data-[slot=button-group]:rounded-lg data-icon-end:pr-2 data-icon-start:pl-2 [&_svg:not([class*='size-'])]:size-4",
+        lg: "h-10 gap-2 px-4 data-icon-end:pr-3 data-icon-start:pl-3",
         icon: "size-9",
         "icon-xs":
           "size-7 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
@@ -50,20 +53,53 @@ const buttonVariants = cva(
   }
 )
 
+/** Content that counts as the button's label or icon: not blank text, not screen-reader-only text. */
+function visible(n: ChildNode): boolean {
+  if (n.nodeType === Node.TEXT_NODE) return !!n.textContent?.trim()
+  return n instanceof Element && !n.classList.contains("sr-only")
+}
+
+/**
+ * Marks which ends of the button are icons next to a label (data-icon-start / data-icon-end), for
+ * the 4px-tighter padding on that side. Read from the DOM after each render, since text nodes and
+ * icon components can't be told apart from React children; icon-only buttons get neither.
+ */
+function markIconEnds(el: HTMLElement | null) {
+  if (!el) return
+  const parts = [...el.childNodes].filter(visible)
+  const isIcon = (n: ChildNode | undefined) => n?.nodeName.toLowerCase() === "svg"
+  const labelled = parts.some((n) => !isIcon(n))
+  el.toggleAttribute("data-icon-start", labelled && isIcon(parts[0]))
+  el.toggleAttribute("data-icon-end", labelled && isIcon(parts[parts.length - 1]))
+}
+
 function Button({
   className,
   variant = "default",
   size = "default",
   asChild = false,
+  ref,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
   }) {
   const Comp = asChild ? Slot.Root : "button"
+  const own = React.useRef<HTMLButtonElement>(null)
+  // Every render: the label or icons may have changed (a spinner swapped in, text toggled).
+  React.useLayoutEffect(() => markIconEnds(own.current))
+  const setRef = React.useCallback(
+    (el: HTMLButtonElement | null) => {
+      own.current = el
+      if (typeof ref === "function") ref(el)
+      else if (ref) ref.current = el
+    },
+    [ref]
+  )
 
   return (
     <Comp
+      ref={setRef}
       data-slot="button"
       data-variant={variant}
       data-size={size}

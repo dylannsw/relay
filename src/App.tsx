@@ -11,6 +11,7 @@ import { AppSidebar, isPageView, stepSidebarView, type View } from "@/components
 import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
 import { CalendarPage } from "@/components/calendar/calendar-page";
+import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { MailList, type Filter } from "@/components/mail-list";
 import type { SendersProps } from "@/components/sender-list";
 import { MailReader } from "@/components/mail-reader";
@@ -23,6 +24,13 @@ import { SignInDialog } from "@/components/sign-in-dialog";
 const PAGE = 200;
 
 /** Shortcuts that work on every page, not just the message list. */
+/** Windows 11 rounds a window's corners by this much, except when it fills the screen. */
+const WINDOW_RADIUS = 8;
+const windowCorners = () => {
+  const full = window.outerWidth >= screen.availWidth && window.outerHeight >= screen.availHeight;
+  return Array<number>(4).fill(full ? 0 : WINDOW_RADIUS);
+};
+
 const APP_WIDE = new Set<ShortcutId>(["commandBar", "goAll", "compose", "sync", "settings"]);
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -513,6 +521,9 @@ export default function App() {
 
   // ----- keyboard shortcuts -----
 
+  /** The glow that sweeps the whole window when the command bar adds a task. */
+  const windowHalo = useRef<ShockwaveHandle>(null);
+
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   keyHandler.current = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement;
@@ -546,6 +557,8 @@ export default function App() {
       return;
     }
     if (!action) return;
+    // Copying tasks belongs to the Tasks page, which handles its own key.
+    if (action === "copyTasks") return;
     // Enter on a focused button or link must keep activating it.
     if (e.key === "Enter" && t !== document.body && !t.closest("[data-id]")) return;
 
@@ -588,6 +601,7 @@ export default function App() {
       compose: () => startCompose("new"),
       sync: () => void syncNow(),
       settings: () => openSettings(),
+      copyTasks: () => {},
     };
     e.preventDefault();
     handlers[action]();
@@ -666,6 +680,7 @@ export default function App() {
           onSync={() => void syncNow()}
           onSettings={() => openSettings()}
           onFilter={setFilter}
+          onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
         />
       </TitleBar>
       <div className="flex min-h-0 flex-1">
@@ -792,6 +807,13 @@ export default function App() {
         />
       )}
       {signingIn && <SignInDialog provider={signingIn} onCancel={() => void api.cancelSignIn()} />}
+
+      {/* The window-wide shockwave: over the whole app (title bar, sidebar, page) and under toasts. It
+          frames itself against this box, takes the window's corners for its edge line, and lights the
+          borders of everything in the app. */}
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-[60]">
+        <Shockwave ref={windowHalo} radii={windowCorners} scope={() => document.body} />
+      </div>
     </SidebarProvider>
   );
 }

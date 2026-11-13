@@ -285,6 +285,46 @@
   }
 }
 
+/* Light mode: the framed content (main panel, email/compose/settings cards) sits flat, outlined
+   by the shadow ring's hairline alone. Unlayered so it beats their smooth-shadow-ring-* utility. */
+:root:not(.dark, .mixed) .frame {
+  box-shadow: 0 0 0 var(--smooth-ring-width, 1px) var(--smooth-ring-color);
+}
+
+/* Mixed theme: tooltips are the dark ones (Light's dark grey box with white text) everywhere,
+   over the light panel and the dark sidebar alike. They're portalled outside the frames, so
+   they'd otherwise take Dark's colours and come out off-white. A faint edge keeps the box
+   distinct over the near-black sidebar. */
+.mixed [data-slot="tooltip-content"] {
+  --foreground: oklch(0.3 0 0);
+  --background: oklch(1 0 0);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+/* Scrolls without showing a scrollbar (wheel, keys and touch still work). A named utility so
+   cn()'s class merging keeps it. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Tasks board columns: cards running past the bottom fade out instead of being cut off. The fade
+   follows the column's own scroll: full while more is below, gone at the end, and never there
+   when the column doesn't scroll (an inactive scroll timeline leaves --column-fade at 0). */
+@property --column-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes column-fade {
+  from, 92% { --column-fade: 40px; }
+  to { --column-fade: 0px; }
+}
+.column-scroll > [data-slot="scroll-area-viewport"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--column-fade)), transparent);
+  animation: column-fade linear both;
+  animation-timeline: scroll(self);
+}
+
 /* Home's add-task glow (src/components/home/shockwave.tsx). While it runs, it gives each marked
    element its light as `--halo-glint`, and the element's lines catch it:
    .halo-glint        its own border (any widths), painted over it; needs position: relative.
@@ -397,4 +437,238 @@
    are found from boxes, not from what's under the pointer. */
 :root[data-dragging-card] [data-card-key] {
   pointer-events: none;
+}
+
+/* ==== Command bar: the Zen theme's floating URL bar (my-tweaks.css sections 8, 9, 14, 20, 21, 24) ====
+   Dark in every theme (the panel carries .dark, so these tokens are Relay's dark ones). Unlayered, so these
+   win over the Dialog's and cmdk's utility classes. */
+.cmdbar {
+  /* Relay's popover colour, solid (as the bar was before the Zen port) */
+  --cb-bg: var(--popover);
+  --cb-edge: var(--border);
+  --cb-outline: rgb(0 0 0 / 45%);
+  --cb-text: var(--foreground);
+  --cb-text-muted: var(--muted-foreground);
+  --cb-row-selected: var(--accent);
+  --cb-row-ring: var(--border);
+  --cb-tile: var(--muted);
+  --cb-tile-selected: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --cb-key-ring: var(--border);
+  --cb-key-pressed-ring: color-mix(in srgb, var(--foreground) 25%, transparent);
+  --cb-footer-line: var(--border);
+  --cb-radius: 36px;
+  --cb-squircle: superellipse(2.3);
+}
+/* The panel: 810px (90vw at most), centred in the window at any height (it re-centres as the
+   list's height glides); a hairline border, a dark 1px outline just outside it, and a deep shadow. */
+.cmdbar {
+  display: block;
+  top: 50%;
+  translate: -50% -50%;
+  width: min(810px, 90vw);
+  max-width: none;
+  padding: 0;
+  background-color: var(--cb-bg);
+  /* above the window-wide shockwave (z-60, App.tsx), which stays above the dimmed overlay (z-50), so the
+     wave runs under the bar */
+  z-index: 61;
+  border: 1px solid var(--cb-edge);
+  outline: 1px solid var(--cb-outline);
+  outline-offset: 0;
+  border-radius: var(--cb-radius);
+  corner-shape: var(--cb-squircle);
+  box-shadow: 0 20px 40px rgb(0 0 0 / 50%);
+  color: var(--cb-text);
+  letter-spacing: 0.3px;
+}
+
+/* Opening: it rises 70px (0.7s ease-out quint), transform only. Closing: a quick fade and drop. */
+.cmdbar[data-state="open"] {
+  animation: cb-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.cmdbar[data-state="closed"] {
+  animation: cb-out 0.18s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+.cmdbar[data-state="closed"] .cb-body {
+  transition: opacity 0.18s cubic-bezier(0.7, 0, 0.84, 0), transform 0.18s cubic-bezier(0.7, 0, 0.84, 0);
+  opacity: 0;
+  transform: translateY(22px) scale(0.96);
+}
+@keyframes cb-rise {
+  from { transform: translateY(70px); }
+  to { transform: none; }
+}
+@keyframes cb-out {
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+/* Switching mode: the new body comes in from above, alongside the height glide. */
+.cb-swap {
+  animation: cb-swap-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) 0.03s backwards;
+}
+
+/* The gliding body is the only thing that resizes: keep its layout and painting to itself. */
+.cb-body {
+  contain: layout paint;
+}
+@keyframes cb-swap-in {
+  from { opacity: 0; transform: translateY(-8px); }
+}
+
+/* Back in search, the icon eases in. */
+.cb-icon-back {
+  animation: cb-icon-back 0.17s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes cb-icon-back {
+  from { opacity: 0; transform: scale(0.8); }
+}
+
+/* The placeholder shines now and then: a light band sweeps through it, resting for the first 45% of 4.5s. */
+.cb-placeholder {
+  color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--cb-text) 54%, transparent) 0%,
+    color-mix(in srgb, var(--cb-text) 54%, transparent) 40%,
+    rgb(255 255 255 / 95%) 50%,
+    color-mix(in srgb, var(--cb-text) 54%, transparent) 60%,
+    color-mix(in srgb, var(--cb-text) 54%, transparent) 100%
+  );
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  background-clip: text;
+  animation: cb-placeholder-shine 4.5s ease-in-out infinite;
+}
+@keyframes cb-placeholder-shine {
+  0%, 45% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+
+/* Rows: the selected one takes a 14% white fill and a hairline ring; both fade. */
+.cmdbar :is([data-slot="command-item"], [data-task-row]) {
+  color: var(--cb-text);
+  background-clip: padding-box;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cmdbar :is([data-slot="command-item"][data-selected="true"], [data-task-row]:focus) {
+  background-color: var(--cb-row-selected);
+  box-shadow: inset 0 0 0 1px var(--cb-row-ring);
+  color: var(--cb-text);
+}
+.cmdbar [cmdk-group-heading] {
+  color: var(--cb-text-muted);
+}
+.cmdbar .cb-muted {
+  color: var(--cb-text-muted);
+}
+
+/* Icons sit in a 24px squircle tile, the glyph 14px in the text colour. */
+.cb-tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  corner-shape: var(--cb-squircle);
+  background-color: var(--cb-tile);
+  color: var(--cb-text);
+  transition: background-color 0.15s ease;
+}
+/* (the glyph takes the tile's text colour, unless it has its own, like a status icon) */
+.cb-tile > svg {
+  width: 14px;
+  height: 14px;
+}
+.cmdbar :is([data-selected="true"], [data-task-row]:focus) .cb-tile {
+  background-color: var(--cb-tile-selected);
+}
+
+/* Row corners 12px (the dialog's own item rule is an !important utility, so this is one too). */
+@layer utilities {
+  .cmdbar.cmdbar [data-slot="command-item"] {
+    border-radius: 12px !important;
+  }
+}
+
+/* A row's shortcut (and the bar's own key), dressed like the footer's keys: a ringed 24px squircle, no fill,
+   12px semibold. */
+.cmdbar :is([data-slot="command-shortcut"], .cb-input-row) [data-slot="kbd"] {
+  height: 24px;
+  min-width: 24px;
+  padding-inline: 6px;
+  border: 0;
+  border-radius: 12px;
+  corner-shape: var(--cb-squircle);
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--cb-key-ring);
+  color: var(--cb-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The list fades out into the footer's line (longer while more is below) and in at the top once
+   scrolled; --cb-top-fade (0-20px) and --cb-bottom-fade (0-32px) follow the scroll. */
+.cb-list {
+  --cb-fade: calc(16px + var(--cb-bottom-fade, 0px) / 4);
+  mask-image:
+    linear-gradient(to bottom, transparent 0, #000 var(--cb-top-fade, 0px)),
+    linear-gradient(
+      to bottom,
+      #000 calc(100% - var(--cb-fade)),
+      rgb(0 0 0 / 0.55) calc(100% - var(--cb-fade) * 0.5),
+      rgb(0 0 0 / 0.1) 100%
+    );
+  mask-composite: intersect;
+}
+
+/* Key hints: no fill of their own, a hairline across the top; keys are ringed 24px squircles that sink while held. */
+.cb-footer {
+  border-top: 1px solid var(--cb-footer-line);
+  color: var(--cb-text-muted);
+}
+.cb-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 24px;
+  min-width: 24px;
+  padding-inline: 6px;
+  border-radius: 12px;
+  corner-shape: var(--cb-squircle);
+  box-shadow: inset 0 0 0 1px var(--cb-key-ring);
+  font-size: 12px;
+  transition:
+    scale 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.4),
+    background-color 0.26s ease-out,
+    box-shadow 0.26s ease-out,
+    color 0.26s ease-out;
+}
+.cb-key > svg {
+  width: 14px;
+  height: 14px;
+}
+/* (a task row's arrow chips sink only while their row has focus, as that's where the key goes) */
+.cb-key[data-pressed]:not([data-row-arrow]),
+[data-task-row]:focus .cb-key[data-row-arrow][data-pressed] {
+  scale: 0.92;
+  background-color: var(--cb-row-selected);
+  box-shadow: inset 0 0 0 1px var(--cb-key-pressed-ring);
+  color: var(--cb-text);
+  transition-duration: 0.06s;
+  transition-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmdbar[data-state],
+  .cb-swap,
+  .cb-icon-back,
+  .cb-placeholder {
+    animation: none;
+  }
+  .cb-key[data-pressed] {
+    scale: none;
+  }
 }

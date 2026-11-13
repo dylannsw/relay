@@ -9,7 +9,7 @@ import {
   type MotionValue,
 } from "motion/react";
 import { toast } from "sonner";
-import { IconArrowBackUp, IconCheck, IconCircleCheck, IconCopy, IconFolder, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconCheck, IconCircleCheck, IconCopy, IconFolder, IconPencil, IconBrandOpenai, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ease, quick, smooth, tilt, trail } from "@/lib/motion";
 import {
@@ -37,11 +37,15 @@ import {
 } from "@/components/ui/context-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ShortcutKbd } from "@/components/shortcut-kbd";
+import { matchShortcut } from "@/shortcuts";
 import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { errorText } from "@/api";
 import { completeTask, deleteTask, editTask, reloadTasks, useTasks, type UndoComplete } from "@/tasks/store";
 import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
 import { sectionChip } from "@/tasks/chips";
+import { tasksToMarkdown } from "@/tasks/copy";
 import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 import { loadBoardOrder, saveBoardOrder, sortByOrder, type BoardOrder } from "@/tasks/board-order";
 import { TaskDialog } from "./task-dialog";
@@ -131,7 +135,6 @@ const without = <K, V>(m: Map<K, V>, keys: K[]) => {
 export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useTasks();
   const [editing, setEditing] = useState<ParsedTask | null>(null);
-  const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<ParsedTask | null>(null);
   /** Ticked cards waiting out the pause, by card key, with their timers. */
   const [ticked, setTicked] = useState<Map<string, number>>(() => new Map());
@@ -173,6 +176,21 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selected.size]);
+
+  // The "copy as prompt" shortcut (rebindable in Settings). The copy function is set below, once
+  // the board is known; App's key handler leaves this page's keys alone.
+  const copySelected = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || endDrag.current) return;
+      if (document.querySelector("[role=dialog], [role=menu], [role=alertdialog]")) return;
+      if (matchShortcut(e, "list") !== "copyTasks") return;
+      e.preventDefault();
+      copySelected.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (t.status === "loading") {
     return (
@@ -293,6 +311,19 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       toast.error(errorText(e));
     }
   };
+
+  /** Puts the selected cards on the clipboard as a prompt for Claude, in board order. */
+  const copyForClaude = (cards = picked) => {
+    if (!cards.length) return;
+    const n = cards.length;
+    void navigator.clipboard.writeText(tasksToMarkdown(cards.map((c) => c.task))).then(
+      () => toast.success(n === 1 ? "Copied 1 task as a prompt" : `Copied ${n} tasks as a prompt`),
+      (e) => toast.error(errorText(e)),
+    );
+  };
+  /** What a card's menu acts on: the whole selection if the card is in it, otherwise just the card. */
+  const menuGroup = (key: string) => (selected.has(key) && picked.length > 1 ? picked : ordered.filter((c) => c.key === key));
+  copySelected.current = copyForClaude;
 
   const select = (key: string) =>
     setSelected((s) => {
@@ -434,23 +465,30 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   };
 
   const chip = (section: string) => sectionChip(section, t.sections, t.settings.defaultSection);
+  /** A section's chip label: the default section ("no category") in Title Case, others as written. */
+  const label = (section: string) =>
+    sectionKey(section) === sectionKey(t.settings.defaultSection) ? section.replace(/(^|\s)(\p{L})/gu, (_, sp, c) => sp + c.toUpperCase()) : section;
 
   return (
     <div ref={page} className="relative flex h-full flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold">Tasks</h1>
         {picked.length > 0 && (
-          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <span className="tabular-nums">{picked.length} selected</span>
-            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-              Clear
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="secondary" size="sm" onClick={() => copyForClaude()}>
+                  <IconBrandOpenai />
+                  Copy as Prompt
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Copy selected tasks as a prompt <ShortcutKbd id="copyTasks" />
+              </TooltipContent>
+            </Tooltip>
           </div>
         )}
-        <Button size="sm" onClick={() => setAdding(true)}>
-          <IconPlus />
-          New task
-        </Button>
       </header>
 
       <div
@@ -489,9 +527,11 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                 <span className="font-normal text-muted-foreground tabular-nums">{cards.length}</span>
               </h2>
               {/* Radix wraps the content in a display:table box that grows to fit it; block keeps cards at the
-                  column's width so lines truncate. The scrollbar is hidden: the column still scrolls. */}
-              <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
-                <div className="flex flex-col px-1.5 pb-1.5">
+                  column's width so lines truncate. The scrollbar is hidden: the column still scrolls.
+                  The scroll box sits 6px inside the column with the cards' own corners, so a card scrolled
+                  partly out of view is cut along a clean card-shaped edge, not the column's border. */}
+              <ScrollArea className="column-scroll mx-1.5 mb-1.5 min-h-0 flex-1 rounded-[8px] [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
+                <div className="flex flex-col">
                   {cards.length === 0 && gapAt < 0 && (
                     <div className="flex h-20 items-center justify-center rounded-[8px] border border-dashed text-sm text-muted-foreground">
                       {status === "backlog" ? "Nothing waiting" : "Drag a task here"}
@@ -522,11 +562,14 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                             onDelete={() => setDeleting(task)}
                             onStatus={(s) => drop([{ task, key }], s)}
                             onSection={(s) => void moveSection(task, s)}
+                            copyCount={menuGroup(key).length}
+                            onCopyForClaude={() => copyForClaude(menuGroup(key))}
                           >
                             <TaskCard
                               data-card-key={key}
                               task={task}
                               chip={chip(task.section)}
+                              label={label(task.section)}
                               done={ticked.has(key)}
                               selected={selected.has(key)}
                               hidden={key === landing}
@@ -566,6 +609,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           y={dragY}
           page={page}
           chip={chip}
+          label={label}
           onLanded={() => setLift(null)}
         />
       )}
@@ -573,14 +617,11 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       {/* The glow that sweeps across the page when tasks are dropped on Done. */}
       <Shockwave ref={halo} />
 
-      {(editing || adding) && (
+      {editing && (
         <TaskDialog
-          task={editing ?? undefined}
+          task={editing}
           sections={t.addSections}
-          onClose={() => {
-            setEditing(null);
-            setAdding(false);
-          }}
+          onClose={() => setEditing(null)}
           onDelete={() => {
             setDeleting(editing);
             setEditing(null);
@@ -624,9 +665,11 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
  * One task: the checkbox on the left, then its name, its note on one line, and its section chip.
  * Without handlers it's a static copy (the ones lifted off the board while dragging).
  */
-function TaskCard({ task, chip, done, selected, hidden, onToggle, onClick, onPointerDown, className, ...rest }: {
+function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick, onPointerDown, className, ...rest }: {
   task: ParsedTask;
   chip: string;
+  /** The section chip's text. */
+  label: string;
   done: boolean;
   /** Ctrl+clicked: a thin sky-blue frame. */
   selected?: boolean;
@@ -647,7 +690,9 @@ function TaskCard({ task, chip, done, selected, hidden, onToggle, onClick, onPoi
       onPointerDown={onPointerDown}
       className={cn(
         "group/card flex cursor-default gap-3 rounded-[8px] border bg-card p-3 pr-3.5 text-left transition-[background-color,border-color,box-shadow] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 dark:hover:bg-accent/40",
-        selected && "border-sky-400 hover:border-sky-400 dark:border-sky-400 dark:hover:border-sky-400",
+        // Selected: a sky frame and the card's own colour tinted sky — a light tint, so it never ends up darker than the column behind it.
+        selected &&
+          "border-sky-400 bg-[color-mix(in_srgb,var(--card)_92%,var(--color-sky-400))] hover:border-sky-400 hover:bg-[color-mix(in_srgb,var(--card)_89%,var(--color-sky-400))] dark:border-sky-400 dark:bg-[color-mix(in_srgb,var(--card)_86%,var(--color-sky-400))] dark:hover:border-sky-400 dark:hover:bg-[color-mix(in_srgb,var(--card)_82%,var(--color-sky-400))]",
         hidden && "opacity-0 transition-none",
         className,
       )}
@@ -671,8 +716,8 @@ function TaskCard({ task, chip, done, selected, hidden, onToggle, onClick, onPoi
           {task.text}
         </span>
         {note && <span className="truncate text-sm text-muted-foreground">{note}</span>}
-        <Badge variant="tint" className="mt-2 max-w-full justify-start" style={{ "--chip": chip } as CSSProperties}>
-          <span className="truncate">{task.section}</span>
+        <Badge variant="tint" className="mt-2 h-5 max-w-full justify-start rounded-sm px-1.5 text-xs" style={{ "--chip": chip } as CSSProperties}>
+          <span className="truncate">{label}</span>
         </Badge>
       </div>
     </div>
@@ -697,7 +742,7 @@ function Spacer({ open, height, instant }: { open: boolean; height: number; inst
 }
 
 /** The card's right-click menu. */
-function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete, onStatus, onSection, children }: {
+function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete, onStatus, onSection, copyCount, onCopyForClaude, children }: {
   task: ParsedTask;
   /** The column it's shown in (its status, or where it was just dropped). */
   status: TaskStatus;
@@ -709,6 +754,9 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
   onDelete: () => void;
   onStatus: (status: TaskStatus) => void;
   onSection: (section: string) => void;
+  /** How many tasks Copy as prompt takes: the selection if this card is in it, otherwise 1. */
+  copyCount: number;
+  onCopyForClaude: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -766,6 +814,10 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
           <IconCopy />
           Copy text
         </ContextMenuItem>
+        <ContextMenuItem onSelect={onCopyForClaude}>
+          <IconBrandOpenai />
+          {copyCount > 1 ? `Copy ${copyCount} as prompt` : "Copy as prompt"}
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onSelect={onDelete}>
           <IconTrash />
@@ -786,12 +838,13 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
  * moving, they string out behind it along its path; at rest they settle into a small stack under
  * it. On drop they glide in under it, and their own cards open up in the column below it.
  */
-function LiftedCards({ lift, x, y, page, chip, onLanded }: {
+function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
   lift: Lift;
   x: MotionValue<number>;
   y: MotionValue<number>;
   page: React.RefObject<HTMLDivElement | null>;
   chip: (section: string) => string;
+  label: (section: string) => string;
   onLanded: () => void;
 }) {
   const { cards, width, grab, mode } = lift;
@@ -925,7 +978,7 @@ function LiftedCards({ lift, x, y, page, chip, onLanded }: {
               animate={held ? { y: 7 * (i + 1), rotate: i % 2 ? -2.5 : 2.5, scale: 1 - 0.035 * (i + 1), opacity: 1 } : { y: 0, rotate: 0, scale: 1, opacity: 1 }}
               transition={smooth}
             >
-              <TaskCard task={c.task} chip={chip(c.task.section)} done={false} className="h-full overflow-hidden shadow-md" />
+              <TaskCard task={c.task} chip={chip(c.task.section)} label={label(c.task.section)} done={false} className="h-full overflow-hidden shadow-md" />
             </motion.div>
           </motion.div>
         ))
@@ -936,7 +989,7 @@ function LiftedCards({ lift, x, y, page, chip, onLanded }: {
         style={{ x: held ? tx : mx, y: held ? ty : my, width, scale, rotate, opacity, originX: grab.x, originY: grab.y }}
       >
         <div className={cn("relative rounded-[8px] transition-shadow duration-200", held ? "shadow-2xl" : "shadow-md")}>
-          <TaskCard task={cards[0]!.task} chip={chip(cards[0]!.task.section)} done={false} />
+          <TaskCard task={cards[0]!.task} chip={chip(cards[0]!.task.section)} label={label(cards[0]!.task.section)} done={false} />
           {cards.length > 1 && (
             <motion.span
               className="absolute -top-2 -right-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground tabular-nums shadow-md"

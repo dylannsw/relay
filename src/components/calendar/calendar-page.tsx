@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring, useVelocity } from "motion/react";
 import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
@@ -17,6 +17,7 @@ import { addDays, daysBetween, isAllDayLike, laneBars, placeDay, startOfDay, typ
 import { toast } from "sonner";
 import { deleteEvent, saveChanges, shiftTimes, withTimes } from "@/calendar/edit";
 import type { CalendarEvent, CalendarInfo, EventTimes } from "@/types";
+import { EventMenu } from "./event-menu";
 import { EventPanel } from "./event-panel";
 import type { Draft } from "./event-editor";
 import { draftStyle, eventStyle, timeRange } from "./event-style";
@@ -556,6 +557,9 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     if (id !== DRAFT_ID) select(id);
   };
 
+  /** A deleted event's panel closes if it was open. */
+  const onEventDeleted = (id: string) => setSelected((s) => (s === id ? null : s));
+
   // What the grid draws: the events, with one being dragged at its new place, plus a new
   // event's ghost (from the open draft, or being drawn).
   const display = useMemo(() => {
@@ -812,9 +816,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                         const z = Math.min(hi + 1, daysBetween(origin, b.end));
                         const isDraft = b.event.id === DRAFT_ID;
                         const barCal = calendars.get(b.event.calendarId);
-                        return (
+                        const bar = (
                           <button
-                            key={b.event.id}
                             type="button"
                             onClick={() => onEventClick(b.event.id)}
                             onPointerDown={(pe) => onEventPointerDown(pe, b.event, "bar")}
@@ -834,6 +837,19 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                             <span className="truncate">{b.event.title}</span>
                             {b.event.recurringEventId && <RepeatMark className="ml-1 size-3" />}
                           </button>
+                        );
+                        return isDraft ? (
+                          <Fragment key={b.event.id}>{bar}</Fragment>
+                        ) : (
+                          <EventMenu
+                            key={b.event.id}
+                            event={b.event}
+                            editable={editable(b.event)}
+                            onOpen={() => select(b.event.id)}
+                            onDeleted={() => onEventDeleted(b.event.id)}
+                          >
+                            {bar}
+                          </EventMenu>
                         );
                       })}
                 </div>
@@ -869,6 +885,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                       placeholder={moving?.event.id ?? null}
                       hidden={landing?.event.id ?? null}
                       onClick={onEventClick}
+                      onOpen={select}
+                      onDeleted={onEventDeleted}
                       onPointerDown={onEventPointerDown}
                     />
                   </div>
@@ -1095,7 +1113,7 @@ function PageHeader({ title, children }: { title: React.ReactNode; children?: Re
 }
 
 /** One day's timed events, side by side where they overlap. Yours can be dragged and resized. */
-function DayEvents({ placed, hour, calendars, dark, selected, resizing, placeholder, hidden, onClick, onPointerDown }: {
+function DayEvents({ placed, hour, calendars, dark, selected, resizing, placeholder, hidden, onClick, onOpen, onDeleted, onPointerDown }: {
   placed: Placed[];
   hour: number;
   calendars: Map<string, CalendarInfo>;
@@ -1108,6 +1126,9 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
   /** The event gliding into place after a drop (the lifted copy stands in for it). */
   hidden: string | null;
   onClick: (id: string) => void;
+  /** From the right-click menu: open the event's panel / it was deleted. */
+  onOpen: (id: string) => void;
+  onDeleted: (id: string) => void;
   onPointerDown: (pe: React.PointerEvent, e: CalendarEvent, mode: "move" | "resize") => void;
 }) {
   return (
@@ -1132,9 +1153,8 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
         const withPlace = height >= 62 && !!e.location;
         const canDrag = editable(e);
         const cal = calendars.get(e.calendarId);
-        return (
+        const card = (
           <button
-            key={e.id}
             type="button"
             data-draft={isDraft || undefined}
             data-event-id={e.id}
@@ -1189,6 +1209,13 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
               </span>
             )}
           </button>
+        );
+        return isDraft ? (
+          <Fragment key={e.id}>{card}</Fragment>
+        ) : (
+          <EventMenu key={e.id} event={e} editable={canDrag} onOpen={() => onOpen(e.id)} onDeleted={() => onDeleted(e.id)}>
+            {card}
+          </EventMenu>
         );
       })}
     </>

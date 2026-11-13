@@ -24,7 +24,8 @@ export type ShortcutId =
   | "forward"
   | "compose"
   | "sync"
-  | "settings";
+  | "settings"
+  | "copyTasks";
 
 /** Where a key applies: the email list, or the open email card. */
 export type ShortcutContext = "list" | "reader";
@@ -59,13 +60,14 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "compose", label: "New message", group: "Write", key: "c" },
   { id: "sync", label: "Check for new mail", group: "App", key: "" },
   { id: "settings", label: "Open settings", group: "App", key: "ctrl+," },
+  { id: "copyTasks", label: "Tasks: copy selected as prompt", group: "App", key: "ctrl+shift+c" },
 ];
 
 /** Built into the app and not rebindable; listed in Settings for reference. */
 export const FIXED_SHORTCUTS: { label: string; key: string }[] = [
   { label: "Close, or clear the selection", key: "Escape" },
   { label: "Send message", key: "ctrl+Enter" },
-  { label: "Toggle sidebar", key: "ctrl+b" },
+  { label: "Toggle sidebar", key: "alt+d" },
   { label: "Next sidebar item", key: "ctrl+Tab" },
   { label: "Previous sidebar item", key: "ctrl+shift+Tab" },
   { label: "Add to selection", key: "ctrl+Click" },
@@ -78,7 +80,7 @@ export const FIXED_SHORTCUTS: { label: string; key: string }[] = [
 
 const DEFS = new Map(SHORTCUTS.map((d) => [d.id, d]));
 /** Keys a shortcut can't use: they already mean something everywhere. */
-const RESERVED = new Set(["Escape", "Tab", "shift+Tab", "ctrl+Tab", "ctrl+shift+Tab", "ctrl+b", "ctrl+Enter"]);
+const RESERVED = new Set(["Escape", "Tab", "shift+Tab", "ctrl+Tab", "ctrl+shift+Tab", "alt+d", "ctrl+Enter"]);
 
 // ----- store -----
 

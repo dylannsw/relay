@@ -211,6 +211,12 @@ async function afterEdit<T>(p: Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Where a task was last added, preselected by Home's add-task box and the command bar's task mode
+ * until Relay restarts. `section` is undefined until then (the default section is used).
+ */
+export const lastTask: { section: string | undefined; status: TaskStatus } = { section: undefined, status: "backlog" };
+
 /** Adds "- [ ] text" (with its status tag) at the end of `section`. Returns the section it went to. */
 export function addTask(text: string, section: string, note?: string, status?: TaskStatus): Promise<string> {
   return afterEdit(
