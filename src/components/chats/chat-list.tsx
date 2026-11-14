@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { IconArchive, IconArchiveOff, IconAt, IconChecks, IconCopy, IconPin, IconTrash, IconRobot, IconSearch, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconAt, IconChecks, IconCopy, IconPin, IconTrash, IconRobot, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { api, errorText } from "@/api";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -10,6 +10,8 @@ import { quick } from "@/lib/motion";
 import { listDate } from "@/format";
 import type { TgChat } from "@/telegram/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
+import { SearchField } from "@/components/search-field";
 import { ChatAvatar } from "./chat-avatar";
 
 function KindIcon({ chat }: { chat: TgChat }) {
@@ -136,16 +138,7 @@ export function ChatList(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
-        <label className="flex h-8 w-full items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-field-focus">
-          <IconSearch className="size-4 shrink-0" />
-          <input
-            value={props.query}
-            onChange={(e) => props.onQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && props.query && (e.stopPropagation(), props.onQuery(""))}
-            placeholder="Search chats"
-            className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </label>
+        <SearchField value={props.query} onValueChange={props.onQuery} placeholder="Search chats" />
         {props.filter}
       </div>
       <div key={props.animateKey} className="no-scrollbar min-h-0 flex-1 animate-in overflow-y-auto px-1.5 pb-2 duration-200 fade-in-0 slide-in-from-bottom-1">
@@ -162,7 +155,11 @@ export function ChatList(props: {
             ))}
           </div>
         ) : props.chats.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground">{props.emptyText}</p>
+          <Empty className="flex-none px-3 py-8">
+            <EmptyHeader>
+              <EmptyDescription>{props.emptyText}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           // A 4px gap between rows (as in the sidebar) so hover and selection never touch.
           <div className="flex flex-col gap-1">

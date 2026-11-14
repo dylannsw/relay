@@ -16,6 +16,9 @@
     --star: #f0ae22;
     /* The selected Home icon. */
     --home: #e4583b;
+    /* Layers above the dialogs' z-50: the window-wide shockwave, then the command bar over it. */
+    --z-shockwave: 60;
+    --z-command-bar: 61;
 }
 
 @theme inline {
@@ -96,6 +99,13 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    /* Named radii that sit outside that scale on purpose: a chat bubble, and the composer's
+       tray with the field inside it (concentric: the inner radius plus the 6px gap). */
+    --radius-bubble: 0.625rem;
+    --radius-tray: 1.25rem;
+    --radius-tray-inner: 0.875rem;
+    /* shadow-lift: the short, firm shadow under something picked out of the page (a selected event). */
+    --shadow-lift: 0 2px 8px rgb(0 0 0 / 0.18);
 }
 
 :root,
@@ -523,7 +533,7 @@
   background-color: var(--cb-bg);
   /* above the window-wide shockwave (z-60, App.tsx), which stays above the dimmed overlay (z-50), so the
      wave runs under the bar */
-  z-index: 61;
+  z-index: var(--z-command-bar);
   border: 1px solid var(--cb-edge);
   outline: 1px solid var(--cb-outline);
   outline-offset: 0;
@@ -646,17 +656,20 @@
 
 /* A row's shortcut (and the bar's own key), dressed like the footer's keys: a ringed 24px squircle, no fill,
    12px semibold. */
+.cb-key,
 .cmdbar :is([data-slot="command-shortcut"], .cb-input-row) [data-slot="kbd"] {
   height: 24px;
   min-width: 24px;
   padding-inline: 6px;
-  border: 0;
   border-radius: 12px;
   corner-shape: var(--cb-squircle);
-  background-color: transparent;
   box-shadow: inset 0 0 0 1px var(--cb-key-ring);
-  color: var(--cb-text-muted);
   font-size: 12px;
+}
+.cmdbar :is([data-slot="command-shortcut"], .cb-input-row) [data-slot="kbd"] {
+  border: 0;
+  background-color: transparent;
+  color: var(--cb-text-muted);
   font-weight: 600;
 }
 
@@ -688,13 +701,6 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  height: 24px;
-  min-width: 24px;
-  padding-inline: 6px;
-  border-radius: 12px;
-  corner-shape: var(--cb-squircle);
-  box-shadow: inset 0 0 0 1px var(--cb-key-ring);
-  font-size: 12px;
   transition:
     scale 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.4),
     background-color 0.26s ease-out,

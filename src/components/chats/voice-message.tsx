@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { IconPlayerPauseFilled, IconPlayerPlayFilled } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { api, errorText } from "@/api";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { TgMedia } from "@/telegram/types";
 import { useDownloadProgress } from "./glance";
@@ -107,17 +108,20 @@ export function VoiceMessage({ chatId, messageId, media, outgoing }: { chatId: s
   const active = state === "playing" || state === "paused" || pos > 0;
   return (
     <span className="flex items-center gap-2.5">
-      <button
+      <Button
         type="button"
+        size="icon-lg"
         onClick={() => void toggle()}
         aria-label={state === "playing" ? "Pause" : "Play voice message"}
+        // Round, and it shrinks a touch when pressed instead of the usual 1px nudge down. On an
+        // outgoing (accent-coloured) bubble the colours swap so it stands out.
         className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95",
-          outgoing ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground",
+          "rounded-full transition-transform active:scale-95 active:not-aria-[haspopup]:translate-y-0",
+          outgoing && "bg-primary-foreground text-primary hover:bg-primary-foreground/90",
         )}
       >
         {state === "loading" ? <Spinner className="size-4.5" /> : state === "playing" ? <IconPlayerPauseFilled className="size-4.5" /> : <IconPlayerPlayFilled className="size-4.5" />}
-      </button>
+      </Button>
       <div role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(length)} aria-valuenow={Math.round(pos)} tabIndex={-1} onPointerDown={(e) => void seek(e)} className="flex h-6 min-w-36 flex-1 cursor-pointer items-center gap-[1.5px]">
         {levels.map((v, i) => (
           <span

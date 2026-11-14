@@ -816,7 +816,7 @@ export default function App() {
       {/* The window-wide shockwave: over the whole app (title bar, sidebar, page) and under toasts. It
           frames itself against this box, takes the window's corners for its edge line, and lights the
           borders of everything in the app. */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-[60]">
+      <div aria-hidden className="pointer-events-none fixed inset-0 z-(--z-shockwave)">
         <Shockwave ref={windowHalo} radii={windowCorners} scope={() => document.body} />
       </div>
     </SidebarProvider>

@@ -34,7 +34,7 @@ export function eventStyle(e: CalendarEvent, cal: CalendarInfo | undefined, dark
       ...vars(c.text, c.muted),
       backgroundColor: c.base,
       color: c.text,
-      boxShadow: "0 2px 8px rgb(0 0 0 / 0.18)",
+      boxShadow: "var(--shadow-lift)",
       zIndex: 5,
     };
   }

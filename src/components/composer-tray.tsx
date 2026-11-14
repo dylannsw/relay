@@ -15,7 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
  */
 
 export function ComposerTray({ ref, className, ...props }: ComponentProps<"div">) {
-  return <div ref={ref} className={cn("halo-glint relative rounded-[20px] border bg-muted p-1.5 dark:bg-sidebar", className)} {...props} />;
+  return <div ref={ref} className={cn("halo-glint relative rounded-tray border bg-muted p-1.5 dark:bg-sidebar", className)} {...props} />;
 }
 
 /** The input's frame. Focus only nudges the border a shade greyer, instead of the accent-coloured focus ring. */
@@ -23,7 +23,7 @@ export function ComposerField({ className, ...props }: ComponentProps<typeof Inp
   return (
     <InputGroup
       className={cn(
-        "halo-glint h-auto flex-col items-stretch rounded-[14px] bg-background shadow-xs has-[[data-slot=input-group-control]:focus-visible]:border-field-focus! dark:border-white/10 dark:bg-card",
+        "halo-glint h-auto flex-col items-stretch rounded-tray-inner bg-background shadow-xs has-[[data-slot=input-group-control]:focus-visible]:border-field-focus! dark:bg-card",
         className,
       )}
       {...props}
@@ -63,5 +63,5 @@ export function ComposerSubmit({ ready, busy, label, onClick, ref }: {
 
 /** The row of options under the field. */
 export function ComposerOptions({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("flex items-center gap-1 pt-1.5 [&>button]:rounded-[14px]", className)} {...props} />;
+  return <div className={cn("flex items-center gap-1 pt-1.5 [&>button]:rounded-tray-inner", className)} {...props} />;
 }

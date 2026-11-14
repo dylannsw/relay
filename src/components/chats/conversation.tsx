@@ -30,6 +30,7 @@ import { quick, smooth } from "@/lib/motion";
 import { api, errorText } from "@/api";
 import { clockTime } from "@/format";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -352,7 +353,13 @@ export function Conversation({ chat }: { chat: TgChat }) {
                 </div>
               )}
               {older === "done" && messages.length > 0 && <p className="py-3 text-center text-xs text-muted-foreground">Start of the conversation</p>}
-              {messages.length === 0 && <p className="mt-10 text-center text-sm text-muted-foreground">No messages here yet.</p>}
+              {messages.length === 0 && (
+                <Empty className="mt-10 flex-none p-0">
+                  <EmptyHeader>
+                    <EmptyDescription>No messages here yet.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
               {messages.map((m, i) => {
                 const prev = messages[i - 1];
                 const next = messages[i + 1];
@@ -687,7 +694,7 @@ function Bubble(props: {
   const hasText = m.text.trim().length > 0;
   const photoOnly = photo && !hasText && !m.reply && !m.forwardedFrom && !props.showName;
   // Every bubble is fully rounded; each run has its name above and its time and ticks below.
-  const corners = "rounded-[10px]";
+  const corners = "rounded-bubble";
   const showTime = last || !!m.pending || m.edited;
   const nameLine = props.showName && <div className="truncate px-1 text-sm font-semibold text-foreground">{m.senderName}</div>;
 

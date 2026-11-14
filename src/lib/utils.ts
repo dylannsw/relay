@@ -1,10 +1,16 @@
 import { createCn } from "cn/config"
 
 /**
- * Class-name merging that knows Relay's own type steps (styles.css: text-2xs, text-meta,
- * text-title) are font sizes. Without this they'd be taken for text colours, and a colour
- * class beside one (`text-title text-muted-foreground`) would remove it.
+ * Class-name merging that knows Relay's own theme names (styles.css). The type steps
+ * (text-2xs, text-meta, text-title) are font sizes: without this they'd be taken for text
+ * colours, and a colour class beside one (`text-title text-muted-foreground`) would remove it.
+ * The named radii (rounded-bubble, rounded-tray, rounded-tray-inner) replace other rounded-*.
  */
 export const cn = createCn({
-  extend: { classGroups: { "font-size": [{ text: ["2xs", "meta", "title"] }] } },
+  extend: {
+    classGroups: {
+      "font-size": [{ text: ["2xs", "meta", "title"] }],
+      rounded: [{ rounded: ["bubble", "tray", "tray-inner"] }],
+    },
+  },
 })

@@ -118,6 +118,7 @@ import {
   type ShortcutDef,
 } from "@/shortcuts";
 import { ColorDot } from "@/components/color-dot";
+import { accountColors } from "@/palette";
 import type { Account, CalendarInfo, Config, Provider } from "@/types";
 import {
   addCalendarFeed,
@@ -1065,8 +1066,6 @@ function NumberField({ label, value, min, max, onCommit }: {
 
 const LABELS = ["Personal", "Work", "School"];
 
-/** Account colours offered in the picker (Relay's defaults, as in commands.rs, and a few more). */
-const ACCOUNT_COLORS = ["#008dff", "#33c759", "#6a42e1", "#df9147", "#ee665a", "#cf9943", "#14b8a6", "#ec4899", "#64748b"];
 /** Google Calendar's own palette, so a colour picked here also looks at home in Google. */
 const CALENDAR_COLORS = [
   "#d50000", "#e67c73", "#f4511e", "#f6bf26", "#33b679", "#0b8043",
@@ -1161,7 +1160,7 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
 
   return (
     <div className="flex items-center gap-3 py-3">
-      <ColorPicker label="Account color" value={color} onChange={pickColor} presets={ACCOUNT_COLORS} />
+      <ColorPicker label="Account color" value={color} onChange={pickColor} presets={accountColors()} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{a.email}</div>
         <div className="truncate text-xs text-muted-foreground">
@@ -1742,14 +1741,16 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
           <TooltipContent>Reset to {keyText(def.key) || "none"}</TooltipContent>
         </Tooltip>
       )}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         aria-label={`${def.label}: ${keyText(key) || "not set"}. Click to change.`}
         onClick={() => setRecording(true)}
         onBlur={() => setRecording(false)}
         onKeyDown={onKeyDown}
         className={cn(
-          "flex h-8 min-w-28 items-center justify-end rounded-md border bg-background px-2.5 text-sm transition-[border-color,box-shadow] duration-150 ease-(--ease-out-soft) outline-none hover:border-border-strong focus-visible:border-ring",
+          "min-w-28 justify-end font-normal",
           recording && "border-ring ring-1 ring-ring hover:border-ring",
         )}
       >
@@ -1760,7 +1761,7 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
         ) : (
           <span className="text-xs text-muted-foreground">Not set</span>
         )}
-      </button>
+      </Button>
     </div>
   );
 }

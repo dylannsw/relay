@@ -237,7 +237,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
           </ComposerOptions>
         </form>
       ) : (
-        <div className="flex h-11 items-center gap-3 rounded-xl border bg-background pr-1.5 pl-[18px] shadow-xs dark:border-white/10 dark:bg-card">
+        <div className="flex h-11 items-center gap-3 rounded-xl border bg-background pr-1.5 pl-[18px] shadow-xs dark:bg-card">
           <span className="flex-1 truncate text-sm text-muted-foreground">Connect your Obsidian vault to add tasks.</span>
           <Button size="sm" variant="outline" onClick={() => void chooseVault(vaultPath)}>
             <IconFolderOpen />
