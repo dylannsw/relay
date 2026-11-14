@@ -376,6 +376,7 @@ function HaloSwatches() {
             aria-label="Off"
             aria-pressed={chosen === HALO_OFF}
             onClick={() => setHaloPalette(HALO_OFF)}
+            data-icon="sm"
             className={cn(swatch, "bg-muted text-muted-foreground [&_svg]:size-3.5")}
             style={{ boxShadow: chosen === HALO_OFF ? ring("var(--muted-foreground)") : undefined }}
           >
@@ -1417,6 +1418,7 @@ function ThemeCard({ id, label, selected, onSelect }: {
         <AnimatePresence initial={false}>
           {selected && (
             <motion.span
+              data-icon="sm"
               className="absolute right-2 bottom-2 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm [&_svg]:size-3.5"
               initial={{ scale: 0.5, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}

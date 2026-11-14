@@ -56,6 +56,14 @@ const buttonVariants = cva(
   }
 )
 
+/**
+ * Whether the button's classes leave its icons at 16px or less by default (the
+ * `[&_svg:not([class*='size-'])]:size-3.5` and `:size-4` of the small sizes above, or the same
+ * class passed in by a caller). Read from the merged classes, so a caller that sets a larger
+ * default icon on a small button is not counted.
+ */
+const SMALL_DEFAULT_ICON = /\[&_svg:not\(\[class\*='size-'\]\)\]:size-(?:3|3\.5|4)(?:\s|$)/
+
 /** Content that counts as the button's label or icon: not blank text, not screen-reader-only text. */
 function visible(n: ChildNode): boolean {
   if (n.nodeType === Node.TEXT_NODE) return !!n.textContent?.trim()
@@ -100,13 +108,18 @@ function Button({
     [ref]
   )
 
+  const classes = cn(buttonVariants({ variant, size, className }))
+
   return (
     <Comp
       ref={setRef}
       data-slot="button"
       data-variant={variant}
       data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      // Small default icons: styles.css draws those with finer lines. (Its own attribute, since
+      // a wrapping Tooltip or Menu trigger replaces data-slot.)
+      data-icon={SMALL_DEFAULT_ICON.test(classes) ? "sm" : undefined}
+      className={classes}
       {...props}
     />
   )

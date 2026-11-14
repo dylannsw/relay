@@ -281,19 +281,18 @@
     vector-effect: non-scaling-stroke;
   }
   /* Small icons (12–16px) get finer 1.35px lines so they don't read heavy. CSS can't see
-     an icon's rendered size, so this matches where the size is set: on the icon itself,
-     or as a parent's default for icons without their own size class (buttons, badges…). */
+     an icon's rendered size, so this matches where the size is set: on the icon itself, or by
+     a parent that makes its icons small when they have no size class of their own. Those
+     parents are marked, not matched by their class strings: data-icon="sm" (Button sets it for
+     its small sizes; add it to any new container with small icons), and Kbd. */
   .tabler-icon:is(.size-3, .size-3\.5, .size-4),
   :is(
-      [class~="[&_svg:not([class*='size-'])]:size-3"],
-      [class~="[&_svg:not([class*='size-'])]:size-3.5"],
-      [class~="[&_svg:not([class*='size-'])]:size-4"],
-      [class~="[&_svg]:size-3.5"],
-      [class~="[&_svg]:size-4"]
+      [data-slot="kbd"],
+      [data-icon="sm"]
     )
     .tabler-icon:not([class*="size-"]),
-  /* Badges force the size on direct-child icons, overriding the icon's own class. */
-  :is([class~="[&>svg]:size-3.5!"], [class~="[&>svg]:size-4!"]) > .tabler-icon {
+  /* Badges force a small size on direct-child icons, overriding the icon's own class. */
+  [data-slot="badge"] > .tabler-icon {
     stroke-width: 1.35px;
   }
   /* Light mode: icons are never darker than mid-grey, so ones that inherit near-black
