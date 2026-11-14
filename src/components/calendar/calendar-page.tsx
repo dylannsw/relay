@@ -761,7 +761,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
             <div className="sticky top-0 z-20 bg-background" style={{ width: trackW, height: headH }}>
               <div className="relative border-b" style={{ height: DAY_HEAD }}>
                 <div
-                  className="sticky left-0 z-30 flex h-full items-end bg-background pr-2 pb-1.5 text-[11px] font-semibold text-muted-foreground"
+                  className="sticky left-0 z-30 flex h-full items-end bg-background pr-2 pb-1.5 text-2xs font-semibold text-muted-foreground"
                   style={{ width: GUTTER }}
                 >
                   <span className="ml-auto">{zoneLabel()}</span>
@@ -794,7 +794,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 // bars in lanes below the row's current height wait for it to grow.
                 <div className="relative overflow-clip border-b" style={{ height: stripH }}>
                   <div
-                    className="sticky left-0 z-30 flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground"
+                    className="sticky left-0 z-30 flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ width: GUTTER }}
                   >
                     All day
@@ -802,7 +802,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                   {columns.map((i) => (
                     <div key={i} className="absolute top-0 h-full border-l" style={{ left: GUTTER + i * colW, width: colW }}>
                       {(hiddenOn.get(i) ?? 0) > 0 && (
-                        <span className="absolute right-1 bottom-0.5 rounded-sm px-1 text-[11px] font-medium text-muted-foreground">
+                        <span className="absolute right-1 bottom-0.5 rounded-sm px-1 text-2xs font-medium text-muted-foreground">
                           +{hiddenOn.get(i)}
                         </span>
                       )}
@@ -1075,7 +1075,7 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLand
         transition: "box-shadow 240ms var(--ease-out-soft)",
       }}
     >
-      <span className={cn("truncate text-[14px] leading-snug font-semibold transition-opacity duration-200", landing ? "opacity-100" : "opacity-30")}>
+      <span className={cn("truncate text-meta leading-snug font-semibold transition-opacity duration-200", landing ? "opacity-100" : "opacity-30")}>
         {event.title}
       </span>
       <span className={cn("truncate leading-snug text-(color:--event-muted) transition-opacity duration-200", landing ? "opacity-100" : "opacity-30")}>
@@ -1187,7 +1187,7 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
             {roomy ? (
               <>
                 <span className="flex min-w-0 items-center gap-1">
-                  <span className={cn("truncate text-[14px] leading-snug font-semibold", e.myResponse === "declined" && "line-through")}>
+                  <span className={cn("truncate text-meta leading-snug font-semibold", e.myResponse === "declined" && "line-through")}>
                     {e.title}
                   </span>
                   {e.recurringEventId && <RepeatMark className="size-3.5" />}
@@ -1203,7 +1203,7 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
             ) : (
               // Title, repeat mark and time on one line; the time only gets the room left, so it gives way first.
               <span className="flex min-w-0 items-center gap-1 leading-snug">
-                <span className={cn("min-w-0 truncate text-[14px] font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
+                <span className={cn("min-w-0 truncate text-meta font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
                 {e.recurringEventId && <RepeatMark className="size-3.5" />}
                 <span className="w-0 min-w-0 flex-1 truncate text-(color:--event-muted)">{timeRange(e, true)}</span>
               </span>

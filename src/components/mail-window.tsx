@@ -118,7 +118,7 @@ export function PersonChip({ person, className }: { person: Address; className?:
       )}
     >
       <Avatar size="sm" className="size-5.5">
-        <AvatarFallback className="text-[11px]">{initials(person.name, person.email)}</AvatarFallback>
+        <AvatarFallback className="text-2xs">{initials(person.name, person.email)}</AvatarFallback>
       </Avatar>
       <span className="truncate">{person.name || person.email}</span>
     </span>

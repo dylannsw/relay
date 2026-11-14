@@ -608,7 +608,7 @@ function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media:
           <IconPlayerPlayFilled className="size-5" />
         </span>
       </span>
-      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-black/45 px-1.5 py-1 text-[11px] leading-none text-white tabular-nums">{length}</span>}
+      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-black/45 px-1.5 py-1 text-2xs leading-none text-white tabular-nums">{length}</span>}
     </button>
   );
 }
@@ -980,7 +980,7 @@ function Composer(props: {
             }}
             placeholder={files.length ? "Add a caption…" : chat.kind === "saved" ? "Write a note…" : `Message ${chat.name}…`}
             aria-label="Message"
-            className="no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60 pt-3 pr-4 pb-1 pl-[18px] text-[16px] leading-[1.4] md:text-[16px]"
+            className="no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60 pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] md:text-title"
           />
           <ComposerSubmit ready={canSend} label="Send" onClick={send} />
         </ComposerField>

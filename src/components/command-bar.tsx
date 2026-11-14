@@ -107,7 +107,7 @@ const Ico = ({ icon: I }: { icon: TablerIcon }) => <I />;
 /** A row's icon in a 24px squircle tile (styles.css .cb-tile). */
 const Tile = ({ children }: { children: ReactNode }) => <span className="cb-tile">{children}</span>;
 
-const ROW = "h-11 gap-3 px-3 text-[16px]";
+const ROW = "h-11 gap-3 px-3 text-title";
 /** The bar's text field: 20px, centred, over its own drawn placeholder. */
 const INPUT = "absolute inset-0 size-full bg-transparent text-center text-[20px] outline-none placeholder:text-transparent";
 
@@ -255,7 +255,7 @@ function OptionRow({ row, label, icon, rowRef, onStep, held, value, valueColor }
       tabIndex={-1}
       data-task-row={row}
       // Right padding puts the last chip's edge in line with the footer's last hint.
-      className="flex h-11 items-center gap-3 rounded-[12px] pr-[7px] pl-3 text-[16px] outline-none"
+      className="flex h-11 items-center gap-3 rounded-[12px] pr-[7px] pl-3 text-title outline-none"
     >
       <Tile>{icon}</Tile>
       <span>{label}</span>
@@ -561,7 +561,7 @@ export function CommandBar(p: Props) {
     </span>
   );
   const footer = (hints: ReactNode) => (
-    <div className="cb-footer flex h-12 shrink-0 items-center gap-5 px-[19px] text-[13px] font-semibold select-none">{hints}</div>
+    <div className="cb-footer flex h-12 shrink-0 items-center gap-5 px-[19px] text-xs font-semibold select-none">{hints}</div>
   );
 
   const entry = (e: Entry) => (
@@ -745,10 +745,10 @@ export function CommandBar(p: Props) {
                         className="gap-3 px-3 py-2"
                       >
                         <Avatar size="sm">
-                          <AvatarFallback className="text-[11px]">{initials(m.from.name, m.from.email)}</AvatarFallback>
+                          <AvatarFallback className="text-2xs">{initials(m.from.name, m.from.email)}</AvatarFallback>
                         </Avatar>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[16px]">{m.subject || "(no subject)"}</span>
+                          <span className="block truncate text-title">{m.subject || "(no subject)"}</span>
                           <span className="cb-muted block truncate text-xs">
                             {senderName(m.from)} · {m.snippet}
                           </span>

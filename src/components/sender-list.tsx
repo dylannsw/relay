@@ -151,14 +151,14 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       </Avatar>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
-          <span className={cn("truncate text-[16px]", unread ? "font-semibold" : "font-medium")}>{g.name}</span>
+          <span className={cn("truncate text-title", unread ? "font-semibold" : "font-medium")}>{g.name}</span>
           <Badge variant="secondary" className="tabular-nums">
             {g.count}
           </Badge>
           {unread && (
-            <span className="text-[14px] whitespace-nowrap text-primary tabular-nums">{g.unreadCount} unread</span>
+            <span className="text-meta whitespace-nowrap text-primary tabular-nums">{g.unreadCount} unread</span>
           )}
-          <span className="ml-auto shrink-0 text-[14px] whitespace-nowrap text-muted-foreground tabular-nums">
+          <span className="ml-auto shrink-0 text-meta whitespace-nowrap text-muted-foreground tabular-nums">
             {listDate(g.latestDate)}
           </span>
         </div>

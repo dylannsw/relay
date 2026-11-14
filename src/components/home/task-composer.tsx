@@ -144,7 +144,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
               placeholder="Add a task…"
               aria-label="New task"
               enterKeyHint="done"
-              className="h-auto pt-3 pr-4 pb-1 pl-[18px] text-[16px]"
+              className="h-auto pt-3 pr-4 pb-1 pl-[18px] text-title"
             />
             {/* The note opens by growing the box (0fr → 1fr) rather than popping in. */}
             <div

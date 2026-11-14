@@ -549,7 +549,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                   column's width so lines truncate. The scrollbar is hidden: the column still scrolls.
                   The scroll box sits 6px inside the column with the cards' own corners, so a card scrolled
                   partly out of view is cut along a clean card-shaped edge, not the column's border. */}
-              <ScrollArea className="column-scroll mx-1.5 mb-1.5 min-h-0 flex-1 rounded-[8px] [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
+              <ScrollArea className="column-scroll mx-1.5 mb-1.5 min-h-0 flex-1 rounded-lg [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
                 <div className="flex flex-col">
                   <AnimatePresence initial={false} custom={presence}>
                     {cards.map(({ task, key }, i) => {
@@ -703,10 +703,10 @@ function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick
       onClick={onClick}
       onPointerDown={onPointerDown}
       className={cn(
-        "group/card flex cursor-default gap-3 rounded-[8px] border bg-card p-3 pr-3.5 text-left transition-[background-color,border-color,box-shadow] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 dark:hover:bg-accent/40",
+        "group/card flex cursor-default gap-3 rounded-lg border bg-card p-3 pr-3.5 text-left transition-[background-color,border-color,box-shadow] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 dark:hover:bg-accent/40",
         // Selected: a sky frame and the card's own colour tinted sky — a light tint, so it never ends up darker than the column behind it.
         selected &&
-          "border-sky-400 bg-[color-mix(in_srgb,var(--card)_92%,var(--color-sky-400))] hover:border-sky-400 hover:bg-[color-mix(in_srgb,var(--card)_89%,var(--color-sky-400))] dark:border-sky-400 dark:bg-[color-mix(in_srgb,var(--card)_86%,var(--color-sky-400))] dark:hover:border-sky-400 dark:hover:bg-[color-mix(in_srgb,var(--card)_82%,var(--color-sky-400))]",
+          "border-selected-border bg-selected hover:border-selected-border hover:bg-selected-hover dark:hover:bg-selected-hover",
         hidden && "opacity-0 transition-none",
         className,
       )}
@@ -723,7 +723,7 @@ function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick
       <div className="flex min-w-0 flex-1 flex-col">
         <span
           className={cn(
-            "truncate text-[15px] leading-6 font-medium transition-colors duration-150",
+            "truncate text-sm leading-6 font-medium transition-colors duration-150",
             done && "text-muted-foreground line-through decoration-muted-foreground/60",
           )}
         >
@@ -1002,7 +1002,7 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
         className="pointer-events-none absolute top-0 left-0 z-50"
         style={{ x: held ? tx : mx, y: held ? ty : my, width, scale, rotate, opacity, originX: grab.x, originY: grab.y }}
       >
-        <div className={cn("relative rounded-[8px] transition-shadow duration-200", held ? "shadow-2xl" : "shadow-md")}>
+        <div className={cn("relative rounded-lg transition-shadow duration-200", held ? "shadow-2xl" : "shadow-md")}>
           <TaskCard task={cards[0]!.task} chip={chip(cards[0]!.task.section)} label={label(cards[0]!.task.section)} done={false} />
           {cards.length > 1 && (
             <motion.span

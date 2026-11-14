@@ -43,10 +43,10 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <KindIcon chat={chat} />
-          <span className="min-w-0 truncate text-[16px] font-semibold">{chat.name}</span>
+          <span className="min-w-0 truncate text-title font-semibold">{chat.name}</span>
           {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
           {/* Pin and time share the top row's right end. */}
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[14px] text-muted-foreground tabular-nums">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-meta text-muted-foreground tabular-nums">
             {chat.pinned && <IconPin className="size-4" aria-label="Pinned" />}
             {last && listDate(last.date)}
           </span>

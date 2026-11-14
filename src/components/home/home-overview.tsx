@@ -57,7 +57,7 @@ export function HomeOverview(p: OverviewProps) {
           <span className="[text-box:trim-both_cap_alphabetic]">Overview</span>
         </CardTitle>
         <CardAction className="flex">
-          <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-[14px] font-normal text-muted-foreground tabular-nums">
+          <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-meta font-normal text-muted-foreground tabular-nums">
             <IconCalendarEvent />
             {/* Trim the line box to the cap height so the digits sit exactly level with the icon. */}
             <span className="[text-box:trim-both_cap_alphabetic]">{date(new Date())}</span>

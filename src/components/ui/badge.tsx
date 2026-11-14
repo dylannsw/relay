@@ -21,7 +21,7 @@ const badgeVariants = cva(
         // Soft colored chip: set `--chip` (any CSS color) inline; defaults to gray.
         // The tint uses the color as-is; the text keeps its hue but is clamped in lightness
         // (darker in light mode, lighter in dark mode) so every color reads at ≥ 4.5:1.
-        tint: "h-6.5 gap-1.5 rounded-md px-2 text-[14px] [--chip:var(--chip-gray)] bg-[color-mix(in_srgb,var(--chip)_11%,transparent)] text-[oklch(from_var(--chip)_min(l,0.5)_c_h)] dark:bg-[color-mix(in_srgb,var(--chip)_20%,transparent)] dark:text-[oklch(from_var(--chip)_max(l,0.8)_c_h)] [&>svg]:size-4!",
+        tint: "h-6.5 gap-1.5 rounded-md px-2 text-meta [--chip:var(--chip-gray)] bg-[color-mix(in_srgb,var(--chip)_11%,transparent)] text-[oklch(from_var(--chip)_min(l,0.5)_c_h)] dark:bg-[color-mix(in_srgb,var(--chip)_20%,transparent)] dark:text-[oklch(from_var(--chip)_max(l,0.8)_c_h)] [&>svg]:size-4!",
       },
     },
     defaultVariants: {

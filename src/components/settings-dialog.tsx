@@ -569,7 +569,7 @@ function Subsection({ title, description, action, children }: {
       <div className="flex items-end justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
           <h3 className="text-sm font-semibold">{title}</h3>
-          {description && <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>}
+          {description && <p className="text-xs leading-snug text-muted-foreground">{description}</p>}
         </div>
         {action}
       </div>
@@ -907,7 +907,7 @@ function EventPreview({ calendar: c }: { calendar: CalendarInfo }) {
         } as React.CSSProperties
       }
     >
-      <span className="truncate text-[14px] font-semibold">{c.isPrimary ? "Coffee with Sam" : calendarName(c)}</span>
+      <span className="truncate text-meta font-semibold">{c.isPrimary ? "Coffee with Sam" : calendarName(c)}</span>
       <span style={{ color: dark ? c.colors.darkMuted : c.colors.lightMuted }}>
         {clockTime(new Date(2000, 0, 1, 9))} – {clockTime(new Date(2000, 0, 1, 10))}
       </span>
@@ -1334,7 +1334,7 @@ function SettingRow({ title, description, children, stacked }: {
     <div className={cn("py-5 first:pt-0", stacked ? "flex flex-col gap-4" : "grid grid-cols-[minmax(0,1fr)_16rem] items-center gap-12")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="text-sm font-semibold">{title}</div>
-        <div className="text-[13px] leading-snug text-muted-foreground">{description}</div>
+        <div className="text-xs leading-snug text-muted-foreground">{description}</div>
       </div>
       {stacked ? children : <div className="flex min-w-0 justify-end">{children}</div>}
     </div>

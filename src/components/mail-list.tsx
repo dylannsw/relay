@@ -427,7 +427,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
         highlighted && "bg-muted hover:bg-muted",
         // Selected: the same sky frame and sky-tinted card colour as a selected task card.
         checked &&
-          "border-sky-400 bg-[color-mix(in_srgb,var(--card)_92%,var(--color-sky-400))] hover:border-sky-400 hover:bg-[color-mix(in_srgb,var(--card)_89%,var(--color-sky-400))] dark:border-sky-400 dark:bg-[color-mix(in_srgb,var(--card)_86%,var(--color-sky-400))] dark:hover:border-sky-400 dark:hover:bg-[color-mix(in_srgb,var(--card)_82%,var(--color-sky-400))]",
+          "border-selected-border bg-selected hover:border-selected-border hover:bg-selected-hover dark:hover:bg-selected-hover",
       )}
     >
       <SelectionSlot
@@ -442,7 +442,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
-          <span className={cn("truncate text-[16px]", m.isRead ? "font-medium" : "font-semibold")}>
+          <span className={cn("truncate text-title", m.isRead ? "font-medium" : "font-semibold")}>
             {senderName(m.from)}
           </span>
           <AnimatePresence initial={false}>
@@ -461,7 +461,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
             {/* The date gives way to the row's actions on hover, or when the row is highlighted. */}
             <span
               className={cn(
-                "text-[14px] whitespace-nowrap tabular-nums transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
+                "text-meta whitespace-nowrap tabular-nums transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
                 highlighted ? "-translate-x-1 opacity-0" : "text-muted-foreground",
               )}
             >
