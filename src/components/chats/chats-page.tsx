@@ -36,7 +36,7 @@ export function ChatsPage({ folder }: { folder: number | null }) {
   const [query, setQuery] = useState("");
   const [signingOut, setSigningOut] = useState(false);
 
-  const title = folder === null ? "All chats" : (tg.folders.find((f) => f.id === folder)?.title ?? "Chats");
+  const title = folder === null ? "All Chats" : (tg.folders.find((f) => f.id === folder)?.title ?? "Chats");
   const list = useMemo(() => {
     let l = chatsIn(tg.chats, folder);
     if (filter === "unread") l = l.filter((c) => c.unread > 0 || c.markedUnread || c.mentions > 0 || c.id === selectedId);

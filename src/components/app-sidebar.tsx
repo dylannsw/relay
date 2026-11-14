@@ -5,7 +5,7 @@ import {
   IconBriefcase2,
   IconCalendar,
   IconFolder,
-  IconMessages,
+  IconBrandTelegram,
   IconMilitaryRank,
   IconUsers,
   IconChecklist,
@@ -29,6 +29,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarCount,
   SidebarMenuBadge,
   SidebarMenuButton,
@@ -44,7 +45,6 @@ import { FOLDERS } from "@/folders";
 import { useTasks } from "@/tasks/store";
 import { useTodayEvents } from "@/calendar/events";
 import { unreadChats, useTelegram } from "@/telegram/store";
-import type { TgFolder } from "@/telegram/types";
 
 /**
  * Home, or the Tasks list (optionally filtered to a section). Mail: all inboxes and groups show
@@ -98,9 +98,14 @@ interface Props {
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
-/** Account groups in sidebar order: Personal, Work, School, then any others A–Z. */
-function sortedLabels(accounts: Account[]): string[] {
-  return [...new Set(accounts.map((a) => a.label))].sort((a, b) => {
+/**
+ * Account groups in sidebar order: Personal, Work, School, then any others A–Z. Only labels two or
+ * more accounts share: a group of one is the same inbox as that account's own entry.
+ */
+export function sortedLabels(accounts: Account[]): string[] {
+  const counts = new Map<string, number>();
+  for (const a of accounts) counts.set(a.label, (counts.get(a.label) ?? 0) + 1);
+  return [...counts.keys()].filter((l) => counts.get(l)! >= 2).sort((a, b) => {
     const ia = LABEL_ORDER.indexOf(a);
     const ib = LABEL_ORDER.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
@@ -109,9 +114,9 @@ function sortedLabels(accounts: Account[]): string[] {
 
 /**
  * The sidebar's top-level items, top to bottom, for Ctrl+Tab: each account counts once, as its
- * inbox (its other folders aren't stops of their own).
+ * inbox (its other folders aren't stops of their own), and Chats counts once, as All chats.
  */
-export function sidebarViews(accounts: Account[], chatFolders: TgFolder[] = []): View[] {
+export function sidebarViews(accounts: Account[]): View[] {
   return [
     { kind: "home" },
     { kind: "tasks" },
@@ -119,24 +124,21 @@ export function sidebarViews(accounts: Account[], chatFolders: TgFolder[] = []):
     { kind: "all" },
     { kind: "cleanup" },
     { kind: "chats", folder: null },
-    ...chatFolders.map((f): View => ({ kind: "chats", folder: f.id })),
     ...sortedLabels(accounts).map((label): View => ({ kind: "label", label })),
     ...accounts.map((a): View => ({ kind: "account", id: a.id, folder: "inbox" })),
   ];
 }
 
 /** The view `step` items after (or before, when negative) `current` in the sidebar, wrapping round. */
-export function stepSidebarView(accounts: Account[], current: View, step: number, chatFolders: TgFolder[] = []): View {
-  const views = sidebarViews(accounts, chatFolders);
-  // A filtered Tasks list or another of an account's folders counts as that item.
+export function stepSidebarView(accounts: Account[], current: View, step: number): View {
+  const views = sidebarViews(accounts);
+  // A filtered Tasks list, another of an account's folders or a Telegram folder counts as that item.
   const at = views.findIndex((v) =>
     v.kind === "account" && current.kind === "account"
       ? v.id === current.id
       : v.kind === "label" && current.kind === "label"
         ? v.label === current.label
-        : v.kind === "chats" && current.kind === "chats"
-          ? v.folder === current.folder
-          : v.kind === current.kind,
+        : v.kind === current.kind,
   );
   const i = at < 0 ? (step > 0 ? -1 : 0) : at;
   return views[(i + step + views.length) % views.length]!;
@@ -183,6 +185,7 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             isActive={viewing && !open}
             title={`${a.provider === "google" ? "Gmail" : "Microsoft"} · ${a.label} · synced ${relativeTime(a.lastSync)}`}
           >
+            <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
             {a.lastError ? (
               <IconAlertCircle className="text-destructive" />
             ) : (
@@ -193,7 +196,6 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             )}
             <span className="min-w-0 flex-1 truncate">{a.email}</span>
             {!open && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
-            <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         {/* Opening takes 220ms, closing a quicker 140ms (getting out of the way shouldn't make you wait), on the app's curve. */}
@@ -207,7 +209,7 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
                     <SidebarMenuSubButton asChild>
                       <button type="button" className="w-full text-destructive" onClick={onReconnect}>
                         <IconLogin2 className="text-destructive!" />
-                        <span>Sign in again</span>
+                        <span>Sign In Again</span>
                       </button>
                     </SidebarMenuSubButton>
                   </TooltipTrigger>
@@ -275,34 +277,104 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 }
 
 /**
- * Telegram: All chats, then your own Telegram folders in their order, each with how many unread
- * chats it has (muted ones don't count, as in Telegram). Before you sign in it's just All chats,
- * which opens the sign-in.
+ * Telegram: All chats, with your own Telegram folders folded away beneath it (in their order), each
+ * with how many unread chats it has (muted ones don't count, as in Telegram). Clicking All chats
+ * opens it; clicking it again, or its chevron, shows or hides the folders. Going to a folder from elsewhere unfolds them,
+ * and moving on folds them again unless you opened or closed them yourself, as with accounts.
+ * Before you sign in it's just All chats, which opens the sign-in.
  */
 function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) {
   const tg = useTelegram();
   const ready = tg.status?.stage === "ready";
-  const items: { folder: number | null; title: string; Icon: TablerIcon }[] = [
-    { folder: null, title: "All chats", Icon: IconMessages },
-    ...(ready ? tg.folders.map((f) => ({ folder: f.id, title: f.title, Icon: chatFolderIcon(f.title) })) : []),
-  ];
+  const folders = ready ? tg.folders : [];
+  const inFolder = view.kind === "chats" && view.folder !== null;
+  const [open, setOpen] = useState(inFolder);
+  const autoOpened = useRef(inFolder);
+  useEffect(() => {
+    if (inFolder) {
+      setOpen((was) => {
+        if (!was) autoOpened.current = true;
+        return true;
+      });
+    } else if (autoOpened.current && view.kind !== "chats") {
+      autoOpened.current = false;
+      setOpen(false);
+    }
+  }, [inFolder, view.kind]);
+
+  const allUnread = ready ? unreadChats(tg.chats, null) : 0;
+  const allSelected = view.kind === "chats" && view.folder === null;
+  const allButton = (
+    <SidebarMenuButton
+      isActive={allSelected}
+      // The first click opens All chats; clicking it again once it's open shows or hides the folders.
+      onClick={() => {
+        if (allSelected && folders.length > 0) {
+          autoOpened.current = false; // your choice now: it stays as you left it
+          setOpen((o) => !o);
+        } else {
+          onView({ kind: "chats", folder: null });
+        }
+      }}
+      // Room for the chevron on the left (8px edge + 18px icon + 8px gap), so the icon lines up
+      // with the accounts' dots, whose chevron sits inside the row.
+      className="group-has-data-[sidebar=menu-action]/menu-item:pr-2 group-has-data-[sidebar=menu-action]/menu-item:pl-[34px]"
+    >
+      <IconBrandTelegram />
+      <span className="min-w-0 flex-1 truncate">All Chats</span>
+      {allUnread > 0 && <SidebarCount>{allUnread}</SidebarCount>}
+    </SidebarMenuButton>
+  );
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Chats</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {items.map(({ folder, title, Icon }) => {
-            const unread = ready ? unreadChats(tg.chats, folder) : 0;
-            return (
-              <SidebarMenuItem key={folder ?? "all"}>
-                <SidebarMenuButton isActive={view.kind === "chats" && view.folder === folder} onClick={() => onView({ kind: "chats", folder })}>
-                  <Icon />
-                  <span className="min-w-0 flex-1 truncate">{title}</span>
-                </SidebarMenuButton>
-                {unread > 0 && <SidebarMenuBadge>{unread}</SidebarMenuBadge>}
+          {folders.length === 0 ? (
+            <SidebarMenuItem>{allButton}</SidebarMenuItem>
+          ) : (
+            <Collapsible
+              asChild
+              open={open}
+              onOpenChange={(next) => {
+                autoOpened.current = false; // your choice now: it stays as you left it
+                setOpen(next);
+              }}
+              className="group/collapsible"
+            >
+              <SidebarMenuItem>
+                {allButton}
+                <CollapsibleTrigger asChild>
+                  {/* Placed so the 18px chevron in this 20px button sits where the accounts' do: 8px from
+                      the left edge, centred in the 36px row. */}
+                  <SidebarMenuAction className="right-auto left-[7px] peer-data-[size=default]/menu-button:top-2" aria-label={open ? "Hide folders" : "Show folders"} title={open ? "Hide folders" : "Show folders"}>
+                    <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                  </SidebarMenuAction>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
+                  {/* Indented like an account's folders, so the icons line up under the label. */}
+                  <SidebarMenuSub className="pl-6.5">
+                    {folders.map((f) => {
+                      const Icon = chatFolderIcon(f.title);
+                      const unread = unreadChats(tg.chats, f.id);
+                      return (
+                        <SidebarMenuSubItem key={f.id}>
+                          <SidebarMenuSubButton asChild isActive={view.kind === "chats" && view.folder === f.id}>
+                            <button type="button" className="w-full" onClick={() => onView({ kind: "chats", folder: f.id })}>
+                              <Icon />
+                              <span className="min-w-0 flex-1 truncate">{f.title}</span>
+                              {unread > 0 && <SidebarCount>{unread}</SidebarCount>}
+                            </button>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
               </SidebarMenuItem>
-            );
-          })}
+            </Collapsible>
+          )}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
@@ -331,7 +403,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
               <SidebarMenuItem>
                 <SidebarMenuButton isActive={sameView(view, { kind: "all" })} onClick={() => onView({ kind: "all" })}>
                   <IconInbox />
-                  <span>All inboxes</span>
+                  <span>All Inboxes</span>
                 </SidebarMenuButton>
                 {totalUnread > 0 && <SidebarMenuBadge>{totalUnread}</SidebarMenuBadge>}
               </SidebarMenuItem>
@@ -343,7 +415,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                   className="[--sidebar-icon-active:var(--star)]"
                 >
                   <IconSparkles />
-                  <span>Clean up</span>
+                  <span>Clean Up</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

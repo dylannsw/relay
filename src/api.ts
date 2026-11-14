@@ -1,10 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { mockInvoke } from "./mock";
 import { mockTelegramEvents } from "./telegram/mock";
-import type { TgChatList, TgEvent, TgMessage, TgStatus } from "./telegram/types";
+import type { TgChatList, TgEvent, TgMessage, TgProgress, TgStatus, TgStickerSet } from "./telegram/types";
 import type {
   Account,
   CalendarConfig,
@@ -59,6 +59,8 @@ export const api = {
   setStarred: (id: string, starred: boolean) => call<void>("set_starred", { id, starred }),
   /** Resolves to the message's id after the move (Outlook gives it a new one). */
   moveMessage: (id: string, folder: Folder) => call<string>("move_message", { id, folder }),
+  /** Moves many at once; returns each message's id afterwards, in the same order. */
+  moveMessages: (ids: string[], folder: Folder) => call<string[]>("move_messages", { ids, folder }),
   send: (message: OutgoingMessage) => call<void>("send_message", { message }),
 
   syncNow: () => call<SyncReport[]>("sync_now"),
@@ -146,6 +148,34 @@ export const api = {
     /** A chat's small profile picture; empty when it has none. */
     chatPhoto: (chatId: string) => call<ArrayBuffer>("telegram_chat_photo", { chatId }),
     photo: (chatId: string, messageId: number) => call<ArrayBuffer>("telegram_photo", { chatId, messageId }),
+    /** A sticker or GIF's file. */
+    sticker: (chatId: string, messageId: number) => call<ArrayBuffer>("telegram_sticker", { chatId, messageId }),
+    /** A video's preview picture. */
+    thumb: (chatId: string, messageId: number) => call<ArrayBuffer>("telegram_thumb", { chatId, messageId }),
+    /** A URL the player can stream a message's photo, video or voice message from (downloaded once, then cached). */
+    mediaUrl: async (chatId: string, messageId: number): Promise<string> => {
+      const path = await call<string>("telegram_media_file", { chatId, messageId });
+      return isTauri ? convertFileSrc(path) : path;
+    },
+    /** Sends a file from this PC (pictures as photos), with an optional caption. */
+    sendFile: (chatId: string, path: string, caption: string, replyTo?: number) =>
+      call<TgMessage>("telegram_send_file", { chatId, path, caption, replyTo: replyTo ?? null }),
+    /** Files chosen in Windows' file picker to send; empty if cancelled. */
+    pickFiles: async (): Promise<string[]> => {
+      if (!isTauri) return ["C:\\Users\\you\\Documents\\Demo-day-schedule.pdf", "C:\\Users\\you\\Pictures\\Team photo.jpg"];
+      const picked = await openDialog({ multiple: true, title: "Attach files" });
+      return Array.isArray(picked) ? picked : picked ? [picked] : [];
+    },
+    /** Your recent stickers, then each installed set. */
+    stickerSets: () => call<TgStickerSet[]>("telegram_sticker_sets"),
+    /** A sticker's file from the picker. */
+    stickerFile: (id: string) => call<ArrayBuffer>("telegram_sticker_file", { id }),
+    sendSticker: (chatId: string, id: string, replyTo?: number) =>
+      call<TgMessage>("telegram_send_sticker", { chatId, id, replyTo: replyTo ?? null }),
+    /** Saves a message's media to Downloads and shows it in File Explorer; the saved path. */
+    saveMedia: (chatId: string, messageId: number) => call<string>("telegram_save_media", { chatId, messageId }),
+    onProgress: (cb: (p: TgProgress) => void): Promise<() => void> =>
+      isTauri ? listen<TgProgress>("telegram-download-progress", (e) => cb(e.payload)) : Promise.resolve(() => {}),
     onUpdated: (cb: (e: TgEvent) => void): Promise<() => void> =>
       isTauri ? listen<TgEvent>("telegram-updated", (e) => cb(e.payload)) : mockTelegramEvents(cb),
   },

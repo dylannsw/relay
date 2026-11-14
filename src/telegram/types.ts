@@ -69,6 +69,42 @@ export interface TgMedia {
   label: string;
   width: number | null;
   height: number | null;
+  /** The file's type: "image/webp", "video/webm", "application/x-tgsticker" (animated stickers), "video/mp4"… */
+  mime: string | null;
+  /** Seconds, for voice messages, videos and audio. */
+  duration?: number | null;
+  /** Bytes, for files. */
+  size?: number | null;
+  /** Voice messages: levels from 0 to 31. */
+  waveform?: number[] | null;
+  /** A round "video message". */
+  round?: boolean;
+}
+
+/** A sticker in the picker. */
+export interface TgSticker {
+  /** The sticker's document id. */
+  id: string;
+  emoji: string;
+  /** "image/webp", "video/webm" or "application/x-tgsticker" (animated). */
+  mime: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface TgStickerSet {
+  /** "recent" for the stickers you used last. */
+  id: string;
+  title: string;
+  stickers: TgSticker[];
+}
+
+/** How far a media download has got. */
+export interface TgProgress {
+  chatId: string;
+  messageId: number;
+  done: number;
+  total: number | null;
 }
 
 export interface TgMessage {

@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { IconAt, IconCheck, IconChecks, IconPinFilled, IconRobot, IconSearch, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
+import { IconAt, IconChecks, IconCopy, IconMessage, IconPin, IconRobot, IconSearch, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { api, errorText } from "@/api";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { patchChat } from "@/telegram/store";
 import { cn } from "@/lib/utils";
 import { quick } from "@/lib/motion";
 import { listDate } from "@/format";
@@ -18,27 +22,32 @@ function KindIcon({ chat }: { chat: TgChat }) {
 function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOpen: () => void }) {
   const unread = chat.unread > 0 || chat.markedUnread;
   const last = chat.last;
-  // Your own last message shows whether it's been read, as in Telegram.
-  const tick = last?.outgoing && chat.kind !== "saved" && chat.kind !== "channel" ? (last.id <= chat.readOutbox ? "read" : "sent") : null;
+  const markRead = () => {
+    patchChat(chat.id, { unread: 0, mentions: 0, markedUnread: false });
+    api.telegram.markRead(chat.id).catch((e) => toast.error(errorText(e)));
+  };
   return (
+    <ContextMenu>
+    <ContextMenuTrigger asChild>
     <button
       type="button"
       data-chat-id={chat.id}
       onClick={onOpen}
       className={cn(
         "flex w-full cursor-default items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-150 select-none",
-        selected ? "bg-muted" : "hover:bg-accent/60",
+        // Light mode tints with the text colour (the list sits on white, where --muted barely shows).
+        selected ? "bg-foreground/[0.07] dark:bg-muted" : "hover:bg-foreground/[0.04] dark:hover:bg-accent/60",
       )}
     >
       <ChatAvatar id={chat.id} name={chat.name} hasPhoto={chat.hasPhoto} saved={chat.kind === "saved"} size={44} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <KindIcon chat={chat} />
-          <span className={cn("min-w-0 truncate text-[15px]", unread ? "font-semibold" : "font-medium")}>{chat.name}</span>
+          <span className="min-w-0 truncate text-[15px] font-semibold">{chat.name}</span>
           {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
-          <span className="ml-auto flex shrink-0 items-center gap-0.5 pl-2 text-xs text-muted-foreground tabular-nums">
-            {tick === "read" && <IconChecks className="size-3.5 text-primary" aria-label="Read" />}
-            {tick === "sent" && <IconCheck className="size-3.5" aria-label="Sent" />}
+          {/* Pin and time share the top row's right end. */}
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[13px] text-muted-foreground tabular-nums">
+            {chat.pinned && <IconPin className="size-4" aria-label="Pinned" />}
             {last && listDate(last.date)}
           </span>
         </div>
@@ -70,16 +79,35 @@ function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOp
                   {chat.unread > 0 ? (chat.unread > 999 ? "999+" : chat.unread) : ""}
                 </motion.span>
               )}
-              {!unread && chat.mentions === 0 && chat.pinned && (
-                <motion.span key="pin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={quick}>
-                  <IconPinFilled className="size-3.5 rotate-45 text-muted-foreground" aria-label="Pinned" />
-                </motion.span>
-              )}
             </AnimatePresence>
           </span>
         </div>
       </div>
     </button>
+    </ContextMenuTrigger>
+    <ContextMenuContent className="w-48">
+      <ContextMenuItem onSelect={onOpen}>
+        <IconMessage />
+        Open chat
+      </ContextMenuItem>
+      {(unread || chat.mentions > 0) && (
+        <ContextMenuItem onSelect={markRead}>
+          <IconChecks />
+          Mark as read
+        </ContextMenuItem>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        onSelect={() => {
+          void navigator.clipboard.writeText(chat.name);
+          toast.success("Name copied");
+        }}
+      >
+        <IconCopy />
+        Copy name
+      </ContextMenuItem>
+    </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -97,7 +125,7 @@ export function ChatList(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg bg-muted px-2.5 text-sm text-muted-foreground focus-within:ring-[3px] focus-within:ring-ring/50">
+        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-foreground/20 dark:focus-within:border-white/20">
           <IconSearch className="size-4 shrink-0" />
           <input
             value={props.query}
@@ -109,7 +137,7 @@ export function ChatList(props: {
         </label>
         {props.filter}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {!props.loaded ? (
           <div className="flex flex-col gap-1 px-1">
             {Array.from({ length: 8 }, (_, i) => (
@@ -125,7 +153,12 @@ export function ChatList(props: {
         ) : props.chats.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground">{props.emptyText}</p>
         ) : (
-          props.chats.map((c) => <Row key={c.id} chat={c} selected={c.id === props.selectedId} onOpen={() => props.onOpen(c)} />)
+          // A 4px gap between rows (as in the sidebar) so hover and selection never touch.
+          <div className="flex flex-col gap-1">
+            {props.chats.map((c) => (
+              <Row key={c.id} chat={c} selected={c.id === props.selectedId} onOpen={() => props.onOpen(c)} />
+            ))}
+          </div>
         )}
       </div>
     </div>

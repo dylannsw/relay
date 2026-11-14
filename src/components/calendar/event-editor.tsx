@@ -210,7 +210,7 @@ export function EventEditor(props: {
         autoFocus={props.mode === "new"}
         value={f.title}
         onChange={(e) => set({ title: e.target.value })}
-        className="h-11 border-transparent px-2 text-xl font-semibold md:text-xl shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
+        className="h-11 border-transparent px-2 text-xl font-semibold md:text-xl shadow-none hover:border-input focus-visible:border-foreground/20 dark:focus-visible:border-white/20 dark:bg-transparent"
       />
 
       <div className="flex flex-col gap-5 text-sm">

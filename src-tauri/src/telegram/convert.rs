@@ -76,7 +76,7 @@ pub struct TgEntity {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TgMedia {
     /// "photo", "video", "gif", "voice", "audio", "file", "sticker", "poll", "location",
@@ -86,6 +86,17 @@ pub struct TgMedia {
     pub label: String,
     pub width: Option<i32>,
     pub height: Option<i32>,
+    /// The file's type, for media Relay draws itself ("image/webp" and "video/webm" stickers,
+    /// "application/x-tgsticker" for animated ones, "video/mp4" for GIFs and videos).
+    pub mime: Option<String>,
+    /// Seconds, for voice messages, videos and audio.
+    pub duration: Option<f64>,
+    /// Bytes, for files.
+    pub size: Option<u64>,
+    /// Voice messages: levels from 0 to 31.
+    pub waveform: Option<Vec<u8>>,
+    /// A round "video message".
+    pub round: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -168,6 +179,16 @@ pub fn chat_from_dialog(dialog: &grammers_client::peer::Dialog) -> Option<ChatEn
         return None; // archive folder or forum entries: not chats
     };
     let peer = dialog.peer().clone();
+    // A basic group upgraded to a supergroup stays in the dialog list as a dead chat whose last
+    // message is the upgrade notice; Telegram's own apps hide it, since the supergroup is the
+    // live chat.
+    if let Peer::Group(g) = &peer {
+        if let tl::enums::Chat::Chat(c) = &g.raw {
+            if c.migrated_to.is_some() || c.deactivated {
+                return None;
+            }
+        }
+    }
     let contact = matches!(&peer, Peer::User(u) if u.contact() || u.is_self());
     let last = dialog.last_message.as_ref().map(|m| preview(m, !matches!(peer, Peer::User(_))));
     Some(ChatEntry {
@@ -266,28 +287,59 @@ fn photo_size(m: &Message) -> Option<(i32, i32)> {
         .max_by_key(|(w, h)| w * h)
 }
 
+/// A voice message's waveform: Telegram packs 5-bit levels (0–31) into bytes, low bits first.
+fn waveform(m: &Message) -> Option<Vec<u8>> {
+    let tl::enums::Message::Message(raw) = &m.raw else { return None };
+    let Some(tl::enums::MessageMedia::Document(md)) = &raw.media else { return None };
+    let Some(tl::enums::Document::Document(doc)) = &md.document else { return None };
+    let packed = doc.attributes.iter().find_map(|a| match a {
+        tl::enums::DocumentAttribute::Audio(a) => a.waveform.as_ref(),
+        _ => None,
+    })?;
+    Some(
+        (0..packed.len() * 8 / 5)
+            .map(|i| {
+                let (byte, shift) = (i * 5 / 8, i * 5 % 8);
+                let pair = u16::from(packed[byte]) | (u16::from(packed.get(byte + 1).copied().unwrap_or(0)) << 8);
+                ((pair >> shift) & 31) as u8
+            })
+            .collect(),
+    )
+}
+
 pub fn media_of(m: &Message) -> Option<TgMedia> {
     let media = m.media()?;
-    let simple = |kind, label: &str| TgMedia { kind, label: label.to_string(), width: None, height: None };
+    let simple = |kind, label: &str| TgMedia { kind, label: label.to_string(), ..Default::default() };
     Some(match media {
         Media::Photo(_) => {
             let (w, h) = photo_size(m).unzip();
-            TgMedia { kind: "photo", label: "Photo".into(), width: w, height: h }
+            TgMedia { kind: "photo", label: "Photo".into(), width: w, height: h, mime: Some("image/jpeg".into()), ..Default::default() }
         }
-        Media::Sticker(s) => simple("sticker", &format!("{} Sticker", s.emoji()).trim_start().to_string()),
+        Media::Sticker(s) => {
+            let (w, h) = s.document.resolution().unzip();
+            TgMedia {
+                kind: "sticker",
+                label: format!("{} Sticker", s.emoji()).trim_start().to_string(),
+                width: w,
+                height: h,
+                mime: s.document.mime_type().map(str::to_string),
+                ..Default::default()
+            }
+        }
         Media::Document(d) => {
             let (voice, round, gif) = document_attrs(m);
             let len = d.duration().map(duration);
             let (w, h) = d.resolution().unzip();
             let mime = d.mime_type().unwrap_or("");
+            let base = TgMedia { mime: Some(mime.to_string()), duration: d.duration(), size: d.size().map(|n| n as u64), ..Default::default() };
             if voice {
-                simple("voice", &len.map_or("Voice message".into(), |l| format!("Voice message · {l}")))
+                TgMedia { kind: "voice", label: len.map_or("Voice message".into(), |l| format!("Voice message · {l}")), waveform: waveform(m), ..base }
             } else if round {
-                simple("video", &len.map_or("Video message".into(), |l| format!("Video message · {l}")))
+                TgMedia { kind: "video", label: len.map_or("Video message".into(), |l| format!("Video message · {l}")), width: w, height: h, round: true, ..base }
             } else if gif || d.is_animated() {
-                TgMedia { kind: "gif", label: "GIF".into(), width: w, height: h }
+                TgMedia { kind: "gif", label: "GIF".into(), width: w, height: h, ..base }
             } else if mime.starts_with("video/") {
-                TgMedia { kind: "video", label: len.map_or("Video".into(), |l| format!("Video · {l}")), width: w, height: h }
+                TgMedia { kind: "video", label: len.map_or("Video".into(), |l| format!("Video · {l}")), width: w, height: h, ..base }
             } else if mime.starts_with("audio/") {
                 let title = [d.performer(), d.audio_title()].into_iter().flatten().collect::<Vec<_>>().join(" – ");
                 simple("audio", if title.is_empty() { d.name().unwrap_or("Audio") } else { &title })

@@ -32,7 +32,7 @@ pub async fn send(req: RequestBuilder, provider: &'static str) -> Result<Respons
         let body = r.text().await.unwrap_or_default();
         let throttled = status == StatusCode::TOO_MANY_REQUESTS
             || status.is_server_error()
-            || (status == StatusCode::FORBIDDEN && body.contains("RateLimitExceeded"));
+            || (status == StatusCode::FORBIDDEN && body.to_ascii_lowercase().contains("ratelimitexceeded"));
         if throttled && attempt < MAX_ATTEMPTS {
             tokio::time::sleep(Duration::from_millis(retry_after.unwrap_or(delay_ms).min(30_000)))
                 .await;

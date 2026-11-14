@@ -93,6 +93,7 @@ fn main() {
             commands::set_read,
             commands::set_starred,
             commands::move_message,
+            commands::move_messages,
             commands::send_message,
             commands::sync_now,
             commands::save_tasks_config,
@@ -127,6 +128,14 @@ fn main() {
             telegram::telegram_mark_read,
             telegram::telegram_chat_photo,
             telegram::telegram_photo,
+            telegram::telegram_sticker,
+            telegram::telegram_media_file,
+            telegram::telegram_thumb,
+            telegram::telegram_save_media,
+            telegram::telegram_send_file,
+            telegram::stickers::telegram_sticker_sets,
+            telegram::stickers::telegram_sticker_file,
+            telegram::stickers::telegram_send_sticker,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Relay");

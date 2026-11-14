@@ -17,7 +17,8 @@ import {
   IconMicrophone,
   IconMusic,
   IconPhoto,
-  IconSend2,
+  IconPlayerPlayFilled,
+  IconPaperclip,
   IconSticker,
   IconUser,
   IconVideo,
@@ -34,9 +35,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
-import type { TgChat, TgMedia, TgMessage } from "@/telegram/types";
+import type { TgChat, TgMedia, TgMessage, TgSticker } from "@/telegram/types";
 import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
 import { MessageText } from "./message-text";
+import { InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
+import { GlanceHost, openGlance } from "./glance";
+import { VoiceMessage } from "./voice-message";
+import { StickerArt, useInView, useObjectUrl } from "./sticker-view";
+import { StickerPicker } from "./sticker-picker";
 
 const PAGE = 50;
 /** Messages from the same person this close together share one run (one name, one avatar, one tail). */
@@ -87,7 +94,8 @@ function subtitle(c: TgChat): string | null {
  * A message as shown: Telegram's, or one you just sent that Telegram hasn't confirmed yet
  * ("sending", with a negative stand-in id) or that didn't go through ("failed").
  */
-type Shown = TgMessage & { pending?: "sending" | "failed" };
+/** A message as shown: pending ones carry how sending went, and a file being sent its path (for Try again). */
+type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker };
 
 let tempSeq = 0;
 
@@ -249,7 +257,9 @@ export function Conversation({ chat }: { chat: TgChat }) {
    * Sends the way Telegram does: the bubble is there at once with a clock, becomes Telegram's
    * message (ticks) when it's confirmed, or turns red with Try again if it fails.
    */
-  const send = (text: string, reply: TgMessage | null, retryOf?: number) => {
+  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker } = {}, after?: Promise<unknown>): Promise<unknown> => {
+    const { file, sticker } = what;
+    const name = file?.split(/[\\/]/).pop() ?? "";
     const temp: Shown = {
       id: -++tempSeq,
       chatId: chat.id,
@@ -259,8 +269,14 @@ export function Conversation({ chat }: { chat: TgChat }) {
       senderName: "You",
       text,
       entities: [],
-      media: null,
-      reply: reply ? { id: reply.id, sender: reply.outgoing ? "You" : reply.senderName, text: reply.text || reply.media?.label || "Message" } : null,
+      media: file
+        ? { kind: "file", label: name, width: null, height: null, mime: null }
+        : sticker
+          ? { kind: "sticker", label: `${sticker.emoji} Sticker`.trim(), width: sticker.width, height: sticker.height, mime: sticker.mime }
+          : null,
+      file,
+      sticker,
+      reply: reply ?{ id: reply.id, sender: reply.outgoing ? "You" : reply.senderName, text: reply.text || reply.media?.label || "Message" } : null,
       forwardedFrom: null,
       edited: false,
       service: null,
@@ -270,18 +286,37 @@ export function Conversation({ chat }: { chat: TgChat }) {
     stickToBottom.current = true;
     setReplyTo(null);
     setMessages((list) => [...(list ?? []).filter((x) => x.id !== retryOf), temp]);
-    api.telegram.send(chat.id, text, reply?.id).then(
-      (m) => setMessages((list) => (list ? settle(list, temp.id, m) : list)),
-      (e) => {
-        setMessages((list) => list?.map((x) => (x.id === temp.id ? { ...x, pending: "failed" as const } : x)) ?? list);
-        toast.error(errorText(e));
-      },
-    );
+    // Files go one after another, so they arrive in the order they were attached.
+    return (after ?? Promise.resolve())
+      .catch(() => {})
+      .then(() =>
+        sticker
+          ? api.telegram.sendSticker(chat.id, sticker.id, reply?.id)
+          : file
+            ? api.telegram.sendFile(chat.id, file, text, reply?.id)
+            : api.telegram.send(chat.id, text, reply?.id),
+      )
+      .then(
+        (m) => setMessages((list) => (list ? settle(list, temp.id, m) : list)),
+        (e) => {
+          setMessages((list) => list?.map((x) => (x.id === temp.id ? { ...x, pending: "failed" as const } : x)) ?? list);
+          toast.error(errorText(e));
+        },
+      );
+  };
+
+  /** The caption (and the reply) go with the first file. */
+  const sendAll = (text: string, files: string[]) => {
+    if (!files.length) {
+      void send(text, replyTo);
+      return;
+    }
+    files.reduce<Promise<unknown> | undefined>((prev, f, i) => send(i === 0 ? text : "", i === 0 ? replyTo : null, undefined, { file: f }, prev), undefined);
   };
 
   const retry = (m: Shown) => {
     const reply = m.reply ? (messages?.find((x) => x.id === m.reply!.id) ?? null) : null;
-    send(m.text, reply, m.id);
+    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker });
   };
   const discard = (m: Shown) => setMessages((list) => list?.filter((x) => x.id !== m.id) ?? list);
 
@@ -290,6 +325,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
+      <GlanceHost />
       <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
         <ChatAvatar id={chat.id} name={chat.name} hasPhoto={chat.hasPhoto} saved={chat.kind === "saved"} size={32} />
         <div className="min-w-0 flex-1">
@@ -302,7 +338,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={onScroll} className="absolute inset-0 overflow-y-auto overscroll-contain px-4 pt-3 pb-2 [scrollbar-gutter:stable]">
+        <div ref={scroller} onScroll={onScroll} className="absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3 pb-2">
           {error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !messages ? (
@@ -370,7 +406,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
         </AnimatePresence>
       </div>
 
-      <Composer ref={composer} chat={chat} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={(text) => send(text, replyTo)} />
+      <Composer ref={composer} chat={chat} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={sendAll} onSticker={(s) => void send("", replyTo, undefined, { sticker: s })} />
     </div>
   );
 }
@@ -425,31 +461,102 @@ const MEDIA_ICONS: Record<TgMedia["kind"], typeof IconFile> = {
   other: IconFile,
 };
 
-/** Photos sent in chats, loaded once while Relay is open. */
-const photoUrls = new Map<string, Promise<string>>();
+/** Media sent in chats, loaded once while Relay is open. */
+const mediaLoads = new Map<string, Promise<ArrayBuffer>>();
 
-function Photo({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
-  const [url, setUrl] = useState<string | null>(null);
+/** The message's media bytes (or null while loading), and whether loading failed. */
+function useMediaBytes(chatId: string, m: TgMessage, kind: "photo" | "sticker" | "thumb") {
+  const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    const key = `${chatId}:${m.id}`;
-    let p = photoUrls.get(key);
+    const key = `${kind}:${chatId}:${m.id}`;
+    let p = mediaLoads.get(key);
     if (!p) {
-      p = api.telegram.photo(chatId, m.id).then((b) => URL.createObjectURL(new Blob([b], { type: "image/jpeg" })));
-      p.catch(() => photoUrls.delete(key));
-      photoUrls.set(key, p);
+      // A sticker still being sent loads from the picker's copy.
+      const picked = kind === "sticker" ? (m as Shown).sticker : undefined;
+      p = picked ? api.telegram.stickerFile(picked.id) : kind === "photo" ? api.telegram.photo(chatId, m.id) : kind === "thumb" ? api.telegram.thumb(chatId, m.id) : api.telegram.sticker(chatId, m.id);
+      p.catch(() => mediaLoads.delete(key));
+      mediaLoads.set(key, p);
     }
     let live = true;
-    p.then((u) => live && setUrl(u), () => live && setFailed(true));
+    p.then((b) => live && setBytes(b), () => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [chatId, m.id]);
-  // Hold the photo's shape while it loads, within 320×360.
-  const w = media.width ?? 4;
-  const h = media.height ?? 3;
+  }, [chatId, m.id, kind]);
+  return { bytes, failed };
+}
+
+/** A photo or GIF's size in the bubble: its own shape, within 320×360. */
+function frameStyle(media: TgMedia): CSSProperties {
+  const w = media.width || 4;
+  const h = media.height || 3;
   const scale = Math.min(320 / w, 360 / h, 1.5);
-  const style: CSSProperties = { width: Math.max(140, Math.round(w * scale)), aspectRatio: `${w} / ${h}` };
+  return { width: Math.max(140, Math.round(w * scale)), aspectRatio: `${w} / ${h}` };
+}
+
+/** Where media couldn't load. Room at the bottom for the time, which sits over the corner. */
+function MediaFailed({ icon: Icon, children }: { icon: typeof IconFile; children: ReactNode }) {
+  return (
+    <div className="flex min-w-48 items-center gap-2 px-3 pt-2.5 pb-8 text-sm opacity-80">
+      <Icon className="size-4.5 shrink-0" />
+      {children}
+    </div>
+  );
+}
+
+/** A GIF: Telegram sends these as short silent videos, which loop while on screen. */
+function Gif({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
+  const { bytes, failed } = useMediaBytes(chatId, m, "sticker");
+  const url = useObjectUrl(bytes, media.mime ?? "video/mp4");
+  const [ref, inView] = useInView<HTMLVideoElement>();
+  useEffect(() => {
+    const v = ref.current;
+    if (!v || !url) return;
+    if (inView) void v.play().catch(() => {});
+    else v.pause();
+  }, [inView, url, ref]);
+  if (failed) return <MediaFailed icon={IconVideo}>GIF couldn't load</MediaFailed>;
+  return (
+    <video
+      ref={ref}
+      src={url ?? undefined}
+      muted
+      loop
+      playsInline
+      disablePictureInPicture
+      style={frameStyle(media)}
+      className={cn("block max-w-full object-cover", !url && "animate-pulse bg-current/10")}
+    />
+  );
+}
+
+const STICKER_SIZE = 176;
+
+/** A sticker, drawn without a bubble: a still image, a short video, or a Lottie animation. */
+function Sticker({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
+  const { bytes, failed } = useMediaBytes(chatId, m, "sticker");
+  const mime = media.mime ?? "image/webp";
+  const w = media.width || 512;
+  const h = media.height || 512;
+  const scale = STICKER_SIZE / Math.max(w, h);
+  const style: CSSProperties = { width: Math.round(w * scale), height: Math.round(h * scale) };
+  if (failed) {
+    return (
+      <div className="rounded-2xl bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] px-3 py-1.5">
+        <MediaChip media={media} />
+        <div className="h-4" />
+      </div>
+    );
+  }
+  if (!bytes) return <div style={style} className="animate-pulse rounded-2xl bg-current/8" />;
+  return <StickerArt bytes={bytes} mime={mime} style={style} />;
+}
+
+function Photo({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
+  const { bytes, failed } = useMediaBytes(chatId, m, "photo");
+  const url = useObjectUrl(bytes, "image/jpeg");
+  const style = frameStyle(media);
   if (failed) {
     // Room at the bottom for the time, which sits over the photo's corner.
     return (
@@ -460,9 +567,49 @@ function Photo({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMe
     );
   }
   return url ? (
-    <img src={url} alt="" draggable={false} style={style} className="block max-w-full object-cover" />
+    <button
+      type="button"
+      aria-label="Open photo"
+      onClick={(e) => openGlance({ chatId, messageId: m.id, kind: "photo", source: e.currentTarget, preview: url, width: media.width, height: media.height })}
+      className="block max-w-full cursor-zoom-in"
+    >
+      <img src={url} alt="" draggable={false} style={style} className="block max-w-full object-cover" />
+    </button>
   ) : (
     <div style={style} className="max-w-full animate-pulse bg-current/10" />
+  );
+}
+
+function videoLength(media: TgMedia) {
+  if (media.duration == null) return null;
+  const t = Math.round(media.duration);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+}
+
+/** A video in a bubble: its preview picture with a play button; opens in a glance to play. */
+function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
+  const { bytes, failed } = useMediaBytes(chatId, m, "thumb");
+  const url = useObjectUrl(bytes, "image/jpeg");
+  const round = !!media.round;
+  const style: CSSProperties = round ? { width: 200, height: 200 } : frameStyle(media);
+  const length = videoLength(media);
+  return (
+    <button
+      type="button"
+      aria-label={round ? "Play video message" : "Play video"}
+      onClick={(e) => openGlance({ chatId, messageId: m.id, kind: "video", source: e.currentTarget, preview: url, width: round ? 360 : media.width, height: round ? 360 : media.height, round })}
+      style={style}
+      className={cn("relative block max-w-full overflow-hidden bg-black/80", round && "rounded-full")}
+    >
+      {url && <img src={url} alt="" draggable={false} className="absolute inset-0 size-full object-cover" />}
+      {!url && !failed && <span className="absolute inset-0 animate-pulse bg-white/10" />}
+      <span className="absolute inset-0 flex items-center justify-center">
+        <span className="flex size-12 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
+          <IconPlayerPlayFilled className="size-5" />
+        </span>
+      </span>
+      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-black/45 px-1.5 py-1 text-[11px] leading-none text-white tabular-nums">{length}</span>}
+    </button>
   );
 }
 
@@ -473,7 +620,7 @@ function mediaHint(kind: TgMedia["kind"]): string {
   return "Open Telegram to see it";
 }
 
-function MediaChip({ media }: { media: TgMedia }) {
+function MediaChip({ media, hint }: { media: TgMedia; hint?: string }) {
   const Icon = MEDIA_ICONS[media.kind];
   return (
     <span className="flex items-center gap-2.5">
@@ -482,7 +629,7 @@ function MediaChip({ media }: { media: TgMedia }) {
       </span>
       <span className="min-w-0">
         <span className="block truncate font-medium">{media.label}</span>
-        <span className="block text-xs opacity-70">{mediaHint(media.kind)}</span>
+        <span className="block text-xs opacity-70">{hint ?? mediaHint(media.kind)}</span>
       </span>
     </span>
   );
@@ -522,8 +669,12 @@ function Bubble(props: {
   const out = m.outgoing;
   const failed = m.pending === "failed";
   const read = out && !m.pending && m.id <= chat.readOutbox;
-  const photo = m.media?.kind === "photo" ? m.media : null;
-  const otherMedia = m.media && m.media.kind !== "photo" ? m.media : null;
+  // Photos, GIFs and videos fill the bubble's width; stickers and round video messages go without a bubble.
+  const media = m.media;
+  const round = media?.kind === "video" && !!media.round;
+  const photo = media && (media.kind === "photo" || media.kind === "gif" || (media.kind === "video" && !round)) ? media : null;
+  const sticker = media && ((media.kind === "sticker" && media.mime) || round) ? media : null;
+  const otherMedia = media && !photo && !sticker ? media : null;
   const hasText = m.text.trim().length > 0;
   const photoOnly = photo && !hasText && !m.reply && !m.forwardedFrom && !props.showName;
   const color = peerColor(m.senderId);
@@ -538,7 +689,7 @@ function Bubble(props: {
   };
 
   return (
-    <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-2" : "pt-0.5", out ? "justify-end" : "justify-start")}>
+    <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-3" : "pt-1", out ? "justify-end" : "justify-start")}>
       {props.showAvatar && (
         <div className="w-8 shrink-0 self-end">
           {last && <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={32} />}
@@ -559,6 +710,40 @@ function Bubble(props: {
       )}
       <ContextMenu>
         <ContextMenuTrigger asChild>
+          {sticker ? (
+            <div onDoubleClick={m.pending ? undefined : props.onReply} className="relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-[14.5px] leading-[1.4]">
+              {(props.showName || m.forwardedFrom !== null || m.reply) && (
+                <div className={cn("min-w-0 self-start rounded-2xl bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] px-3 py-1.5", out && "self-end")}>
+                  {props.showName && (
+                    <div style={{ "--peer": color } as CSSProperties} className={cn("truncate text-[13px] font-semibold", nameColorClass)}>
+                      {m.senderName}
+                    </div>
+                  )}
+                  {m.forwardedFrom !== null && (
+                    <div className="truncate text-xs opacity-75">
+                      Forwarded{m.forwardedFrom ? <> from <span className="font-medium">{m.forwardedFrom}</span></> : null}
+                    </div>
+                  )}
+                  {m.reply && (
+                    <button
+                      type="button"
+                      onClick={() => m.reply && props.onJump(m.reply.id)}
+                      className="mt-0.5 flex w-full min-w-0 flex-col rounded-md border-l-[3px] border-sky-500 bg-sky-500/10 px-2 py-1 text-left text-[13px] leading-snug"
+                    >
+                      <span className="truncate font-semibold text-sky-700 dark:text-sky-300">{m.reply.sender ?? "Reply"}</span>
+                      <span className="truncate opacity-80">{m.reply.text || "Message"}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className={cn("relative", out && "self-end")}>
+                {round ? <VideoThumb chatId={chat.id} m={m} media={sticker} /> : <Sticker chatId={chat.id} m={m} media={sticker} />}
+                <span className="absolute right-1 bottom-1">
+                  <Meta m={m} read={read} overlay />
+                </span>
+              </div>
+            </div>
+          ) : (
           <div
             onDoubleClick={m.pending ? undefined : props.onReply}
             className={cn(
@@ -590,12 +775,18 @@ function Bubble(props: {
             )}
             {photo && (
               <div className={cn(!photoOnly && "-mx-3 mt-1", !photoOnly && !hasText && "-mb-1.5", hasText && "mb-1.5", !photoOnly && !props.showName && !m.reply && !m.forwardedFrom && "-mt-1.5")}>
-                <Photo chatId={chat.id} m={m} media={photo} />
+                {photo.kind === "gif" ? (
+                  <Gif chatId={chat.id} m={m} media={photo} />
+                ) : photo.kind === "video" ? (
+                  <VideoThumb chatId={chat.id} m={m} media={photo} />
+                ) : (
+                  <Photo chatId={chat.id} m={m} media={photo} />
+                )}
               </div>
             )}
             {otherMedia && (
               <div className={cn("py-1", hasText && "mb-1")}>
-                <MediaChip media={otherMedia} />
+                {otherMedia.kind === "voice" ? <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} outgoing={out} /> : <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />}
               </div>
             )}
             {hasText ? (
@@ -607,7 +798,9 @@ function Bubble(props: {
                 </span>
               </div>
             ) : (
-              !photoOnly && (
+              // A voice message's duration line leaves room for the time at its right.
+              !photoOnly &&
+              otherMedia?.kind !== "voice" && (
                 <div className="flex justify-end">
                   <span aria-hidden className="invisible">
                     <Meta m={m} read={read} />
@@ -619,6 +812,7 @@ function Bubble(props: {
               <Meta m={m} read={read} overlay={!!photoOnly} />
             </span>
           </div>
+          )}
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44">
           {failed && (
@@ -676,14 +870,18 @@ function Composer(props: {
   chat: TgChat;
   replyTo: TgMessage | null;
   onCancelReply: () => void;
-  onSend: (text: string) => void;
+  /** The text (the caption, with files), and the files to send. */
+  onSend: (text: string, files: string[]) => void;
+  onSticker: (s: TgSticker) => void;
 }) {
   const { chat, replyTo } = props;
   const [text, setText] = useState(() => drafts.get(chat.id) ?? "");
+  const [files, setFiles] = useState<string[]>([]);
   const area = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setText(drafts.get(chat.id) ?? "");
+    setFiles([]);
   }, [chat.id]);
 
   // Grow with the text, up to about eight lines.
@@ -700,20 +898,31 @@ function Composer(props: {
     else drafts.delete(chat.id);
   };
 
-  // The box empties straight away and you can keep typing; the bubble shows how sending went.
+  // The box empties straight away and you can keep typing; the bubbles show how sending went.
   const send = () => {
     const body = text.trimEnd();
-    if (!body.trim()) return;
+    if (!body.trim() && !files.length) return;
     update("");
-    props.onSend(body);
+    setFiles([]);
+    props.onSend(body, files);
     area.current?.focus();
   };
 
-  const canSend = text.trim().length > 0;
+  const attach = () => {
+    api.telegram
+      .pickFiles()
+      .then((picked) => {
+        if (picked.length) setFiles((list) => [...list, ...picked.filter((p) => !list.includes(p))]);
+      })
+      .catch((e) => toast.error(errorText(e)))
+      .finally(() => area.current?.focus());
+  };
+
+  const canSend = text.trim().length > 0 || files.length > 0;
 
   return (
     <div className="shrink-0 px-4 pt-1 pb-3">
-      <div className="mx-auto max-w-3xl">
+      <ComposerTray className="mx-auto max-w-3xl">
         <AnimatePresence initial={false}>
           {replyTo && (
             <motion.div
@@ -724,7 +933,7 @@ function Composer(props: {
               transition={quick}
               className="overflow-hidden"
             >
-              <div className="mb-1.5 flex items-center gap-2.5 rounded-lg bg-muted px-3 py-1.5">
+              <div className="flex items-center gap-2.5 pt-0.5 pr-0.5 pb-1.5 pl-3">
                 <IconCornerUpLeft className="size-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1 text-[13px] leading-snug">
                   <div className="truncate font-semibold text-primary">Reply to {replyTo.outgoing ? "yourself" : (replyTo.senderName ?? chat.name)}</div>
@@ -738,8 +947,15 @@ function Composer(props: {
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="flex items-end gap-2 rounded-2xl border bg-card py-1.5 pr-1.5 pl-3.5 shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-          <textarea
+        <ComposerField>
+          {files.length > 0 && (
+            <InputGroupAddon align="block-start" className="flex-wrap gap-1.5 px-3 pt-3 pb-0">
+              {files.map((f) => (
+                <AttachedFile key={f} path={f} onRemove={() => setFiles((list) => list.filter((x) => x !== f))} />
+              ))}
+            </InputGroupAddon>
+          )}
+          <InputGroupTextarea
             ref={(el) => {
               area.current = el;
               if (typeof props.ref === "function") props.ref(el);
@@ -758,24 +974,44 @@ function Composer(props: {
                 props.onCancelReply();
               }
             }}
-            placeholder={chat.kind === "saved" ? "Write a note" : `Message ${chat.name}`}
-            className="max-h-50 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[14.5px] leading-[1.4] outline-none placeholder:text-muted-foreground"
+            placeholder={files.length ? "Add a caption…" : chat.kind === "saved" ? "Write a note…" : `Message ${chat.name}…`}
+            aria-label="Message"
+            className="no-scrollbar max-h-50 min-h-0 pt-3 pr-4 pb-1 pl-[18px] text-[15px] leading-[1.4] md:text-[15px]"
           />
+          <ComposerSubmit ready={canSend} label="Send" hint="Send (Enter)" onClick={send} />
+        </ComposerField>
+        <ComposerOptions>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button size="icon-sm" className="mb-px shrink-0 rounded-full" disabled={!canSend} onClick={send}>
-                <IconSend2 />
-                <span className="sr-only">Send</span>
+              <Button type="button" variant="ghost" size="sm" onClick={attach} className="text-muted-foreground">
+                <IconPaperclip />
+                Attach
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              Send <span className="text-muted-foreground">Enter</span>
-            </TooltipContent>
+            <TooltipContent>Attach files or pictures</TooltipContent>
           </Tooltip>
-        </div>
-        <p className="mt-1 px-1 text-[11px] text-muted-foreground">Shift+Enter for a new line</p>
-      </div>
+          <StickerPicker onPick={props.onSticker} onClosed={() => area.current?.focus()} />
+        </ComposerOptions>
+      </ComposerTray>
     </div>
+  );
+}
+
+const PICTURE = /\.(jpe?g|png|webp|gif)$/i;
+
+/** A file waiting to be sent, with a button to take it off. */
+function AttachedFile({ path, onRemove }: { path: string; onRemove: () => void }) {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  const Icon = PICTURE.test(name) ? IconPhoto : IconFile;
+  return (
+    <span className="flex h-8 max-w-60 items-center gap-1.5 rounded-lg border bg-muted pr-0.5 pl-2 text-[13px] text-foreground dark:bg-sidebar" title={path}>
+      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <span className="truncate">{name}</span>
+      <Button type="button" variant="ghost" size="icon-xs" className="shrink-0 text-muted-foreground" onClick={onRemove}>
+        <IconX />
+        <span className="sr-only">Remove {name}</span>
+      </Button>
+    </span>
   );
 }
 

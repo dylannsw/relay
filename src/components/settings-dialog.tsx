@@ -170,7 +170,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <MailWindow
-        className="h-[min(90svh,54rem)] sm:max-w-4xl"
+        className="h-[min(90svh,54rem)] sm:max-w-5xl"
         // While a shortcut is being recorded, Escape cancels that rather than closing Settings.
         onEscapeKeyDown={(e) => isRecordingShortcut() && e.preventDefault()}
         onClose={onClose}
@@ -278,7 +278,7 @@ function DisplayNameField({ accounts }: { accounts: Account[] }) {
       onBlur={commit}
       onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
       placeholder={fallback || "Your name"}
-      className="w-56 shrink-0"
+      className={FIELD_WIDTH}
     />
   );
 }
@@ -460,50 +460,48 @@ function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onA
   const sync = () => syncCalendars().catch((e) => toast.error(errorText(e)));
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="flex flex-col divide-y">
-        {google.length > 0 && (
-          <SettingRow title="Default calendar" description="New events go here. You can pick another calendar on each event.">
-            <Select
-              value={defaultCal?.id ?? ""}
-              onValueChange={(id) => void setDefaultCalendar(id).catch((e) => toast.error(errorText(e)))}
-              disabled={writable.length === 0}
-            >
-              <SelectTrigger className="w-60 shrink-0">
-                <SelectValue placeholder="No calendar yet" />
-              </SelectTrigger>
-              <SelectContent>
-                {google.map((a) => {
-                  const own = writable.filter((c) => c.accountId === a.id);
-                  if (own.length === 0) return null;
-                  return (
-                    <SelectGroup key={a.id}>
-                      <SelectLabel>{a.email}</SelectLabel>
-                      {own.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.colors.base }} />
-                          <span className="truncate">{calendarName(c)}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </SettingRow>
-        )}
-        <SettingRow
-          title="Sync"
-          description={`Relay checks Google calendars every 5 minutes and subscribed ones every 15${lastSync ? `; last synced ${relativeTime(lastSync)}` : ""}.`}
-        >
-          <Button variant="outline" className="shrink-0" disabled={cal.syncing} onClick={() => void sync()}>
-            {cal.syncing ? <Spinner /> : <IconRefresh />}
-            Sync now
-          </Button>
+    <div className="flex flex-col divide-y">
+      {google.length > 0 && (
+        <SettingRow title="Default calendar" description="New events go here. You can pick another calendar on each event.">
+          <Select
+            value={defaultCal?.id ?? ""}
+            onValueChange={(id) => void setDefaultCalendar(id).catch((e) => toast.error(errorText(e)))}
+            disabled={writable.length === 0}
+          >
+            <SelectTrigger className={FIELD_WIDTH}>
+              <SelectValue placeholder="No calendar yet" />
+            </SelectTrigger>
+            <SelectContent>
+              {google.map((a) => {
+                const own = writable.filter((c) => c.accountId === a.id);
+                if (own.length === 0) return null;
+                return (
+                  <SelectGroup key={a.id}>
+                    <SelectLabel>{a.email}</SelectLabel>
+                    {own.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.colors.base }} />
+                        <span className="truncate">{calendarName(c)}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                );
+              })}
+            </SelectContent>
+          </Select>
         </SettingRow>
-      </div>
+      )}
+      <SettingRow
+        title="Sync"
+        description={`Relay checks Google calendars every 5 minutes and subscribed ones every 15${lastSync ? `; last synced ${relativeTime(lastSync)}` : ""}.`}
+      >
+        <Button variant="outline" className="shrink-0" disabled={cal.syncing} onClick={() => void sync()}>
+          {cal.syncing ? <Spinner /> : <IconRefresh />}
+          Sync now
+        </Button>
+      </SettingRow>
       {cal.error && (
-        <p className="flex items-start gap-2 text-sm text-destructive">
+        <p className="flex items-start gap-2 py-4 text-sm text-destructive">
           <IconAlertCircle className="mt-0.5 size-4 shrink-0" />
           {cal.error}
         </p>
@@ -567,11 +565,11 @@ function Subsection({ title, description, action, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-3 py-5">
       <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium">{title}</h3>
-          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {description && <p className="text-[13px] leading-snug text-muted-foreground">{description}</p>}
         </div>
         {action}
       </div>
@@ -1010,23 +1008,21 @@ function MailTab() {
 
   return (
     <div className="flex flex-col divide-y">
-      <SettingRow title="Check for new mail" description="How often Relay asks Google and Microsoft for new messages.">
+      <SettingRow title="Check for new mail" description="How many seconds Relay waits between asking Google and Microsoft for new messages.">
         <NumberField
           label="Seconds between checks"
           value={cfg.syncIntervalSecs}
           min={30}
           max={3600}
-          unit="seconds"
           onCommit={(n) => void commit({ syncIntervalSecs: n })}
         />
       </SettingRow>
-      <SettingRow title="Messages kept per account" description="How many of each account's latest messages Relay keeps on this PC.">
+      <SettingRow title="Messages kept per account" description="For Microsoft accounts: how many of the latest messages Relay keeps on this PC. Gmail keeps your whole mailbox.">
         <NumberField
           label="Messages kept per account"
           value={cfg.messagesPerAccount}
           min={10}
           max={500}
-          unit="messages"
           onCommit={(n) => void commit({ messagesPerAccount: n })}
         />
       </SettingRow>
@@ -1034,13 +1030,12 @@ function MailTab() {
   );
 }
 
-/** A number box with its unit after it; saves (clamped to its range) on Enter or leaving it. */
-function NumberField({ label, value, min, max, unit, onCommit }: {
+/** A short number box; saves (clamped to its range) on Enter or leaving it. */
+function NumberField({ label, value, min, max, onCommit }: {
   label: string;
   value: number;
   min: number;
   max: number;
-  unit: string;
   onCommit: (n: number) => void;
 }) {
   const [text, setText] = useState(String(value));
@@ -1052,21 +1047,18 @@ function NumberField({ label, value, min, max, unit, onCommit }: {
     if (next !== value) onCommit(next);
   };
   return (
-    <div className="flex shrink-0 items-center gap-2.5">
-      <Input
-        aria-label={label}
-        type="number"
-        inputMode="numeric"
-        min={min}
-        max={max}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        className="w-24 text-right tabular-nums"
-      />
-      <span className="w-18 text-sm text-muted-foreground">{unit}</span>
-    </div>
+    <Input
+      aria-label={label}
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+      className="w-24 text-right tabular-nums"
+    />
   );
 }
 
@@ -1337,15 +1329,20 @@ function SettingRow({ title, description, children, stacked }: {
   stacked?: boolean;
 }) {
   return (
-    <div className={cn("flex gap-4 py-5 first:pt-0", stacked ? "flex-col" : "items-center justify-between")}>
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-sm text-muted-foreground">{description}</div>
+    // Every row shares one control column, so the text wraps at the same width and controls line up
+    // on the right edge. Text boxes and dropdowns use FIELD_WIDTH so they match each other.
+    <div className={cn("py-5 first:pt-0", stacked ? "flex flex-col gap-4" : "grid grid-cols-[minmax(0,1fr)_16rem] items-center gap-12")}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-[13px] leading-snug text-muted-foreground">{description}</div>
       </div>
-      {children}
+      {stacked ? children : <div className="flex min-w-0 justify-end">{children}</div>}
     </div>
   );
 }
+
+/** The one width for text boxes and dropdowns in setting rows, so they match across Settings. */
+const FIELD_WIDTH = "w-48";
 
 const THEMES = [
   { id: "light", label: "Light" },
@@ -1575,9 +1572,9 @@ function AppearanceTab() {
         </div>
       </SettingRow>
       <SettingRow title="Notification position" description="Where Relay's pop-up notifications appear.">
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex items-center gap-2">
           <Select value={prefs.toastPosition} onValueChange={(v) => setAppearance({ toastPosition: v as ToastPosition })}>
-            <SelectTrigger className="w-40 shrink-0">
+            <SelectTrigger className={FIELD_WIDTH}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

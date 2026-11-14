@@ -30,9 +30,6 @@ export interface SendersProps {
   groups: SenderGroup[];
   /** Keys of the groups ticked for whole-group actions. */
   checked: Set<string>;
-  /** Messages kept synced per account: the view only sees these. */
-  syncedPerAccount: number;
-  accountCount: number;
   onToggle: (g: SenderGroup) => void;
   onCheckAll: (on: boolean) => void;
   /** Moves every message of the ticked groups. */
@@ -50,17 +47,6 @@ export interface SendersProps {
   onNarrow: (address: string | null) => void;
   /** Ticks everything in the open group but its newest message. */
   onKeepLatest: () => void;
-}
-
-/** "From your latest 100 emails": what Clean up can and can't see. */
-export function SyncedNote({ s, className }: { s: SendersProps; className?: string }) {
-  // Archive keeps at most 50 synced messages per account (see `folder_max` in sync.rs).
-  const n = s.folder === "archive" ? Math.min(50, s.syncedPerAccount) : s.syncedPerAccount;
-  return (
-    <p className={cn("text-sm text-muted-foreground", className)}>
-      From your latest {n} {s.folder === "archive" ? "archived " : ""}emails{s.accountCount > 1 ? " per account" : ""}
-    </p>
-  );
 }
 
 /** How far each card behind a group's row peeks out below it, in px. */
@@ -87,7 +73,6 @@ export function SenderRows({ s }: { s: SendersProps }) {
             </motion.div>
           ))}
         </AnimatePresence>
-        <SyncedNote s={s} className="pt-1 pb-3 text-center" />
       </div>
     </ScrollArea>
   );

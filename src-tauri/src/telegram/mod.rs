@@ -7,6 +7,7 @@
 
 mod convert;
 mod session;
+pub mod stickers;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -79,6 +80,7 @@ pub struct Telegram {
     dir: PathBuf,
     inner: tokio::sync::Mutex<Inner>,
     chats: RwLock<Chats>,
+    stickers: RwLock<stickers::StickerCache>,
 }
 
 #[derive(Serialize)]
@@ -157,6 +159,7 @@ impl Telegram {
             dir,
             inner: tokio::sync::Mutex::new(Inner { conn: None, login: Login::None, error: None }),
             chats: RwLock::new(Chats::default()),
+            stickers: RwLock::new(stickers::StickerCache::default()),
         }
     }
 
@@ -615,6 +618,7 @@ pub async fn telegram_sign_out(tg: Tg<'_>) -> Result<TgStatus> {
     inner.error = None;
     *tg.chats.write().expect("chats lock") = Chats::default();
     let _ = std::fs::remove_file(tg.session_path());
+    tg.forget_stickers();
     let _ = std::fs::remove_dir_all(tg.dir.join("media"));
     let _ = std::fs::create_dir_all(tg.dir.join("media"));
     Ok(tg.status_of(&inner).await)
@@ -670,6 +674,40 @@ pub async fn telegram_send(app: AppHandle, tg: Tg<'_>, chat_id: String, text: St
     .await
     .map_err(|_| msg("Telegram didn't confirm the message in time. It may still have been sent; check the chat before sending it again."))?
     .map_err(tg_error)?;
+    sent_message(&app, &tg, &client, id, sent).await
+}
+
+/// Sends a file from this PC, with an optional caption. Pictures go as photos, anything else as a file.
+#[tauri::command]
+pub async fn telegram_send_file(app: AppHandle, tg: Tg<'_>, chat_id: String, path: String, caption: String, reply_to: Option<i32>) -> Result<TgMessage> {
+    let file = Path::new(&path);
+    let size = std::fs::metadata(file).map_err(|_| msg("That file can't be read."))?.len();
+    if size == 0 {
+        return Err(msg("That file is empty."));
+    }
+    if size > 2000 * 1024 * 1024 {
+        return Err(msg("Telegram only takes files up to 2 GB."));
+    }
+    let (client, media) = {
+        let inner = tg.inner.lock().await;
+        (Telegram::client(&inner)?, Telegram::media_client(&inner)?)
+    };
+    let (id, peer) = tg.entry(&chat_id)?;
+    let uploaded = media.upload_file(file).await.map_err(|e| msg(format!("Couldn't upload that file: {e}")))?;
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    // Telegram turns these into photos; big ones (over 10 MB) it only takes as files.
+    let photo = matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") && size <= 10 * 1024 * 1024;
+    let message = InputMessage::new().text(caption.trim_end()).reply_to(reply_to);
+    let message = if photo { message.photo(uploaded) } else { message.document(uploaded) };
+    let sent = tokio::time::timeout(Duration::from_secs(60), client.send_message(peer, message))
+        .await
+        .map_err(|_| msg("Telegram didn't confirm the file in time. It may still have been sent; check the chat before sending it again."))?
+        .map_err(tg_error)?;
+    sent_message(&app, &tg, &client, id, sent).await
+}
+
+/// After sending: the chat moves up with its new last message, and the message comes back for the bubble.
+async fn sent_message(app: &AppHandle, tg: &Telegram, client: &Client, id: PeerId, sent: Message) -> Result<TgMessage> {
     let group = tg.chats.read().expect("chats lock").list.get(&id).is_some_and(|e| e.chat.kind == "group" || e.chat.kind == "channel");
     let chat = tg.patch(id, |e| {
         e.chat.last = Some(convert::preview(&sent, group));
@@ -678,7 +716,7 @@ pub async fn telegram_send(app: AppHandle, tg: Tg<'_>, chat_id: String, text: St
         e.chat.marked_unread = false;
     });
     let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
-    let mut out = tg.with_replies(&client, vec![sent]).await;
+    let mut out = tg.with_replies(client, vec![sent]).await;
     out.pop().ok_or_else(|| msg("Sent, but Telegram didn't return the message."))
 }
 
@@ -723,7 +761,7 @@ async fn download(client: &Client, item: &impl grammers_client::media::Downloada
         }
         Ok(bytes)
     };
-    let bytes = tokio::time::timeout(Duration::from_secs(60), fetch).await.map_err(|_| msg("The picture took too long to download."))??;
+    let bytes = tokio::time::timeout(Duration::from_secs(60), fetch).await.map_err(|_| msg("That took too long to download."))??;
     let _ = std::fs::write(path, &bytes);
     Ok(tauri::ipc::Response::new(bytes))
 }
@@ -775,6 +813,215 @@ pub async fn telegram_photo(tg: Tg<'_>, chat_id: String, message_id: i32) -> Res
         .ok_or(Error::NotFound)?;
     let photo = m.photo().ok_or_else(|| msg("That message has no photo."))?;
     download(&media, &photo, &path).await
+}
+
+/// A sticker or GIF sent in a chat (cached on disk).
+#[tauri::command]
+pub async fn telegram_sticker(tg: Tg<'_>, chat_id: String, message_id: i32) -> Result<tauri::ipc::Response> {
+    let path = tg.dir.join("media").join(format!("doc_{chat_id}_{message_id}"));
+    if let Some(r) = cached(&path) {
+        return Ok(r);
+    }
+    let (client, media) = {
+        let inner = tg.inner.lock().await;
+        (Telegram::client(&inner)?, Telegram::media_client(&inner)?)
+    };
+    let (_, peer) = tg.entry(&chat_id)?;
+    let m = client
+        .get_messages_by_id(peer, &[message_id])
+        .await
+        .map_err(tg_error)?
+        .into_iter()
+        .flatten()
+        .next()
+        .ok_or(Error::NotFound)?;
+    let doc = match m.media() {
+        Some(grammers_client::media::Media::Sticker(s)) => s.document,
+        Some(grammers_client::media::Media::Document(d)) => d,
+        _ => return Err(msg("That message has no sticker or GIF.")),
+    };
+    if doc.size().is_some_and(|n| n > 10 * 1024 * 1024) {
+        return Err(msg("That file is too big to show here. Open it in Telegram."));
+    }
+    download(&media, &doc, &path).await
+}
+
+pub const TELEGRAM_PROGRESS: &str = "telegram-download-progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TgProgress {
+    chat_id: String,
+    message_id: i32,
+    done: u64,
+    total: Option<u64>,
+}
+
+/// The extension a cached or saved file gets, so the player and Explorer know what it is.
+fn extension(mime: &str, name: Option<&str>) -> String {
+    if let Some(ext) = name.and_then(|n| Path::new(n).extension()).and_then(|e| e.to_str()) {
+        return ext.to_ascii_lowercase();
+    }
+    match mime {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "video/mp4" => "mp4",
+        "video/quicktime" => "mov",
+        "video/webm" => "webm",
+        "audio/ogg" => "ogg",
+        "audio/mpeg" => "mp3",
+        "audio/mp4" | "audio/x-m4a" => "m4a",
+        _ => "bin",
+    }
+    .into()
+}
+
+impl Telegram {
+    /// A message in a chat, and the client that downloads its media.
+    async fn media_message(&self, chat_id: &str, message_id: i32) -> Result<(Client, Message)> {
+        let (client, media) = {
+            let inner = self.inner.lock().await;
+            (Self::client(&inner)?, Self::media_client(&inner)?)
+        };
+        let (_, peer) = self.entry(chat_id)?;
+        let m = client
+            .get_messages_by_id(peer, &[message_id])
+            .await
+            .map_err(tg_error)?
+            .into_iter()
+            .flatten()
+            .next()
+            .ok_or(Error::NotFound)?;
+        Ok((media, m))
+    }
+
+    /// Where a message's photo or file is cached, if it's been downloaded.
+    fn cached_file(&self, chat_id: &str, message_id: i32) -> Option<PathBuf> {
+        let photo = self.dir.join("media").join(format!("photo_{chat_id}_{message_id}.jpg"));
+        if photo.metadata().is_ok_and(|m| m.len() > 0) {
+            return Some(photo);
+        }
+        let prefix = format!("file_{chat_id}_{message_id}.");
+        std::fs::read_dir(self.dir.join("media"))
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&prefix) && !n.contains(".part")))
+    }
+
+    /// Downloads a message's photo or file into the cache (once), reporting progress as it goes.
+    async fn media_file(&self, app: &AppHandle, chat_id: &str, message_id: i32) -> Result<(PathBuf, Option<Message>)> {
+        if let Some(p) = self.cached_file(chat_id, message_id) {
+            return Ok((p, None));
+        }
+        let (client, m) = self.media_message(chat_id, message_id).await?;
+        let (path, total) = match m.media() {
+            Some(grammers_client::media::Media::Photo(p)) => (self.dir.join("media").join(format!("photo_{chat_id}_{message_id}.jpg")), p.size().map(|n| n as u64)),
+            Some(grammers_client::media::Media::Document(d)) => {
+                let ext = extension(d.mime_type().unwrap_or(""), d.name());
+                (self.dir.join("media").join(format!("file_{chat_id}_{message_id}.{ext}")), d.size().map(|n| n as u64))
+            }
+            _ => return Err(msg("That message has nothing to download.")),
+        };
+        let media = m.media().expect("checked above");
+        // Downloads go to a part file first, so a half-finished one is never mistaken for the file.
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+        let part = path.with_extension(format!("part{stamp}"));
+        let result = async {
+            use std::io::Write;
+            let mut file = std::fs::File::create(&part).map_err(|e| msg(e.to_string()))?;
+            let mut iter = client.iter_download(&media);
+            let mut done = 0u64;
+            loop {
+                let next = tokio::time::timeout(Duration::from_secs(30), iter.next()).await.map_err(|_| msg("The download stalled. Try again."))?;
+                let Some(chunk) = next.map_err(tg_error)? else { break };
+                file.write_all(&chunk).map_err(|e| msg(e.to_string()))?;
+                done += chunk.len() as u64;
+                let _ = app.emit(TELEGRAM_PROGRESS, TgProgress { chat_id: chat_id.into(), message_id, done, total });
+            }
+            Ok::<_, Error>(())
+        }
+        .await;
+        if let Err(e) = result {
+            let _ = std::fs::remove_file(&part);
+            return Err(e);
+        }
+        if path.exists() {
+            let _ = std::fs::remove_file(&part); // another download finished first
+        } else {
+            std::fs::rename(&part, &path).map_err(|e| msg(e.to_string()))?;
+        }
+        Ok((path, Some(m)))
+    }
+}
+
+/// A message's photo, video, voice message or file, downloaded to the cache; its path on disk.
+#[tauri::command]
+pub async fn telegram_media_file(app: AppHandle, tg: Tg<'_>, chat_id: String, message_id: i32) -> Result<String> {
+    let (path, _) = tg.media_file(&app, &chat_id, message_id).await?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// A video's preview picture (cached on disk).
+#[tauri::command]
+pub async fn telegram_thumb(tg: Tg<'_>, chat_id: String, message_id: i32) -> Result<tauri::ipc::Response> {
+    let path = tg.dir.join("media").join(format!("thumb_{chat_id}_{message_id}.jpg"));
+    if let Some(r) = cached(&path) {
+        return Ok(r);
+    }
+    let (media, m) = tg.media_message(&chat_id, message_id).await?;
+    let Some(grammers_client::media::Media::Document(d)) = m.media() else {
+        return Err(msg("That message has no video."));
+    };
+    use grammers_client::media::PhotoSize;
+    let thumbs = d.thumbs();
+    // The largest one that's a real picture; the tiny blurred one only if that's all there is.
+    let thumb = thumbs
+        .iter()
+        .filter(|t| matches!(t, PhotoSize::Size(_) | PhotoSize::Progressive(_)))
+        .max_by_key(|t| t.size())
+        .or_else(|| thumbs.iter().find(|t| matches!(t, PhotoSize::Cached(_) | PhotoSize::Stripped(_))))
+        .ok_or_else(|| msg("That video has no preview."))?;
+    download(&media, thumb, &path).await
+}
+
+/// Copies a message's media into Downloads and shows it in File Explorer; the saved path.
+#[tauri::command]
+pub async fn telegram_save_media(app: AppHandle, tg: Tg<'_>, chat_id: String, message_id: i32) -> Result<String> {
+    use tauri::Manager;
+    use tauri_plugin_opener::OpenerExt;
+    let (cached, m) = tg.media_file(&app, &chat_id, message_id).await?;
+    let m = match m {
+        Some(m) => m,
+        None => tg.media_message(&chat_id, message_id).await?.1,
+    };
+    let ext = cached.extension().and_then(|e| e.to_str()).unwrap_or("bin").to_string();
+    let when = chrono::DateTime::from_timestamp(m.date().as_second(), 0)
+        .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d at %H.%M.%S").to_string())
+        .unwrap_or_default();
+    let stem = match m.media() {
+        Some(grammers_client::media::Media::Document(d)) if d.name().is_some_and(|n| !n.is_empty()) => {
+            let name = d.name().unwrap_or_default();
+            Path::new(name).file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string()
+        }
+        Some(grammers_client::media::Media::Photo(_)) => format!("Telegram photo {when}"),
+        Some(grammers_client::media::Media::Document(d)) if d.mime_type().is_some_and(|t| t.starts_with("video/")) => format!("Telegram video {when}"),
+        Some(grammers_client::media::Media::Document(d)) if d.mime_type().is_some_and(|t| t.starts_with("audio/")) => format!("Telegram audio {when}"),
+        _ => format!("Telegram file {when}"),
+    };
+    // Keep only what Windows allows in a file name.
+    let stem: String = stem.chars().map(|c| if r#"<>:"/\|?*"#.contains(c) || c.is_control() { '_' } else { c }).collect();
+    let dir = app.path().download_dir().map_err(|e| msg(e.to_string()))?;
+    let mut dest = dir.join(format!("{stem}.{ext}"));
+    let mut n = 1;
+    while dest.exists() {
+        dest = dir.join(format!("{stem} ({n}).{ext}"));
+        n += 1;
+    }
+    std::fs::copy(&cached, &dest).map_err(|e| msg(format!("Couldn't save it to Downloads: {e}")))?;
+    let _ = app.opener().reveal_item_in_dir(&dest);
+    Ok(dest.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

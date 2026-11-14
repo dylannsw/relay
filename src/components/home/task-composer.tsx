@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { IconArrowUp, IconCheck, IconChevronDown, IconFolderFilled, IconFolderOpen, IconNotes } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconFolderFilled, IconFolderOpen, IconNotes } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,15 +10,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-  InputGroupTextarea,
-} from "@/components/ui/input-group";
-import { Spinner } from "@/components/ui/spinner";
+import { InputGroupInput, InputGroupTextarea } from "@/components/ui/input-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
 import { errorText } from "@/api";
 import { addTask, lastTask } from "@/tasks/store";
 import { sectionKey, type TaskStatus } from "@/tasks/tick";
@@ -26,13 +20,8 @@ import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 import { chooseVault } from "@/components/tasks/tasks-setup";
 
 /**
- * Home's add-task box: a tray holding the input, with the section picker and the note button
- * below it. In dark mode the tray is the darker grey and the input the lighter one, each with
- * a hairline border.
- *
- * Corners are concentric: each frame's radius is the radius inside it plus the gap between.
- * Buttons (8px) sit 6px inside the input (14px, rounded-xl), which sits 6px inside the tray
- * (20px); the buttons under the input sit 12px from the tray's edge to match its corners. Enter adds "- [ ] task" (and its note, indented under it) at the end of
+ * Home's add-task box (the shared composer tray), with the section picker, status and note button
+ * below it. Enter adds "- [ ] task" (and its note, indented under it) at the end of
  * the chosen section of Tick's to-do note, tagged with the chosen board status; Shift+Enter in the title opens the note.
  */
 export function TaskComposer({ sections, ready, vaultPath, className, onAdded }: {
@@ -132,7 +121,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
 
   return (
     // Above Home's glow (z-30 over its z-20), so the light and the bend pass under it.
-    <div ref={tray} className={cn("halo-glint relative z-30 rounded-[20px] border bg-muted p-1.5 dark:bg-sidebar", className)}>
+    <ComposerTray ref={tray} className={cn("z-30", className)}>
       {ready ? (
         <form
           onSubmit={(e) => {
@@ -140,8 +129,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
             void submit();
           }}
         >
-          {/* Focus only nudges the border a shade greyer, instead of the accent-coloured focus ring. */}
-          <InputGroup className="halo-glint h-auto flex-col items-stretch rounded-xl bg-background shadow-xs has-[[data-slot=input-group-control]:focus-visible]:border-foreground/20! dark:border-white/10 dark:bg-card dark:has-[[data-slot=input-group-control]:focus-visible]:border-white/20!">
+          <ComposerField>
             <InputGroupInput
               ref={input}
               value={text}
@@ -191,27 +179,9 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                 />
               </div>
             </div>
-            <InputGroupAddon align="block-end" className="justify-end px-1.5 pt-1 pb-1.5 group-has-[>input]/input-group:pb-1.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <InputGroupButton
-                    type="submit"
-                    size="icon-sm"
-                    variant={text.trim() ? "default" : "secondary"}
-                    className="rounded-md"
-                    disabled={busy}
-                    // Enter adds the task, so Tab skips this and goes from the title (and note) to the section.
-                    tabIndex={-1}
-                  >
-                    {busy ? <Spinner /> : <IconArrowUp />}
-                    <span className="sr-only">Add task</span>
-                  </InputGroupButton>
-                </TooltipTrigger>
-                <TooltipContent>Add task (Enter)</TooltipContent>
-              </Tooltip>
-            </InputGroupAddon>
-          </InputGroup>
-          <div className="flex items-center gap-1 p-1.5">
+            <ComposerSubmit ready={!!text.trim()} busy={busy} label="Add task" hint="Add task (Enter)" />
+          </ComposerField>
+          <ComposerOptions>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" size="sm" className="max-w-64 text-muted-foreground">
@@ -281,7 +251,7 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
               </TooltipTrigger>
               <TooltipContent>{noteOpen ? "Remove note" : "Add a note (Shift+Enter)"}</TooltipContent>
             </Tooltip>
-          </div>
+          </ComposerOptions>
         </form>
       ) : (
         <div className="flex h-11 items-center gap-3 rounded-xl border bg-background pr-1.5 pl-[18px] shadow-xs dark:border-white/10 dark:bg-card">
@@ -292,6 +262,6 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
           </Button>
         </div>
       )}
-    </div>
+    </ComposerTray>
   );
 }

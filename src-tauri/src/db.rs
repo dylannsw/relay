@@ -1,7 +1,7 @@
 //! Local SQLite cache. The UI always reads from here, so the inbox is instant
 //! and works offline; sync keeps it up to date with each provider.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension, Row};
@@ -459,6 +459,31 @@ pub fn retain_messages(
     Ok(removed)
 }
 
+/// Folder, read and starred state of every cached message of an account, by remote id.
+pub fn message_index(c: &Connection, account_id: &str) -> Result<HashMap<String, (Folder, bool, bool)>> {
+    let mut stmt =
+        c.prepare("SELECT remote_id, folder, is_read, is_starred FROM messages WHERE account_id = ?1")?;
+    let rows = stmt.query_map([account_id], |r| {
+        Ok((r.get::<_, String>(0)?, (Folder::parse(&r.get::<_, String>(1)?), r.get(2)?, r.get(3)?)))
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Sets read and starred state by remote id: (remote id, read, starred).
+pub fn set_flags(c: &Connection, account_id: &str, flags: &[(String, bool, bool)]) -> Result<()> {
+    let tx = c.unchecked_transaction()?;
+    {
+        let mut upd = tx.prepare_cached(
+            "UPDATE messages SET is_read = ?3, is_starred = ?4 WHERE account_id = ?1 AND remote_id = ?2",
+        )?;
+        for (rid, read, starred) in flags {
+            upd.execute(params![account_id, rid, read, starred])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn remote_exists(c: &Connection, account_id: &str, remote_id: &str) -> Result<bool> {
     let mut stmt =
         c.prepare_cached("SELECT 1 FROM messages WHERE account_id = ?1 AND remote_id = ?2")?;
@@ -666,6 +691,17 @@ mod tests {
             calendar_sync: None,
             calendar_error: None,
         }
+    }
+
+    #[test]
+    fn indexes_and_sets_flags_by_remote_id() {
+        let c = test_db();
+        insert_account(&c, &account("a1", "me@gmail.com"), b"x").unwrap();
+        upsert_messages(&c, &[msg("a1", "m1", 1, false, "One"), msg("a1", "m2", 2, true, "Two")]).unwrap();
+        set_flags(&c, "a1", &[("m1".into(), true, true)]).unwrap();
+        let idx = message_index(&c, "a1").unwrap();
+        assert_eq!(idx["m1"], (Folder::Inbox, true, true));
+        assert_eq!(idx["m2"], (Folder::Inbox, true, false));
     }
 
     fn msg(account_id: &str, remote: &str, date: i64, read: bool, subject: &str) -> MessageSummary {

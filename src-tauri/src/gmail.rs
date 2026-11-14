@@ -110,8 +110,8 @@ struct IdRef {
     id: String,
 }
 
-/// Ids of the newest `max` messages in a folder.
-pub async fn list_ids(http: &Client, token: &str, folder: Folder, max: u32) -> Result<Vec<String>> {
+/// Ids of every message in a folder, newest first.
+pub async fn list_ids(http: &Client, token: &str, folder: Folder) -> Result<Vec<String>> {
     // Gmail has no archive label: "archived" is everything that isn't in another folder
     // (spam and trash are already left out unless includeSpamTrash is set).
     let filter = match folder {
@@ -120,14 +120,20 @@ pub async fn list_ids(http: &Client, token: &str, folder: Folder, max: u32) -> R
         Folder::Spam => ("labelIds", "SPAM"),
         Folder::Archive => ("q", "-in:inbox -in:sent -in:drafts -in:chats"),
     };
+    list(http, token, filter, matches!(folder, Folder::Trash | Folder::Spam)).await
+}
+
+/// Ids of every message matching a search, trash and spam included.
+pub async fn search_ids(http: &Client, token: &str, q: &str) -> Result<Vec<String>> {
+    list(http, token, ("q", q), true).await
+}
+
+async fn list(http: &Client, token: &str, filter: (&str, &str), spam_trash: bool) -> Result<Vec<String>> {
     let mut ids = Vec::new();
     let mut page: Option<String> = None;
     loop {
-        let mut query = vec![
-            (filter.0, filter.1.to_string()),
-            ("maxResults", max.min(500).to_string()),
-        ];
-        if matches!(folder, Folder::Trash | Folder::Spam) {
+        let mut query = vec![(filter.0, filter.1.to_string()), ("maxResults", "500".to_string())];
+        if spam_trash {
             query.push(("includeSpamTrash", "true".to_string()));
         }
         if let Some(p) = &page {
@@ -139,12 +145,11 @@ pub async fn list_ids(http: &Client, token: &str, folder: Folder, max: u32) -> R
         )
         .await?;
         ids.extend(r.messages.into_iter().map(|m| m.id));
-        if ids.len() >= max as usize || r.next_page_token.is_none() {
-            break;
+        match r.next_page_token {
+            Some(t) => page = Some(t),
+            None => break,
         }
-        page = r.next_page_token;
     }
-    ids.truncate(max as usize);
     Ok(ids)
 }
 
@@ -478,6 +483,27 @@ pub async fn move_to(http: &Client, token: &str, id: &str, from: Folder, to: Fol
         Folder::Spam => modify(http, token, id, &["SPAM"], &["INBOX"]).await,
         Folder::Trash => unreachable!(),
     }
+}
+
+/// Moves many messages to one Relay folder, up to 1,000 per request. Matches `move_to`:
+/// leaving Trash or Spam takes those labels off, so the messages land in `to`.
+pub async fn batch_move(http: &Client, token: &str, ids: &[String], to: Folder) -> Result<()> {
+    let (add, remove): (&[&str], &[&str]) = match to {
+        Folder::Trash => (&["TRASH"], &[]),
+        Folder::Inbox => (&["INBOX"], &["SPAM", "TRASH"]),
+        Folder::Archive => (&[], &["INBOX", "SPAM", "TRASH"]),
+        Folder::Spam => (&["SPAM"], &["INBOX", "TRASH"]),
+    };
+    for chunk in ids.chunks(1000) {
+        http::send(
+            http.post(format!("{BASE}/messages/batchModify"))
+                .bearer_auth(token)
+                .json(&json!({ "ids": chunk, "addLabelIds": add, "removeLabelIds": remove })),
+            P,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 pub async fn send(http: &Client, token: &str, raw: &str, thread_id: Option<&str>) -> Result<()> {

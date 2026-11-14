@@ -1,5 +1,6 @@
 //! Tauri commands: the API the React frontend calls via `invoke`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -177,7 +178,7 @@ async fn sign_in(app: AppHandle, state: &Arc<AppState>, provider: Provider, logi
     let st = state.clone();
     let sync_id = id.clone();
     tauri::async_runtime::spawn(async move {
-        let report = sync::sync_one(&st, &sync_id).await;
+        let report = sync::sync_one(&st, &sync_id, &sync::progress_emitter(&app)).await;
         let _ = app.emit(MAIL_UPDATED, vec![report]);
         if let Ok(account) = st.db(|c| db::get_account(c, &sync_id)) {
             if account.calendar_access {
@@ -402,6 +403,41 @@ pub async fn move_message(state: St<'_>, id: String, folder: Folder) -> Result<S
     })
 }
 
+/// Moves many messages to one folder: Gmail in batches of up to 1,000, Outlook a few at a
+/// time. Returns each message's id afterwards, in the order given (Outlook renames on move).
+#[tauri::command]
+pub async fn move_messages(state: St<'_>, ids: Vec<String>, folder: Folder) -> Result<Vec<String>> {
+    let rows = state.db(|c| ids.iter().map(|id| db::get_summary(c, id)).collect::<Result<Vec<_>>>())?;
+    let mut new_ids: HashMap<String, String> = HashMap::new();
+    let mut by_account: HashMap<String, Vec<MessageSummary>> = HashMap::new();
+    for m in rows.into_iter().filter(|m| m.folder != folder) {
+        by_account.entry(m.account_id.clone()).or_default().push(m);
+    }
+    for (account_id, msgs) in by_account {
+        let account = state.db(|c| db::get_account(c, &account_id))?;
+        let token = state.access_token(&account).await?;
+        match account.provider {
+            Provider::Google => {
+                let remote: Vec<String> = msgs.iter().map(|m| m.remote_id.clone()).collect();
+                gmail::batch_move(&state.http, &token, &remote, folder).await?;
+                state.db(|c| msgs.iter().try_for_each(|m| db::set_folder(c, &m.id, folder, None)))?;
+            }
+            Provider::Microsoft => {
+                for chunk in msgs.chunks(4) {
+                    let jobs = chunk.iter().map(|m| graph::move_to(&state.http, &token, &m.remote_id, folder));
+                    let moved = futures::future::join_all(jobs).await;
+                    for (m, rid) in chunk.iter().zip(moved) {
+                        let rid = rid?;
+                        state.db(|c| db::set_folder(c, &m.id, folder, Some(&rid)))?;
+                        new_ids.insert(m.id.clone(), local_id(&account.id, &rid));
+                    }
+                }
+            }
+        }
+    }
+    Ok(ids.into_iter().map(|id| new_ids.get(&id).cloned().unwrap_or(id)).collect())
+}
+
 // ---------- sending ----------
 
 fn original_text(o: &MessageDetail) -> String {
@@ -512,7 +548,7 @@ pub async fn send_message(state: St<'_>, message: OutgoingMessage) -> Result<()>
 
 #[tauri::command]
 pub async fn sync_now(app: AppHandle, state: St<'_>) -> Result<Vec<SyncReport>> {
-    let reports = sync::sync_all(&state).await;
+    let reports = sync::sync_all(&state, &sync::progress_emitter(&app)).await;
     let _ = app.emit(MAIL_UPDATED, &reports);
     Ok(reports)
 }

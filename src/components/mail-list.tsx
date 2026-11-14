@@ -49,7 +49,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AccountChip } from "@/components/account-chip";
 import { ShortcutKbd, ShortcutText } from "@/components/shortcut-kbd";
 import { SelectionSlot } from "@/components/selection-slot";
-import { SenderRows, SyncedNote, type SendersProps } from "@/components/sender-list";
+import { SenderRows, type SendersProps } from "@/components/sender-list";
 import type { ShortcutId } from "@/shortcuts";
 import type { Account, ComposeMode, Folder, MessageSummary, Provider, SenderGroup } from "@/types";
 import { listDate, senderName } from "@/format";
@@ -686,7 +686,6 @@ function GroupToolbar({ s, p, nChecked }: { s: SendersProps & { group: SenderGro
           </TooltipTrigger>
           <TooltipContent>Tick everything except the newest message</TooltipContent>
         </Tooltip>
-        <SyncedNote s={s} className="ml-auto" />
       </div>
       {addresses.length > 1 && (
         <div className="flex flex-wrap gap-1.5">

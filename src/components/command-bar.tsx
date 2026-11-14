@@ -39,7 +39,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { useSidebar } from "@/components/ui/sidebar";
 import { ShortcutKbd } from "@/components/shortcut-kbd";
 import { initials } from "@/components/mail-window";
-import { labelIcon, type View } from "@/components/app-sidebar";
+import { labelIcon, sortedLabels, type View } from "@/components/app-sidebar";
 import type { Filter } from "@/components/mail-list";
 import { FOLDERS } from "@/folders";
 import { listDate, senderName } from "@/format";
@@ -474,7 +474,7 @@ export function CommandBar(p: Props) {
   );
 
   const destinations: Entry[] = useMemo(() => {
-    const labels = [...new Set(p.accounts.map((a) => a.label))];
+    const labels = sortedLabels(p.accounts);
     return [
       { id: "go-home", label: "Home", keywords: "overview dashboard start", icon: <IconSmartHome />, run: () => p.onNavigate({ kind: "home" }) },
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
@@ -584,7 +584,7 @@ export function CommandBar(p: Props) {
         <button
           type="button"
           onClick={() => p.onOpenChange(true)}
-          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-ring"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-foreground/20 dark:focus-visible:border-white/20"
         >
           <IconSearch className="size-4 shrink-0" />
           <span className="flex-1 truncate text-left">

@@ -21,7 +21,6 @@ import { SettingsDialog, type SettingsSection } from "@/components/settings-dial
 import { startAutoCheck } from "@/updater";
 import { SignInDialog } from "@/components/sign-in-dialog";
 import { ChatsPage } from "@/components/chats/chats-page";
-import { useTelegram } from "@/telegram/store";
 
 const PAGE = 200;
 
@@ -47,7 +46,6 @@ function useDebounced<T>(value: T, ms: number): T {
 export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [view, setView] = useState<View>({ kind: "home" });
-  const telegram = useTelegram();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 200);
@@ -79,8 +77,6 @@ export default function App() {
   const [narrow, setNarrow] = useState<string | null>(null);
   /** Sender rows ticked for whole-group actions. */
   const [checkedGroups, setCheckedGroups] = useState<Set<string>>(() => new Set());
-  /** How many messages each account keeps synced; the Senders view only sees those. */
-  const [syncedPerAccount, setSyncedPerAccount] = useState(100);
   const selectedRef = useRef<string | null>(null);
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
@@ -163,10 +159,7 @@ export default function App() {
   // The user's rebound keyboard shortcuts live in the app config.
   useEffect(() => {
     api.getConfig().then(
-      (c) => {
-        loadShortcuts(c.shortcuts);
-        setSyncedPerAccount(c.messagesPerAccount);
-      },
+      (c) => loadShortcuts(c.shortcuts),
       () => loadShortcuts({}),
     );
   }, []);
@@ -312,10 +305,11 @@ export default function App() {
       const delta = (to === "inbox" ? 1 : 0) - (m.folder === "inbox" ? 1 : 0);
       if (!m.isRead && delta) bumpUnread(m.accountId, delta);
     }
-    const results = await Promise.allSettled(moving.map((m) => api.moveMessage(m.id, to)));
-    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-    if (failed) {
-      toast.error(errorText(failed.reason));
+    let newIds: string[];
+    try {
+      newIds = await api.moveMessages(moving.map((m) => m.id), to);
+    } catch (e) {
+      toast.error(errorText(e));
       refreshAll.current();
       return;
     }
@@ -323,7 +317,7 @@ export default function App() {
     const n = moving.length;
     const where = folderLabel(to);
     // Each message goes back to the folder it came from, under the id it has now.
-    const undo = moving.map((m, i) => ({ id: (results[i] as PromiseFulfilledResult<string>).value, folder: m.folder }));
+    const undo = moving.map((m, i) => ({ id: newIds[i], folder: m.folder }));
     toast.success(
       to === "archive" ? (n === 1 ? "Archived" : `Archived ${n} messages`) : n === 1 ? `Moved to ${where}` : `Moved ${n} messages to ${where}`,
       { duration: 8000, action: { label: "Undo", onClick: () => void undoMoves(undo) } },
@@ -332,10 +326,15 @@ export default function App() {
 
   /** Puts moved messages back in the folders they came from. */
   const undoMoves = async (moved: { id: string; folder: Folder }[]) => {
-    const results = await Promise.allSettled(moved.map((x) => api.moveMessage(x.id, x.folder)));
-    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
-    if (failed) toast.error(errorText(failed.reason));
-    else toast.success(moved.length === 1 ? "Moved back" : `Moved ${moved.length} messages back`);
+    // One batch per folder they go back to.
+    const byFolder = new Map<Folder, string[]>();
+    for (const x of moved) byFolder.set(x.folder, [...(byFolder.get(x.folder) ?? []), x.id]);
+    try {
+      for (const [folder, ids] of byFolder) await api.moveMessages(ids, folder);
+      toast.success(moved.length === 1 ? "Moved back" : `Moved ${moved.length} messages back`);
+    } catch (e) {
+      toast.error(errorText(e));
+    }
     refreshAll.current();
   };
   const moveMessage = (m: MessageSummary, to: Folder) => moveMessages([m], to);
@@ -413,11 +412,14 @@ export default function App() {
     const picked = only ?? groups.filter((g) => checkedGroups.has(g.key));
     if (!picked.length) return;
     try {
-      const all = await api.listMessages({
-        ...scopeQuery(),
-        fromEmails: picked.flatMap((g) => g.addresses),
-        limit: 2000,
-      });
+      // A sender can have thousands of emails now the whole mailbox is synced: page through.
+      const all: MessageSummary[] = [];
+      const fromEmails = picked.flatMap((g) => g.addresses);
+      for (;;) {
+        const page = await api.listMessages({ ...scopeQuery(), fromEmails, limit: 2000, offset: all.length });
+        all.push(...page);
+        if (page.length < 2000) break;
+      }
       setCheckedGroups(new Set());
       await moveMessages(all, to);
     } catch (e) {
@@ -535,7 +537,7 @@ export default function App() {
     // Ctrl+Tab / Ctrl+Shift+Tab: the next or previous sidebar item, from anywhere (even while typing).
     if (e.key === "Tab" && e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
-      setView(stepSidebarView(accounts, view, e.shiftKey ? -1 : 1, telegram.status?.stage === "ready" ? telegram.folders : []));
+      setView(stepSidebarView(accounts, view, e.shiftKey ? -1 : 1));
       clearSelection();
       return;
     }
@@ -619,9 +621,9 @@ export default function App() {
 
   const viewTitle =
     view.kind === "cleanup"
-      ? "Clean up"
+      ? "Clean Up"
       : view.kind === "all" || pageView
-      ? "All inboxes"
+      ? "All Inboxes"
       : view.kind === "label"
         ? view.label
         : folderLabel(view.folder);
@@ -639,8 +641,6 @@ export default function App() {
           onFolder: setCleanupFolder,
           groups,
           checked: checkedGroups,
-          syncedPerAccount,
-          accountCount: accountIds?.length ?? accounts.length,
           onToggle: toggleGroup,
           onCheckAll: checkAllGroups,
           onBulkMove: (to) => void moveGroups(to),
@@ -670,7 +670,7 @@ export default function App() {
           onOpenChange={setCommandOpen}
           search={search}
           onSearch={setSearch}
-          scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle === "All inboxes" ? "All Inboxes" : viewTitle}
+          scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
           searchMessages={searchMessages}
           accounts={accounts}
           accountById={accountById}
