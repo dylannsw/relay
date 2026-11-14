@@ -11,7 +11,7 @@ function openLink(raw: string) {
   if (/^(https?|mailto):/i.test(url)) void api.openExternal(url);
 }
 
-function Link({ href, children, outgoing }: { href: string; children: ReactNode; outgoing: boolean }) {
+function Link({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
       href={href}
@@ -20,7 +20,7 @@ function Link({ href, children, outgoing }: { href: string; children: ReactNode;
         e.stopPropagation();
         openLink(href);
       }}
-      className={cn("break-all underline underline-offset-2", outgoing ? "decoration-current/50 hover:decoration-current" : "text-link decoration-link/40 hover:decoration-link")}
+      className="break-all text-link underline decoration-link/40 underline-offset-2 hover:decoration-link"
     >
       {children}
     </a>
@@ -45,13 +45,13 @@ function Spoiler({ children }: { children: ReactNode }) {
 }
 
 /** Plain text with any bare web addresses made clickable. */
-function linkify(text: string, outgoing: boolean, key: string): ReactNode[] {
+function linkify(text: string, key: string): ReactNode[] {
   const out: ReactNode[] = [];
   let at = 0;
   for (const m of text.matchAll(URL_RE)) {
     if (m.index! > at) out.push(text.slice(at, m.index));
     out.push(
-      <Link key={`${key}-${m.index}`} href={m[0]} outgoing={outgoing}>
+      <Link key={`${key}-${m.index}`} href={m[0]}>
         {m[0]}
       </Link>,
     );
@@ -66,8 +66,8 @@ function linkify(text: string, outgoing: boolean, key: string): ReactNode[] {
  * (including ones hidden behind text). Entities can overlap, so the text is cut at every entity
  * edge and each piece wears every entity covering it.
  */
-export function MessageText({ text, entities, outgoing }: { text: string; entities: TgEntity[]; outgoing: boolean }) {
-  if (!entities.length) return <>{linkify(text, outgoing, "t")}</>;
+export function MessageText({ text, entities }: { text: string; entities: TgEntity[] }) {
+  if (!entities.length) return <>{linkify(text, "t")}</>;
   const cuts = new Set([0, text.length]);
   for (const e of entities) {
     cuts.add(Math.max(0, e.offset));
@@ -82,11 +82,11 @@ export function MessageText({ text, entities, outgoing }: { text: string; entiti
     const on = entities.filter((e) => e.offset <= from && e.offset + e.length >= to);
     const link = on.find((e) => e.kind === "link");
     let node: ReactNode = link ? (
-      <Link key={`l${from}`} href={link.url ?? slice} outgoing={outgoing}>
+      <Link key={`l${from}`} href={link.url ?? slice}>
         {slice}
       </Link>
     ) : (
-      <span key={`s${from}`}>{on.some((e) => e.kind === "mention") ? slice : linkify(slice, outgoing, `p${from}`)}</span>
+      <span key={`s${from}`}>{on.some((e) => e.kind === "mention") ? slice : linkify(slice, `p${from}`)}</span>
     );
     for (const e of on) {
       const k = `${e.kind}${from}`;
@@ -98,7 +98,7 @@ export function MessageText({ text, entities, outgoing }: { text: string; entiti
       else if (e.kind === "pre") node = <code key={k} className="my-1 block overflow-x-auto rounded-md bg-current/10 px-2 py-1.5 font-mono text-[0.85em] whitespace-pre">{node}</code>;
       else if (e.kind === "spoiler") node = <Spoiler key={k}>{node}</Spoiler>;
       else if (e.kind === "quote") node = <span key={k} className="my-0.5 block border-l-2 border-current/40 pl-2">{node}</span>;
-      else if (e.kind === "mention") node = <span key={k} className={outgoing ? "font-medium" : "font-medium text-link"}>{node}</span>;
+      else if (e.kind === "mention") node = <span key={k} className="font-medium text-link">{node}</span>;
     }
     pieces.push(node);
   }

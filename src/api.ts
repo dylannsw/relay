@@ -145,6 +145,12 @@ export const api = {
     send: (chatId: string, text: string, replyTo?: number) =>
       call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null }),
     markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
+    /** Sets your reactions on a message (an empty list takes yours off). */
+    react: (chatId: string, messageId: number, emojis: string[]) => call<void>("telegram_react", { chatId, messageId, emojis }),
+    /** Changes the text (or caption) of one of your messages; resolves to the message as it now is. */
+    edit: (chatId: string, messageId: number, text: string) => call<TgMessage>("telegram_edit", { chatId, messageId, text }),
+    /** Deletes messages; `revoke` also deletes them for the other person (one-to-one chats). */
+    deleteMessages: (chatId: string, ids: number[], revoke: boolean) => call<void>("telegram_delete_messages", { chatId, ids, revoke }),
     /** Moves a chat into Telegram's archive, or back out of it. */
     archive: (chatId: string, archived: boolean) => call<void>("telegram_archive", { chatId, archived }),
     /** Deletes a chat. `revoke` also deletes it for the other person (one-to-one chats only). */
@@ -164,6 +170,9 @@ export const api = {
     /** Sends a file from this PC (pictures as photos), with an optional caption. */
     sendFile: (chatId: string, path: string, caption: string, replyTo?: number) =>
       call<TgMessage>("telegram_send_file", { chatId, path, caption, replyTo: replyTo ?? null }),
+    /** Sends a voice message recorded in the app: Opus audio, its length in seconds, and 100 levels (0–31). */
+    sendVoice: (chatId: string, bytes: Uint8Array, duration: number, waveform: number[], replyTo?: number) =>
+      call<TgMessage>("telegram_send_voice", { chatId, bytes: Array.from(bytes), duration, waveform, replyTo: replyTo ?? null }),
     /** Files chosen in Windows' file picker to send; empty if cancelled. */
     pickFiles: async (): Promise<string[]> => {
       if (!isTauri) return ["C:\\Users\\you\\Documents\\Demo-day-schedule.pdf", "C:\\Users\\you\\Pictures\\Team photo.jpg"];

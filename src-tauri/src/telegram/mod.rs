@@ -8,6 +8,7 @@
 mod convert;
 mod session;
 pub mod stickers;
+mod voice;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ use grammers_client::peer::Peer;
 use grammers_client::update::Update;
 use grammers_client::{tl, Client, InvocationError, SenderPool, SignInError};
 use grammers_mtsender::UpdatesConfiguration;
-use grammers_session::types::{PeerId, PeerRef};
+use grammers_session::types::{PeerId, PeerKind, PeerRef};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -117,6 +118,18 @@ struct TgEvent {
     /// Messages deleted (in `chat_id`, or in any one-to-one or small group chat when None).
     deleted: Vec<i32>,
     deleted_chat_id: Option<String>,
+    /// A message's reactions changed.
+    reactions: Option<TgReactionsEvent>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TgReactionsEvent {
+    chat_id: String,
+    message_id: i32,
+    reactions: Vec<convert::TgReaction>,
+    /// Telegram left out which reactions are yours: keep what the UI already knows.
+    min: bool,
 }
 
 /// Turns Telegram's error codes into something you can act on.
@@ -141,6 +154,14 @@ fn tg_error(e: impl std::fmt::Display) -> Error {
         "Relay was signed out of Telegram (the session may have been ended from another device). Sign in again.".into()
     } else if raw.contains("CHAT_WRITE_FORBIDDEN") || raw.contains("CHAT_SEND_PLAIN_FORBIDDEN") {
         "You can't send messages in this chat.".into()
+    } else if raw.contains("REACTION_INVALID") || raw.contains("REACTION_EMPTY") {
+        "This chat doesn't allow that reaction.".into()
+    } else if raw.contains("MESSAGE_EDIT_TIME_EXPIRED") {
+        "This message is too old to edit.".into()
+    } else if raw.contains("MESSAGE_AUTHOR_REQUIRED") {
+        "You can only edit your own messages.".into()
+    } else if raw.contains("MESSAGE_DELETE_FORBIDDEN") {
+        "You can't delete that message.".into()
     } else {
         format!("Telegram: {raw}")
     };
@@ -388,6 +409,18 @@ impl Telegram {
                     let tl::enums::NotifyPeer::Peer(p) = &n.peer else { return };
                     let muted = convert::is_muted(&n.notify_settings);
                     TgEvent { chat: self.patch(PeerId::from(p.peer.clone()), |e| e.chat.muted = muted), ..Default::default() }
+                }
+                tl::enums::Update::MessageReactions(u) => {
+                    let tl::enums::MessageReactions::Reactions(r) = &u.reactions;
+                    TgEvent {
+                        reactions: Some(TgReactionsEvent {
+                            chat_id: chat_id(PeerId::from(u.peer.clone())),
+                            message_id: u.msg_id,
+                            reactions: convert::reactions_of(&u.reactions),
+                            min: r.min,
+                        }),
+                        ..Default::default()
+                    }
                 }
                 tl::enums::Update::DialogFilter(_) | tl::enums::Update::DialogFilterOrder(_) | tl::enums::Update::DialogFilters => {
                     self.reload_folders(client).await;
@@ -706,6 +739,57 @@ pub async fn telegram_send_file(app: AppHandle, tg: Tg<'_>, chat_id: String, pat
     sent_message(&app, &tg, &client, id, sent).await
 }
 
+/// Sends a voice message recorded in the app (Opus, in WebM or Ogg), with its length in seconds
+/// and its waveform (levels 0–31) for the bubble.
+#[tauri::command]
+pub async fn telegram_send_voice(
+    app: AppHandle,
+    tg: Tg<'_>,
+    chat_id: String,
+    bytes: Vec<u8>,
+    duration: f64,
+    waveform: Vec<u8>,
+    reply_to: Option<i32>,
+) -> Result<TgMessage> {
+    let ogg = voice::to_ogg(&bytes).map_err(msg)?;
+    let (client, media) = {
+        let inner = tg.inner.lock().await;
+        (Telegram::client(&inner)?, Telegram::media_client(&inner)?)
+    };
+    let (id, peer) = tg.entry(&chat_id)?;
+    let size = ogg.len();
+    let uploaded = media
+        .upload_stream(&mut std::io::Cursor::new(ogg), size, "voice.ogg".into())
+        .await
+        .map_err(|e| msg(format!("Couldn't upload the voice message: {e}")))?;
+    let doc = tl::types::InputMediaUploadedDocument {
+        nosound_video: false,
+        force_file: false,
+        spoiler: false,
+        file: uploaded.raw,
+        thumb: None,
+        mime_type: "audio/ogg".into(),
+        attributes: vec![tl::types::DocumentAttributeAudio {
+            voice: true,
+            duration: duration.round().max(1.0) as i32,
+            title: None,
+            performer: None,
+            waveform: Some(voice::pack_waveform(&waveform)),
+        }
+        .into()],
+        stickers: None,
+        ttl_seconds: None,
+        video_cover: None,
+        video_timestamp: None,
+    };
+    let message = InputMessage::new().reply_to(reply_to).media(doc);
+    let sent = tokio::time::timeout(Duration::from_secs(60), client.send_message(peer, message))
+        .await
+        .map_err(|_| msg("Telegram didn't confirm the voice message in time. It may still have been sent; check the chat before sending it again."))?
+        .map_err(tg_error)?;
+    sent_message(&app, &tg, &client, id, sent).await
+}
+
 /// After sending: the chat moves up with its new last message, and the message comes back for the bubble.
 async fn sent_message(app: &AppHandle, tg: &Telegram, client: &Client, id: PeerId, sent: Message) -> Result<TgMessage> {
     let group = tg.chats.read().expect("chats lock").list.get(&id).is_some_and(|e| e.chat.kind == "group" || e.chat.kind == "channel");
@@ -718,6 +802,92 @@ async fn sent_message(app: &AppHandle, tg: &Telegram, client: &Client, id: PeerI
     let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
     let mut out = tg.with_replies(client, vec![sent]).await;
     out.pop().ok_or_else(|| msg("Sent, but Telegram didn't return the message."))
+}
+
+/// Sets your reactions on a message (an empty list takes yours off). Telegram also sends the
+/// message's new reactions as a live update.
+#[tauri::command]
+pub async fn telegram_react(tg: Tg<'_>, chat_id: String, message_id: i32, emojis: Vec<String>) -> Result<()> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (_, peer) = tg.entry(&chat_id)?;
+    client
+        .invoke(&tl::functions::messages::SendReaction {
+            big: false,
+            add_to_recent: !emojis.is_empty(),
+            peer: peer.into(),
+            msg_id: message_id,
+            reaction: Some(emojis.into_iter().map(|emoticon| tl::enums::Reaction::Emoji(tl::types::ReactionEmoji { emoticon })).collect()),
+        })
+        .await
+        .map_err(tg_error)?;
+    Ok(())
+}
+
+/// Changes the text (or caption) of one of your messages; returns the message as it now is.
+#[tauri::command]
+pub async fn telegram_edit(app: AppHandle, tg: Tg<'_>, chat_id: String, message_id: i32, text: String) -> Result<TgMessage> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (id, peer) = tg.entry(&chat_id)?;
+    // Sent as is (not left out when empty), so a caption can be taken off.
+    let request = tl::functions::messages::EditMessage {
+        no_webpage: false,
+        invert_media: false,
+        peer: peer.into(),
+        id: message_id,
+        message: Some(text.trim_end().to_string()),
+        media: None,
+        reply_markup: None,
+        entities: None,
+        schedule_date: None,
+        schedule_repeat_period: None,
+        quick_reply_shortcut_id: None,
+        rich_message: None,
+    };
+    match tokio::time::timeout(Duration::from_secs(30), client.invoke(&request)).await {
+        Err(_) => return Err(msg("Telegram didn't confirm the edit in time. Check the chat before trying again.")),
+        // Saving the same text again isn't an error.
+        Ok(Err(e)) if rpc_named(&e, "MESSAGE_NOT_MODIFIED") => {}
+        Ok(r) => {
+            r.map_err(tg_error)?;
+        }
+    }
+    let found = client.get_messages_by_id(peer, &[message_id]).await.map_err(tg_error)?;
+    let m = found.into_iter().flatten().next().ok_or_else(|| msg("Edited, but Telegram didn't return the message."))?;
+    // The chat list shows the new text when this was the chat's last message.
+    let (group, is_last) = tg.chats.read().expect("chats lock").list.get(&id).map_or((false, false), |e| {
+        (e.chat.kind == "group" || e.chat.kind == "channel", e.chat.last.as_ref().is_some_and(|l| l.id == message_id))
+    });
+    if is_last {
+        let chat = tg.patch(id, |e| e.chat.last = Some(convert::preview(&m, group)));
+        let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
+    }
+    tg.with_replies(&client, vec![m]).await.pop().ok_or_else(|| msg("Edited, but Telegram didn't return the message."))
+}
+
+/// Deletes messages. In one-to-one chats `revoke` also deletes them for the other person; in
+/// groups and channels they go for everyone.
+#[tauri::command]
+pub async fn telegram_delete_messages(app: AppHandle, tg: Tg<'_>, chat_id: String, ids: Vec<i32>, revoke: bool) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (id, peer) = tg.entry(&chat_id)?;
+    if peer.id.kind() == PeerKind::Channel {
+        client.delete_messages(peer, &ids).await.map_err(tg_error)?;
+    } else {
+        client.invoke(&tl::functions::messages::DeleteMessages { revoke, id: ids.clone() }).await.map_err(tg_error)?;
+    }
+    // The chat list falls back to the message before when its last one went.
+    let (group, was_last) = tg.chats.read().expect("chats lock").list.get(&id).map_or((false, false), |e| {
+        (e.chat.kind == "group" || e.chat.kind == "channel", e.chat.last.as_ref().is_some_and(|l| ids.contains(&l.id)))
+    });
+    if was_last {
+        let latest = client.iter_messages(peer).limit(1).next().await.ok().flatten();
+        let chat = tg.patch(id, |e| e.chat.last = latest.as_ref().map(|m| convert::preview(m, group)));
+        let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
+    }
+    Ok(())
 }
 
 /// Marks everything in a chat as read (on every device, as in Telegram).

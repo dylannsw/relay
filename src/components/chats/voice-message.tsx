@@ -30,7 +30,8 @@ function bars(levels: number[] | null | undefined): number[] {
   return out.map((v) => Math.max(0.12, v / peak));
 }
 
-export function VoiceMessage({ chatId, messageId, media, outgoing }: { chatId: string; messageId: number; media: TgMedia; outgoing: boolean }) {
+/** `src`: a recording still being sent plays from its local copy. */
+export function VoiceMessage({ chatId, messageId, media, src }: { chatId: string; messageId: number; media: TgMedia; src?: string }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [pos, setPos] = useState(0);
@@ -62,7 +63,7 @@ export function VoiceMessage({ chatId, messageId, media, outgoing }: { chatId: s
     if (audio.current) return audio.current;
     setState("loading");
     try {
-      const a = new Audio(await api.telegram.mediaUrl(chatId, messageId));
+      const a = new Audio(src ?? (await api.telegram.mediaUrl(chatId, messageId)));
       a.onplay = () => setState("playing");
       a.onpause = () => setState((s) => (s === "loading" ? s : "paused"));
       a.onended = () => {
@@ -107,22 +108,18 @@ export function VoiceMessage({ chatId, messageId, media, outgoing }: { chatId: s
   const played = length ? pos / length : 0;
   const active = state === "playing" || state === "paused" || pos > 0;
   return (
-    <span className="flex items-center gap-2.5">
+    <span className="flex items-center gap-2">
       <Button
         type="button"
-        size="icon-lg"
+        size="icon-sm"
         onClick={() => void toggle()}
         aria-label={state === "playing" ? "Pause" : "Play voice message"}
-        // Round, and it shrinks a touch when pressed instead of the usual 1px nudge down. On an
-        // outgoing (accent-coloured) bubble the colours swap so it stands out.
-        className={cn(
-          "rounded-full transition-transform active:scale-95 active:not-aria-[haspopup]:translate-y-0",
-          outgoing && "bg-primary-foreground text-primary hover:bg-primary-foreground/90",
-        )}
+        // Round, and it shrinks a touch when pressed instead of the usual 1px nudge down.
+        className="rounded-full transition-transform active:scale-95 active:not-aria-[haspopup]:translate-y-0"
       >
-        {state === "loading" ? <Spinner className="size-4.5" /> : state === "playing" ? <IconPlayerPauseFilled className="size-4.5" /> : <IconPlayerPlayFilled className="size-4.5" />}
+        {state === "loading" ? <Spinner className="size-3.5" /> : state === "playing" ? <IconPlayerPauseFilled className="size-3.5" /> : <IconPlayerPlayFilled className="size-3.5" />}
       </Button>
-      <div role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(length)} aria-valuenow={Math.round(pos)} tabIndex={-1} onPointerDown={(e) => void seek(e)} className="flex h-6 min-w-36 flex-1 cursor-pointer items-center gap-[1.5px]">
+      <div role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(length)} aria-valuenow={Math.round(pos)} tabIndex={-1} onPointerDown={(e) => void seek(e)} className="flex h-5 min-w-36 flex-1 cursor-pointer items-center gap-[1.5px]">
         {levels.map((v, i) => (
           <span
             key={i}
@@ -134,7 +131,6 @@ export function VoiceMessage({ chatId, messageId, media, outgoing }: { chatId: s
       <span className="shrink-0 text-sm tabular-nums opacity-80">
         {state === "loading" && fraction !== null && fraction < 1 ? `${Math.round(fraction * 100)}%` : clock(active ? pos : length)}
       </span>
-
     </span>
   );
 }

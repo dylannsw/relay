@@ -1,4 +1,4 @@
-import type { ComponentProps, Ref } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import { IconArrowUp } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
@@ -32,17 +32,22 @@ export function ComposerField({ className, ...props }: ComponentProps<typeof Inp
 }
 
 /** The round-cornered send button at the field's bottom right; filled once there's something to send. */
-export function ComposerSubmit({ ready, busy, label, onClick, ref }: {
+export function ComposerSubmit({ ready, busy, label, icon, onClick, ref, before }: {
   ready: boolean;
   busy?: boolean;
   /** For screen readers ("Add task", "Send"). */
   label: string;
+  /** In place of the up arrow (a tick for saving an edit). */
+  icon?: ReactNode;
   /** Without it, the button submits the form. */
   onClick?: () => void;
   ref?: Ref<HTMLButtonElement>;
+  /** Buttons just left of send (the chat's microphone). */
+  before?: ReactNode;
 }) {
   return (
-    <InputGroupAddon align="block-end" className="justify-end px-1.5 pt-1 pb-1.5 group-has-[>input]/input-group:pb-1.5">
+    <InputGroupAddon align="block-end" className="justify-end gap-1 px-1.5 pt-1 pb-1.5 group-has-[>input]/input-group:pb-1.5">
+      {before}
       <InputGroupButton
         ref={ref}
         type={onClick ? "button" : "submit"}
@@ -54,7 +59,7 @@ export function ComposerSubmit({ ready, busy, label, onClick, ref }: {
         // Enter sends, so Tab skips this and goes from the input to the options below.
         tabIndex={-1}
       >
-        {busy ? <Spinner /> : <IconArrowUp />}
+        {busy ? <Spinner /> : (icon ?? <IconArrowUp />)}
         <span className="sr-only">{label}</span>
       </InputGroupButton>
     </InputGroupAddon>

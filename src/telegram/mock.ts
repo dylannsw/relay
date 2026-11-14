@@ -57,6 +57,7 @@ const msg = (m: Partial<TgMessage> & Pick<TgMessage, "chatId" | "text" | "date">
   edited: false,
   service: null,
   groupedId: null,
+  reactions: [],
   ...m,
 });
 
@@ -65,11 +66,11 @@ const history: Record<string, TgMessage[]> = {
     msg({ chatId: "101", text: "Hey! Welcome to the team 👋", senderName: "Maya Lim", senderId: "101", date: now - 2 * day }),
     msg({ chatId: "101", text: "Thanks! Excited to start", outgoing: true, senderName: "You", date: now - 2 * day + 3 * min }),
     msg({ chatId: "101", text: "The onboarding doc is here: https://example.com/onboarding", senderName: "Maya Lim", senderId: "101", date: now - 2 * day + 5 * min, entities: [{ offset: 28, length: 30, kind: "link", url: null }] }),
-    msg({ chatId: "101", text: "Got it, reading it now", outgoing: true, senderName: "You", date: now - 1 * day }),
+    msg({ chatId: "101", text: "Got it, reading it now", outgoing: true, senderName: "You", date: now - 1 * day, reactions: [{ emoji: "👍", count: 1, mine: false }] }),
     msg({ chatId: "101", text: "", outgoing: true, senderName: "You", date: now - 1 * day + min, media: { kind: "photo", label: "Photo", width: 1280, height: 853, mime: null } }),
     msg({ chatId: "101", text: "", outgoing: true, senderName: "You", date: now - 1 * day + 1.1 * min, media: { kind: "sticker", label: "👍 Sticker", width: 512, height: 512, mime: "image/svg+xml" } }),
     msg({ chatId: "101", text: "Is this the right dashboard?", outgoing: true, senderName: "You", date: now - 1 * day + 1.2 * min }),
-    msg({ chatId: "101", text: "Yes that's the one. Ping me if anything's unclear", senderName: "Maya Lim", senderId: "101", date: now - 20 * hr }),
+    msg({ chatId: "101", text: "Yes that's the one. Ping me if anything's unclear", senderName: "Maya Lim", senderId: "101", date: now - 20 * hr, reactions: [{ emoji: "🙏", count: 1, mine: true }] }),
     msg({ chatId: "101", text: "Morning!", senderName: "Maya Lim", senderId: "101", date: now - 6 * min }),
     msg({ chatId: "101", text: "Can you send me the deck before standup?", senderName: "Maya Lim", senderId: "101", date: now - 4 * min }),
   ],
@@ -78,16 +79,17 @@ const history: Record<string, TgMessage[]> = {
     msg({ chatId: "-1001", text: "Hi all, this is the chat for the summer intern cohort", senderName: "Maya Lim", senderId: "101", date: now - 3 * day + min }),
     msg({ chatId: "-1001", text: "Hello!", senderName: "Jun Hao", senderId: "201", date: now - 3 * day + 4 * min }),
     msg({ chatId: "-1001", text: "Hi everyone 🙂", outgoing: true, senderName: "You", date: now - 3 * day + 6 * min }),
-    msg({ chatId: "-1001", text: "Reminder: demo day is this Friday", senderName: "Maya Lim", senderId: "101", date: now - 2 * hr, entities: [{ offset: 10, length: 8, kind: "bold", url: null }] }),
+    msg({ chatId: "-1001", text: "Reminder: demo day is this Friday", senderName: "Maya Lim", senderId: "101", date: now - 2 * hr, entities: [{ offset: 10, length: 8, kind: "bold", url: null }], reactions: [{ emoji: "🤯", count: 4, mine: false }, { emoji: "🙌", count: 2, mine: true }, { emoji: "👌", count: 1, mine: false }, { emoji: "❤", count: 1, mine: false }] }),
     msg({ chatId: "-1001", text: "", senderName: "Priya Nair", senderId: "202", date: now - 1.5 * hr, media: { kind: "file", label: "Demo-day-schedule.pdf", width: null, height: null, mime: null } }),
     msg({ chatId: "-1001", text: "", senderName: "Priya Nair", senderId: "202", date: now - 1.4 * hr, media: { kind: "sticker", label: "🎉 Sticker", width: 512, height: 512, mime: "application/x-tgsticker" } }),
     msg({ chatId: "-1001", text: "Who's presenting for our squad?", senderName: "Jun Hao", senderId: "201", date: now - 30 * min }),
-    msg({ chatId: "-1001", text: "@you can you take the demo on Friday?", senderName: "Jun Hao", senderId: "201", date: now - 22 * min, entities: [{ offset: 0, length: 4, kind: "mention", url: null }], reply: { id: 0, sender: "Jun Hao", text: "Who's presenting for our squad?" } }),
+    msg({ chatId: "-1001", text: "@you can you take the demo on Friday?", senderName: "Jun Hao", senderId: "201", date: now - 22 * min, entities: [{ offset: 0, length: 4, kind: "mention", url: null }], reply: { id: 0, sender: "Jun Hao", senderId: "201", text: "Who's presenting for our squad?" } }),
   ],
   "103": [
     msg({ chatId: "103", text: "dinner sat?", senderName: "Aisha", senderId: "103", date: now - 10 * hr }),
     msg({ chatId: "103", text: "", senderName: "Aisha", senderId: "103", date: now - 9 * hr, media: { kind: "voice", label: "Voice message · 0:06", width: null, height: null, mime: "audio/ogg", duration: 6, waveform: Array.from({ length: 60 }, (_, i) => Math.round(16 + 14 * Math.sin(i / 3) * Math.sin(i / 11))) } }),
     msg({ chatId: "103", text: "", outgoing: true, senderName: "You", date: now - 8.9 * hr, media: { kind: "voice", label: "Voice message · 0:06", width: null, height: null, mime: "audio/ogg", duration: 6, waveform: Array.from({ length: 60 }, (_, i) => Math.round(12 + 12 * Math.cos(i / 4))) } }),
+    msg({ chatId: "103", text: "", senderName: "Aisha", senderId: "103", date: now - 8.7 * hr, media: { kind: "video", label: "Video message · 0:09", width: 384, height: 384, mime: "video/mp4", duration: 9, round: true } }),
     msg({ chatId: "103", text: "the view from the top", senderName: "Aisha", senderId: "103", date: now - 8.5 * hr, media: { kind: "video", label: "Video · 0:12", width: 1280, height: 720, mime: "video/mp4", duration: 12 } }),
   ],
 };
@@ -253,7 +255,7 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       const replyTo = args.replyTo as number | null;
       if (replyTo) {
         const o = history[id]?.find((x) => x.id === replyTo);
-        if (o) m.reply = { id: o.id, sender: o.senderName, text: o.text || o.media?.label || "Message" };
+        if (o) m.reply = { id: o.id, sender: o.senderName, senderId: o.outgoing ? null : o.senderId, text: o.text || o.media?.label || "Message" };
       }
       (history[id] ??= []).push(m);
       const c = chats.find((x) => x.id === id);
@@ -290,11 +292,60 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       if (mockAnimated(n)) return wait(null, 120).then(() => mockLottie(((n * 47) % 360) / 360)) as Promise<T>;
       return r(new TextEncoder().encode(mockFace((n * 47) % 360)).buffer, 120);
     }
+    case "telegram_send_voice": {
+      const id = String(args.chatId);
+      const duration = Math.max(1, Math.round(Number(args.duration)));
+      const label = `Voice message · ${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`;
+      const m = msg({ chatId: id, text: "", outgoing: true, senderName: "You", date: Date.now(), media: { kind: "voice", label, width: null, height: null, mime: "audio/ogg", duration, waveform: args.waveform as number[] } });
+      (history[id] ??= []).push(m);
+      return r(m, 900);
+    }
     case "telegram_send_sticker": {
       const id = String(args.chatId);
       const m = msg({ chatId: id, text: "", outgoing: true, senderName: "You", date: Date.now(), media: { kind: "sticker", label: "Sticker", width: 512, height: 512, mime: "image/svg+xml" } });
       (history[id] ??= []).push(m);
       return r(m, 600);
+    }
+    case "telegram_react": {
+      const chatId = String(args.chatId);
+      const m = history[chatId]?.find((x) => x.id === args.messageId);
+      if (!m) return Promise.reject("That message is gone.");
+      const want = args.emojis as string[];
+      const list = m.reactions.map((x) => (x.mine && !want.includes(x.emoji) ? { ...x, count: x.count - 1, mine: false } : x)).filter((x) => x.count > 0);
+      for (const e of want) {
+        const x = list.find((y) => y.emoji === e);
+        if (!x) list.push({ emoji: e, count: 1, mine: true });
+        else if (!x.mine) Object.assign(x, { count: x.count + 1, mine: true });
+      }
+      m.reactions = list;
+      setTimeout(() => listener?.({ reload: false, chat: null, message: null, edited: false, deleted: [], deletedChatId: null, reactions: { chatId, messageId: m.id, reactions: structuredClone(list), min: false } }), 400);
+      return r(undefined, 250);
+    }
+    case "telegram_edit": {
+      const chatId = String(args.chatId);
+      const m = history[chatId]?.find((x) => x.id === args.messageId);
+      if (!m) return Promise.reject("That message is gone.");
+      // In the preview, an edit with "fail!" in it fails, to show the error.
+      if (String(args.text).includes("fail!")) return new Promise<T>((_, no) => setTimeout(() => no("This message is too old to edit."), 800));
+      Object.assign(m, { text: String(args.text).trimEnd(), entities: [], edited: m.edited || m.text !== String(args.text).trimEnd() });
+      const c = chats.find((x) => x.id === chatId);
+      if (c?.last?.id === m.id) {
+        c.last = { ...c.last, text: m.text || m.media?.label || "" };
+        listener?.({ reload: false, chat: structuredClone(c), message: null, edited: false, deleted: [], deletedChatId: null });
+      }
+      return r(structuredClone(m), 500);
+    }
+    case "telegram_delete_messages": {
+      const chatId = String(args.chatId);
+      const gone = new Set(args.ids as number[]);
+      history[chatId] = (history[chatId] ?? []).filter((x) => !gone.has(x.id));
+      const c = chats.find((x) => x.id === chatId);
+      const last = history[chatId].at(-1);
+      if (c && c.last && gone.has(c.last.id)) {
+        c.last = last ? { id: last.id, text: last.text || last.media?.label || "", outgoing: last.outgoing, sender: c.kind === "group" ? (last.outgoing ? "You" : last.senderName) : null, date: last.date } : null;
+        listener?.({ reload: false, chat: structuredClone(c), message: null, edited: false, deleted: [], deletedChatId: null });
+      }
+      return r(undefined, 400);
     }
     case "telegram_mark_read": {
       const c = chats.find((x) => x.id === String(args.chatId));

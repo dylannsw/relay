@@ -50,6 +50,9 @@ import { sectionKey, splitStatus, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META } from "@/tasks/status";
 import { chooseVault } from "@/components/tasks/tasks-setup";
 import { ColorDot } from "@/components/color-dot";
+import { ChatAvatar } from "@/components/chats/chat-avatar";
+import { requestOpenChat, useTelegram } from "@/telegram/store";
+import type { TgChat } from "@/telegram/types";
 import type { Account, MessageSummary } from "@/types";
 
 interface Props {
@@ -504,6 +507,20 @@ export function CommandBar(p: Props) {
     ];
   }, [p.accounts, p.onNavigate]);
 
+  // Private conversations and groups (not channels or archived chats), once something is typed.
+  const tg = useTelegram();
+  const shownChats = useMemo(() => {
+    if (!q || tg.status?.stage !== "ready") return [];
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    return tg.chats
+      .filter((c) => !c.archived && c.kind !== "channel" && words.every((w) => c.name.toLowerCase().includes(w)))
+      .slice(0, 6);
+  }, [q, tg.chats, tg.status]);
+  const openChat = (c: TgChat) => {
+    p.onNavigate({ kind: "chats", folder: null });
+    requestOpenChat(c.id);
+  };
+
   const shownActions = q ? actions.filter((e) => matches(e, q)) : actions;
   // Without a query, list just each account's inbox; typing reveals the other folders.
   const shownDestinations = q ? destinations.filter((e) => matches(e, q)) : destinations.filter((e) => !e.onlyWhenSearching);
@@ -701,10 +718,10 @@ export function CommandBar(p: Props) {
                 autoFocus
                 value={query}
                 onValueChange={setQuery}
-                placeholder="Search mail or type a command…"
+                placeholder="Search mail, chats or type a command…"
                 className={INPUT}
               />,
-              "Search mail or type a command…",
+              "Search mail, chats or type a command…",
             )}
 
             <div className="cb-body overflow-hidden">
@@ -729,6 +746,18 @@ export function CommandBar(p: Props) {
                       <Kbd>Enter</Kbd>
                     </CommandShortcut>
                   </CommandItem>
+                </CommandGroup>
+              )}
+
+              {shownChats.length > 0 && !commandsOnly && (
+                <CommandGroup heading="Chats">
+                  {shownChats.map((c) => (
+                    <CommandItem key={c.id} value={`chat-${c.id}`} onSelect={run(() => openChat(c))} className={ROW}>
+                      <ChatAvatar id={c.id} name={c.name} hasPhoto={c.hasPhoto} saved={c.kind === "saved"} size={24} />
+                      <span className="truncate">{c.name}</span>
+                      {c.kind === "group" && <span className="cb-muted text-sm">Group</span>}
+                    </CommandItem>
+                  ))}
                 </CommandGroup>
               )}
 

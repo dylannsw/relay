@@ -166,7 +166,7 @@ export function PillTabs<T extends string>(props: {
 /** Moves offered for a message, given the folder it's in (never its own folder). */
 function movesFrom(folder: Folder): { to: Folder; label: string; icon: ReactNode; shortcut: ShortcutId }[] {
   return [
-    folder !== "inbox" && { to: "inbox" as const, label: "Move to inbox", icon: <IconInbox />, shortcut: "moveInbox" as const },
+    folder !== "inbox" && { to: "inbox" as const, label: "Move to Inbox", icon: <IconInbox />, shortcut: "moveInbox" as const },
     folder !== "archive" && { to: "archive" as const, label: "Archive", icon: <IconArchive className="translate-y-[0.5px]" />, shortcut: "archive" as const },
     folder !== "trash" && { to: "trash" as const, label: "Delete", icon: <IconTrash />, shortcut: "delete" as const },
   ].filter((x) => !!x);
@@ -546,16 +546,16 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => p.onBulkRead(true)}>
           <IconMailOpened />
-          Mark as read
+          Mark as Read
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => p.onBulkRead(false)}>
           <IconMail />
-          Mark as unread
+          Mark as Unread
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => p.onCheckAll(false)}>
           <IconX />
-          Clear selection
+          Clear Selection
           <ContextMenuShortcut>Esc</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
@@ -577,7 +577,7 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => p.onReplyTo(m, "replyAll")}>
         <IconArrowBackUpDouble />
-        Reply all
+        Reply All
         <ContextMenuShortcut><ShortcutText id="replyAll" /></ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => p.onReplyTo(m, "forward")}>
@@ -588,7 +588,7 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => p.onToggleRead(m)}>
         {m.isRead ? <IconMail /> : <IconMailOpened />}
-        {m.isRead ? "Mark as unread" : "Mark as read"}
+        {m.isRead ? "Mark as Unread" : "Mark as Read"}
         <ContextMenuShortcut><ShortcutText id="toggleRead" /></ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => p.onToggleStar(m)}>
@@ -620,7 +620,7 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
         }
       >
         <IconCopy />
-        Copy sender address
+        Copy Sender Address
       </ContextMenuItem>
     </ContextMenuContent>
   );

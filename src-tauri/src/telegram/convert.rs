@@ -104,7 +104,18 @@ pub struct TgMedia {
 pub struct TgReply {
     pub id: i32,
     pub sender: Option<String>,
+    /// Who wrote the quoted message, for their name colour (None for your own, or when unknown).
+    pub sender_id: Option<String>,
     pub text: String,
+}
+
+/// One reaction under a message: the emoji, how many people chose it, and whether you did.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgReaction {
+    pub emoji: String,
+    pub count: i32,
+    pub mine: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,6 +137,7 @@ pub struct TgMessage {
     pub service: Option<String>,
     /// Photos sent together as an album share this.
     pub grouped_id: Option<String>,
+    pub reactions: Vec<TgReaction>,
 }
 
 /// What Relay keeps about a chat between list loads.
@@ -441,11 +453,29 @@ fn forwarded_from(m: &Message) -> Option<String> {
     Some(h.from_name.clone().or(h.post_author.clone()).unwrap_or_default())
 }
 
-/// A message for the conversation view. `replies` holds the messages it may be replying to.
+/// A message's reactions. Only plain emoji: custom (Premium) emoji and paid stars are left out,
+/// as Relay can't draw them yet. `min` updates leave out which ones are yours; then `mine` is false.
+pub fn reactions_of(r: &tl::enums::MessageReactions) -> Vec<TgReaction> {
+    let tl::enums::MessageReactions::Reactions(r) = r;
+    r.results
+        .iter()
+        .filter_map(|c| {
+            let tl::enums::ReactionCount::Count(c) = c;
+            let tl::enums::Reaction::Emoji(e) = &c.reaction else { return None };
+            Some(TgReaction { emoji: e.emoticon.clone(), count: c.count, mine: c.chosen_order.is_some() })
+        })
+        .collect()
+}
+
+/// A message for the conversation view.`replies` holds the messages it may be replying to.
 pub fn message(m: &Message, replies: &HashMap<i32, Message>) -> TgMessage {
     let reply = m.reply_to_message_id().map(|id| match replies.get(&id) {
-        Some(r) => TgReply { id, sender: full_sender_name(r), text: preview(r, false).text },
-        None => TgReply { id, sender: None, text: "Message".into() },
+        Some(r) => TgReply {
+            id,
+            sender: full_sender_name(r),
+            sender_id: if r.outgoing() { None } else { r.sender_id().filter(|s| s.bot_api_dialog_id().is_some()).map(chat_id) },
+            text: preview(r, false).text },
+        None => TgReply { id, sender: None, sender_id: None, text: "Message".into() },
     });
     TgMessage {
         id: m.id(),
@@ -463,6 +493,10 @@ pub fn message(m: &Message, replies: &HashMap<i32, Message>) -> TgMessage {
         edited: m.edit_date().is_some() && !m.edit_hide(),
         service: service_text(m),
         grouped_id: m.grouped_id().map(|g| g.to_string()),
+        reactions: match &m.raw {
+            tl::enums::Message::Message(raw) => raw.reactions.as_ref().map(reactions_of).unwrap_or_default(),
+            _ => Vec::new(),
+        },
     }
 }
 

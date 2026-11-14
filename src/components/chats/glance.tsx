@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
+import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { toast } from "sonner";
 import { IconDownload, IconVideoOff } from "@tabler/icons-react";
 import { api, errorText } from "@/api";
@@ -10,17 +10,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ease } from "@/lib/motion";
 
 /*
- * A photo or video opened over the app, the way Zen's Glance opens a link: it grows out of the
- * thumbnail along a slight arc with a little bounce, the app behind dims (as it does for the
- * command bar), and the buttons slide in on its right as it lands. Closing flies it back into the
- * thumbnail.
+ * A photo or video opened over the app: it fades in where it settles, with its buttons on its
+ * right, while the app behind dims (as it does for the command bar). Closing fades it out where
+ * it is, shrinking it a touch.
  */
 
 export interface GlanceItem {
   chatId: string;
   messageId: number;
   kind: "photo" | "video";
-  /** The thumbnail it opens from, and lands back in. */
+  /** The thumbnail it opens from, and hands focus back to. */
   source: HTMLElement;
   /** The picture shown while it opens: the photo itself, or a video's preview. */
   preview: string | null;
@@ -77,17 +76,12 @@ export function GlanceHost() {
   return createPortal(<Glance key={`${item.chatId}:${item.messageId}`} item={item} onDone={() => setCurrent(null)} />, document.body);
 }
 
-/** Zen's Glance: a spring with a little bounce to open, a long ease-out to close. */
-const OPEN = { type: "spring", bounce: 0.2, visualDuration: 0.35 } as const;
-const CLOSE_S = 0.35;
-const easeOutSextic = (t: number) => 1 - Math.pow(1 - t, 6);
-/** The dim behind fades in like the command bar's (200 ms, the app's ease-out). */
-const DIM_IN = { duration: 0.2, ease } as const;
+/** It fades in with the dim behind, like the command bar (200 ms, the app's ease-out); closing is a quicker fade. */
+const OPEN = { duration: 0.2, ease } as const;
+const CLOSE = { duration: 0.15, ease } as const;
 const BUTTON_GAP = 12;
 const BUTTON_COLUMN = 40 + BUTTON_GAP;
 const RADIUS = 12;
-/** The bubble corners a thumbnail sits in. */
-const SOURCE_RADIUS = 16;
 
 interface Rect {
   x: number;
@@ -108,60 +102,23 @@ function fitRect(w: number, h: number): Rect {
   return { x: Math.round((vw - fw) / 2), y: Math.round((vh - fh) / 2), w: fw, h: fh };
 }
 
-function rectOf(el: HTMLElement): Rect | null {
-  if (!el.isConnected) return null;
-  const r = el.getBoundingClientRect();
-  if (r.width < 1 || r.bottom < 0 || r.top > window.innerHeight) return null;
-  return { x: r.left, y: r.top, w: r.width, h: r.height };
-}
-
-/** The glance's transform at progress t: centre and size eased from the thumbnail, along an arc. */
-function frame(t: number, from: Rect, to: Rect) {
-  const fc = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
-  const tc = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
-  const dist = Math.hypot(tc.x - fc.x, tc.y - fc.y);
-  const above = Math.min(fc.y, tc.y);
-  const below = window.innerHeight - Math.max(fc.y, tc.y);
-  const arc = Math.min(dist * 0.4, 30, Math.max(above, below) * 0.6) * (below > above ? 1 : -1);
-  const x = fc.x + (tc.x - fc.x) * t;
-  const y = fc.y + (tc.y - fc.y) * t + arc * (1 - Math.pow(2 * t - 1, 2));
-  const sx = (from.w + (to.w - from.w) * t) / to.w;
-  const sy = (from.h + (to.h - from.h) * t) / to.h;
-  return { dx: x - tc.x, dy: y - tc.y, sx, sy };
-}
-
 function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
   const reduce = useReducedMotion();
   const [target, setTarget] = useState(() => fitRect(item.width || item.source.offsetWidth || 4, item.height || item.source.offsetHeight || 3));
-  const from = useRef<Rect>(rectOf(item.source) ?? { ...target, x: target.x + target.w * 0.05, y: target.y + target.h * 0.05, w: target.w * 0.9, h: target.h * 0.9 });
   const [closing, setClosing] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  // 0 is the thumbnail, 1 the glance.
-  const p = useMotionValue(reduce ? 1 : 0);
-  const opacity = useMotionValue(reduce ? 0 : 1);
-  const transform = useTransform(p, (t) => {
-    const f = frame(t, from.current, target);
-    return `translate(${f.dx}px, ${f.dy}px) scale(${f.sx}, ${f.sy})`;
-  });
-  // Keep the corners round on screen while the box is scaled.
-  const borderRadius = useTransform(p, (t) => {
-    const f = frame(t, from.current, target);
-    const end = item.round ? Math.min(target.w, target.h) / 2 : RADIUS;
-    const start = item.round ? Math.min(from.current.w, from.current.h) / 2 : SOURCE_RADIUS;
-    const r = start + (end - start) * Math.min(Math.max(t, 0), 1);
-    return `${r / f.sx}px / ${r / f.sy}px`;
-  });
-
+  const opacity = useMotionValue(0);
+  // Shrinks it a touch as it fades out.
+  const shrink = useMotionValue(1);
   // The dim behind, faded in and out like the command bar's.
   const dim = useMotionValue(0);
 
   useLayoutEffect(() => {
-    void animate(dim, 1, DIM_IN);
-    if (reduce) void animate(opacity, 1, { duration: 0.15 });
-    else void animate(p, 1, OPEN);
+    void animate(dim, 1, OPEN);
+    void animate(opacity, 1, OPEN);
     dialogRef.current?.focus({ preventScroll: true });
-  }, [p, opacity, dim, reduce]);
+  }, [opacity, dim]);
 
   useEffect(() => {
     const onResize = () => setTarget(fitRect(item.width || target.w, item.height || target.h));
@@ -172,19 +129,13 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
   const close = () => {
     if (closing) return;
     setClosing(true);
-    const back = rectOf(item.source);
-    const finish = () => {
+    // Fade and shrink a little where it is, with the dim behind.
+    void animate(dim, 0, CLOSE);
+    if (!reduce) void animate(shrink, 0.95, CLOSE);
+    void animate(opacity, 0, CLOSE).then(() => {
       item.source.focus({ preventScroll: true });
       onDone();
-    };
-    void animate(dim, 0, { duration: reduce ? 0.15 : CLOSE_S, ease });
-    if (reduce || !back) {
-      // Nowhere on screen to land: fade out where it is.
-      void animate(opacity, 0, { duration: 0.15 }).then(finish);
-      return;
-    }
-    from.current = back;
-    void animate(p, 0, { duration: CLOSE_S, ease: easeOutSextic }).then(finish);
+    });
   };
 
   useEffect(() => {
@@ -205,8 +156,8 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
       {/* The same dim as the command bar and dialogs. */}
       <motion.div style={{ opacity: dim }} className="fixed inset-0 bg-scrim supports-backdrop-filter:backdrop-blur-xs " />
       <motion.div
-        style={{ ...box, transform, borderRadius, opacity, transformOrigin: "50% 50%" }}
-        className="fixed overflow-hidden bg-black shadow-2xl will-change-transform"
+        style={{ ...box, scale: shrink, borderRadius: item.round ? "50%" : RADIUS, opacity }}
+        className="fixed overflow-hidden bg-black shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {item.kind === "photo" ? (
@@ -217,9 +168,9 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
       </motion.div>
       {!closing && (
         <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={reduce ? { duration: 0.15 } : { type: "spring", bounce: 0.2, duration: 0.2, delay: OPEN.visualDuration - 0.2 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={OPEN}
           style={{ left: target.x + target.w + BUTTON_GAP, top: target.y }}
           className="fixed flex flex-col gap-3"
           onClick={(e) => e.stopPropagation()}
@@ -228,7 +179,7 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
         </motion.div>
       )}
       {closing && (
-        // The buttons fade first as the glance flies back.
+        // The buttons fade a touch ahead of the glance.
         <motion.div
           initial={{ opacity: 1 }}
           animate={{ opacity: 0 }}
@@ -291,7 +242,7 @@ function GlanceVideo({ item, closing }: { item: GlanceItem; closing: boolean }) 
   useEffect(() => {
     if (closing) videoRef.current?.pause();
   }, [closing]);
-  // While it flies back, show the still preview: it's what lands in the thumbnail.
+  // While it fades out, show the still preview rather than a paused frame.
   const showVideo = url && ready && !closing;
   return (
     <div className="relative size-full">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { quickAddTask } from "@/tasks/quick-add";
 import { toast } from "sonner";
 import {
   IconAlertCircle,
@@ -10,12 +11,14 @@ import {
   IconTrash,
   IconChecks,
   IconChartBar,
+  IconChecklist,
   IconCopy,
   IconCornerUpLeft,
   IconFile,
   IconMapPin,
   IconMicrophone,
   IconMusic,
+  IconPencil,
   IconPhoto,
   IconPlayerPlayFilled,
   IconPaperclip,
@@ -30,19 +33,33 @@ import { quick, smooth } from "@/lib/motion";
 import { api, errorText } from "@/api";
 import { clockTime } from "@/format";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
-import type { TgChat, TgMedia, TgMessage, TgSticker } from "@/telegram/types";
-import { ChatAvatar } from "./chat-avatar";
+import type { TgChat, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
+import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
 import { MessageText } from "./message-text";
-import { InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
+import { InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
 import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
 import { GlanceHost, openGlance } from "./glance";
 import { VoiceMessage } from "./voice-message";
+import { RoundVideo } from "./round-video";
+import { VoiceRecorder, type Recording, type VoiceRecorderHandle } from "./voice-recorder";
 import { StickerArt, useInView, useObjectUrl } from "./sticker-view";
 import { StickerPicker } from "./sticker-picker";
 import { PageHeader } from "@/components/page-header";
@@ -56,7 +73,43 @@ const BOTTOM_SLACK = 80;
 /** What you'd typed in each chat, kept while Relay is open. */
 const drafts = new Map<string, string>();
 
+/**
+ * The reactions offered in a message's right-click menu. Only emoji from Telegram's own reaction
+ * set work (😂 and 😮, for one, aren't in it), written as Telegram writes them: the heart is a
+ * bare ❤ without the U+FE0F emoji marker.
+ */
+const QUICK_REACTIONS = ["👍", "❤", "🔥", "🤣", "😢", "🙏"];
+
+/** Telegram's reactions leave out U+FE0F; it goes back on for drawing, so ❤ shows as the red emoji heart. */
+const showEmoji = (e: string) => (e === "❤" ? "❤️" : e);
+
+/**
+ * A message's reactions after you tap one: taking off yours, or making it your reaction (one
+ * each, as on a free Telegram account, so it replaces the one you had).
+ */
+function toggledReactions(list: TgReaction[], emoji: string): TgReaction[] {
+  const had = list.find((r) => r.emoji === emoji)?.mine ?? false;
+  const next = list.map((r) => (r.mine ? { ...r, mine: false, count: r.count - 1 } : r)).filter((r) => r.count > 0);
+  if (had) return next;
+  const at = next.find((r) => r.emoji === emoji);
+  return at ? next.map((r) => (r === at ? { ...r, mine: true, count: r.count + 1 } : r)) : [...next, { emoji, count: 1, mine: true }];
+}
+
 const isGroup = (c: TgChat) => c.kind === "group" || c.kind === "channel";
+
+/** Telegram lets you edit a message for 48 hours (saved messages and channel posts for good). */
+const EDIT_WINDOW_MS = 48 * 3_600_000;
+/** Media whose text can't be changed: stickers, round videos, polls, places and contacts have no caption. */
+const NO_CAPTION: TgMedia["kind"][] = ["sticker", "poll", "location", "contact"];
+
+function canEdit(c: TgChat, m: Shown): boolean {
+  if (!m.outgoing || m.pending || m.service || m.forwardedFrom !== null) return false;
+  if (m.media && (NO_CAPTION.includes(m.media.kind) || m.media.round)) return false;
+  return c.kind === "saved" || c.kind === "channel" || Date.now() - m.date < EDIT_WINDOW_MS;
+}
+
+/** Your own messages anywhere; in one-to-one chats, theirs too (as in Telegram). */
+const canDelete = (c: TgChat, m: Shown) => !m.pending && (m.outgoing || c.kind === "user" || c.kind === "bot" || c.kind === "saved");
 
 function dayLabel(ms: number): string {
   const d = new Date(ms);
@@ -97,7 +150,7 @@ function subtitle(c: TgChat): string | null {
  * ("sending", with a negative stand-in id) or that didn't go through ("failed").
  */
 /** A message as shown: pending ones carry how sending went, and a file being sent its path (for Try again). */
-type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker };
+type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker; voice?: Recording };
 
 let tempSeq = 0;
 
@@ -116,10 +169,17 @@ export function Conversation({ chat }: { chat: TgChat }) {
   const [error, setError] = useState<string | null>(null);
   const [older, setOlder] = useState<"idle" | "loading" | "done">("idle");
   const [replyTo, setReplyTo] = useState<TgMessage | null>(null);
+  const [editing, setEditing] = useState<TgMessage | null>(null);
+  const [deleting, setDeleting] = useState<Shown | null>(null);
+  const [deleteBoth, setDeleteBoth] = useState(true);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  /** The message bar floats over the end of the chat; the list leaves room for it. */
+  const composerBox = useRef<HTMLDivElement>(null);
+  const [composerH, setComposerH] = useState(0);
   /** Set before older messages are added on top, so the view stays on what you were reading. */
   const keepFrom = useRef<number | null>(null);
   const stickToBottom = useRef(true);
@@ -140,6 +200,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
     setError(null);
     setOlder("idle");
     setReplyTo(null);
+    setEditing(null);
     setUnseen(0);
     stickToBottom.current = true;
     api.telegram.messages(chat.id, undefined, PAGE).then(
@@ -182,6 +243,18 @@ export function Conversation({ chat }: { chat: TgChat }) {
             else if (!stickToBottom.current) setUnseen((n) => n + 1);
           }
         }
+        if (e.reactions && e.reactions.chatId === c.id) {
+          const { messageId, reactions, min } = e.reactions;
+          setMessages(
+            (list) =>
+              list?.map((x) => {
+                if (x.id !== messageId) return x;
+                // Telegram sometimes leaves out which ones are yours; keep those as shown.
+                const mine = new Set(x.reactions.filter((r) => r.mine).map((r) => r.emoji));
+                return { ...x, reactions: min ? reactions.map((r) => ({ ...r, mine: mine.has(r.emoji) })) : reactions };
+              }) ?? list,
+          );
+        }
         if (e.deleted.length && (e.deletedChatId === null || e.deletedChatId === c.id)) {
           const gone = new Set(e.deleted);
           // Ids are only unique within a channel; elsewhere they're per account, so this is safe.
@@ -191,12 +264,62 @@ export function Conversation({ chat }: { chat: TgChat }) {
     [markRead],
   );
 
+  // Typing anywhere in the chat goes into the message box, as in Telegram. It listens first
+  // (capture) so a plain letter types rather than firing an app shortcut like C for a new email.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1 || e.key === " ") return;
+      const t = e.target as HTMLElement;
+      if (t.closest?.("input, textarea, select, [contenteditable], [role=menu], [role=listbox]")) return;
+      if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
+      const box = composer.current;
+      if (!box) return;
+      // Focused now, the key's character lands in the box.
+      box.focus();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   // Coming back to the window reads what arrived while you were away (if you're at the bottom).
   useEffect(() => {
     const onFocus = () => stickToBottom.current && markRead();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [markRead]);
+
+  useLayoutEffect(() => {
+    const el = composerBox.current;
+    if (!el) return;
+    const measure = () => setComposerH(el.offsetHeight);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
+
+  // The bar growing (more lines, a reply) keeps the latest message just above it.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [composerH]);
+
+  // So does the chat growing after it's drawn (pictures, voice waveforms or fonts loading in):
+  // at the bottom, the latest message stays in view instead of slipping under the bar.
+  const content = useRef<HTMLDivElement>(null);
+  const hasList = !!messages && !error;
+  useLayoutEffect(() => {
+    const el = content.current;
+    const sc = scroller.current;
+    if (!el || !sc) return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottom.current && keepFrom.current === null) sc.scrollTop = sc.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasList]);
 
   // Keep the view where it should be after the list changes.
   useLayoutEffect(() => {
@@ -246,21 +369,109 @@ export function Conversation({ chat }: { chat: TgChat }) {
   const jumpTo = (id: number) => {
     const node = scroller.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
     if (!node) return;
+    const sc = scroller.current!;
+    // Once it's in view, the message gives a small quick pop so your eye lands on it.
+    const pop = () => {
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      node.querySelector<HTMLElement>("[data-bubble]")?.animate(
+        [{ transform: "scale(1)" }, { transform: "scale(1.04)", offset: 0.4 }, { transform: "scale(1)" }],
+        { duration: 260, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+      );
+    };
+    const r = node.getBoundingClientRect();
+    const view = sc.getBoundingClientRect();
+    if (r.top >= view.top && r.bottom <= view.bottom - composerH) {
+      pop();
+      return;
+    }
+    let done = false;
+    const once = () => {
+      if (done) return;
+      done = true;
+      sc.removeEventListener("scrollend", once);
+      pop();
+    };
+    sc.addEventListener("scrollend", once);
+    setTimeout(once, 800);
     node.scrollIntoView({ block: "center", behavior: "smooth" });
-    node.animate([{ backgroundColor: "color-mix(in srgb, var(--primary) 18%, transparent)" }, { backgroundColor: "transparent" }], { duration: 1400, easing: "ease-out" });
+  };
+
+  /** Shows your reaction straight away; Telegram's live update then confirms the counts. */
+  const react = (m: TgMessage, emoji: string) => {
+    const before = m.reactions;
+    const after = toggledReactions(before, emoji);
+    const setFor = (reactions: TgReaction[]) => setMessages((list) => list?.map((x) => (x.id === m.id ? { ...x, reactions } : x)) ?? list);
+    setFor(after);
+    api.telegram
+      .react(chat.id, m.id, after.filter((r) => r.mine).map((r) => r.emoji.replace(/️/g, "")))
+      .catch((e) => {
+        setFor(before);
+        toast.error(errorText(e));
+      });
   };
 
   const startReply = (m: TgMessage) => {
+    setEditing(null);
     setReplyTo(m);
     composer.current?.focus();
+  };
+
+  const startEdit = (m: TgMessage) => {
+    setReplyTo(null);
+    setEditing(m);
+    composer.current?.focus();
+  };
+
+  /** Up in an empty composer edits your last message, as in Telegram. */
+  const editLast = (): boolean => {
+    const m = messages?.filter((x) => canEdit(chat, x)).at(-1);
+    if (!m) return false;
+    startEdit(m);
+    jumpTo(m.id);
+    return true;
+  };
+
+  /** The new text shows straight away; it goes back if Telegram turns the edit down. */
+  const saveEdit = (text: string) => {
+    const m = editing;
+    setEditing(null);
+    if (!m || text === m.text.trimEnd()) return;
+    const put = (x: TgMessage) => setMessages((list) => list?.map((y) => (y.id === m.id ? x : y)) ?? list);
+    put({ ...m, text, entities: [], edited: true });
+    api.telegram.edit(chat.id, m.id, text).then(put, (e) => {
+      put(m);
+      toast.error(errorText(e));
+    });
+  };
+
+  const askDelete = (m: Shown) => {
+    setDeleteBoth(true);
+    setDeleting(m);
+  };
+  const confirmDelete = async () => {
+    const m = deleting;
+    if (!m) return;
+    setDeleteBusy(true);
+    try {
+      // Groups and channels delete for everyone; one-to-one chats only if you tick the box.
+      await api.telegram.deleteMessages(chat.id, [m.id], chat.kind === "user" ? deleteBoth : chat.kind !== "bot");
+      setMessages((list) => list?.filter((x) => x.id !== m.id) ?? list);
+      setReplyTo((r) => (r?.id === m.id ? null : r));
+      setEditing((x) => (x?.id === m.id ? null : x));
+      setDeleting(null);
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   /**
    * Sends the way Telegram does: the bubble is there at once with a clock, becomes Telegram's
    * message (ticks) when it's confirmed, or turns red with Try again if it fails.
    */
-  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker } = {}, after?: Promise<unknown>): Promise<unknown> => {
-    const { file, sticker } = what;
+  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker; voice?: Recording } = {}, after?: Promise<unknown>): Promise<unknown> => {
+    const { file, sticker, voice } = what;
     const name = file?.split(/[\\/]/).pop() ?? "";
     const temp: Shown = {
       id: -++tempSeq,
@@ -273,16 +484,20 @@ export function Conversation({ chat }: { chat: TgChat }) {
       entities: [],
       media: file
         ? { kind: "file", label: name, width: null, height: null, mime: null }
-        : sticker
+        : voice
+          ? { kind: "voice", label: "Voice message", width: null, height: null, mime: "audio/ogg", duration: voice.duration, waveform: voice.waveform }
+          : sticker
           ? { kind: "sticker", label: `${sticker.emoji} Sticker`.trim(), width: sticker.width, height: sticker.height, mime: sticker.mime }
           : null,
       file,
       sticker,
-      reply: reply ?{ id: reply.id, sender: reply.outgoing ? "You" : reply.senderName, text: reply.text || reply.media?.label || "Message" } : null,
+      voice,
+      reply: reply ? { id: reply.id, sender: reply.outgoing ? "You" : reply.senderName, senderId: reply.outgoing ? null : reply.senderId, text: reply.text || reply.media?.label || "Message" } : null,
       forwardedFrom: null,
       edited: false,
       service: null,
       groupedId: null,
+      reactions: [],
       pending: "sending",
     };
     stickToBottom.current = true;
@@ -294,12 +509,17 @@ export function Conversation({ chat }: { chat: TgChat }) {
       .then(() =>
         sticker
           ? api.telegram.sendSticker(chat.id, sticker.id, reply?.id)
-          : file
+          : voice
+            ? api.telegram.sendVoice(chat.id, voice.bytes, voice.duration, voice.waveform, reply?.id)
+            : file
             ? api.telegram.sendFile(chat.id, file, text, reply?.id)
             : api.telegram.send(chat.id, text, reply?.id),
       )
       .then(
-        (m) => setMessages((list) => (list ? settle(list, temp.id, m) : list)),
+        (m) => {
+          setMessages((list) => (list ? settle(list, temp.id, m) : list));
+          if (voice) URL.revokeObjectURL(voice.url);
+        },
         (e) => {
           setMessages((list) => list?.map((x) => (x.id === temp.id ? { ...x, pending: "failed" as const } : x)) ?? list);
           toast.error(errorText(e));
@@ -318,12 +538,15 @@ export function Conversation({ chat }: { chat: TgChat }) {
 
   const retry = (m: Shown) => {
     const reply = m.reply ? (messages?.find((x) => x.id === m.reply!.id) ?? null) : null;
-    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker });
+    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker, voice: m.voice });
   };
   const discard = (m: Shown) => setMessages((list) => list?.filter((x) => x.id !== m.id) ?? list);
 
   const group = isGroup(chat);
   const sub = subtitle(chat);
+  // Service lines ("Alex joined") don't count; your unsent or failed message does.
+  const lastReal = messages?.filter((x) => !x.service).at(-1);
+  const lastFromYou = !!lastReal?.outgoing;
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -340,13 +563,18 @@ export function Conversation({ chat }: { chat: TgChat }) {
       </PageHeader>
 
       <div className="relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={onScroll} className="absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3 pb-2">
+        <div
+          ref={scroller}
+          onScroll={onScroll}
+          style={{ paddingBottom: composerH + 8 }}
+          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3"
+        >
           {error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !messages ? (
             <LoadingBubbles />
           ) : (
-            <div className="mx-auto flex max-w-3xl flex-col">
+            <div ref={content} className="mx-auto flex max-w-3xl flex-col">
               {older === "loading" && (
                 <div className="flex justify-center py-2">
                   <Spinner className="text-muted-foreground" />
@@ -380,9 +608,13 @@ export function Conversation({ chat }: { chat: TgChat }) {
                         showName={group && !m.outgoing && first}
                         showAvatar={group && !m.outgoing}
                         onReply={() => startReply(m)}
+                        onReact={(emoji) => react(m, emoji)}
                         onJump={jumpTo}
                         onRetry={() => retry(m)}
                         onDiscard={() => discard(m)}
+                        onEdit={canEdit(chat, m) ? () => startEdit(m) : undefined}
+                        onDelete={canDelete(chat, m) ? () => askDelete(m) : undefined}
+                        onFocusComposer={() => composer.current?.focus()}
                       />
                     )}
                   </div>
@@ -394,7 +626,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
         <AnimatePresence>
           {!atBottom && messages && (
             <motion.div
-              className="absolute right-5 bottom-3"
+              className="absolute right-5"
+              style={{ bottom: composerH + 12 }}
               initial={{ opacity: 0, scale: 0.9, y: 4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 4 }}
@@ -412,9 +645,57 @@ export function Conversation({ chat }: { chat: TgChat }) {
             </motion.div>
           )}
         </AnimatePresence>
+
+      <Composer
+        boxRef={composerBox}
+        ref={composer}
+        chat={chat}
+        replyTo={replyTo}
+        onCancelReply={() => setReplyTo(null)}
+        editing={editing}
+        onCancelEdit={() => setEditing(null)}
+        onSaveEdit={saveEdit}
+        onEditLast={editLast}
+        lastFromYou={lastFromYou}
+        onSend={sendAll}
+        onSticker={(s) => void send("", replyTo, undefined, { sticker: s })}
+        onVoice={(v) => void send("", replyTo, undefined, { voice: v })}
+      />
       </div>
 
-      <Composer ref={composer} chat={chat} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} onSend={sendAll} onSticker={(s) => void send("", replyTo, undefined, { sticker: s })} />
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && !deleteBusy && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete message?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {chat.kind === "user"
+                ? "It's removed from this chat. You can't undo this."
+                : chat.kind === "bot" || chat.kind === "saved"
+                  ? "It's removed from this chat for you. You can't undo this."
+                  : "It's removed for everyone in this chat. You can't undo this."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {chat.kind === "user" && (
+            <div className="flex items-center gap-2">
+              <Checkbox id="delete-message-both" checked={deleteBoth} onCheckedChange={(v) => setDeleteBoth(v === true)} />
+              <Label htmlFor="delete-message-both">Also delete for {chat.name}</Label>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {chat.kind === "user" ? (deleteBoth ? "Delete for both" : "Delete for me") : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -437,12 +718,43 @@ function LoadingBubbles() {
   );
 }
 
+/**
+ * A day's start: a small chip on a hairline that runs out to both edges of the frame. The line is
+ * the scroller's full width (100cqw, plus its 1rem padding each side) and meets the chip's border.
+ */
 function DaySeparator({ date }: { date: number }) {
   return (
-    <div className="sticky top-0 z-10 flex justify-center py-2">
-      <span className="rounded-full bg-background/85 px-3 py-0.5 text-xs font-medium text-muted-foreground shadow-[0_0_0_1px_var(--color-border)] backdrop-blur-sm">
-        {dayLabel(date)}
-      </span>
+    <div role="separator" className="pt-5 pb-1">
+      <div className="relative flex justify-center">
+        <span className="absolute top-1/2 left-1/2 h-px w-[calc(100cqw+2rem)] -translate-1/2 bg-border" />
+        <span className="relative rounded-full border bg-background px-3 py-1 text-xs leading-none font-medium text-foreground">{dayLabel(date)}</span>
+      </div>
+    </div>
+  );
+}
+
+/** The reactions under a bubble: a chip each, yours picked out; tapping one adds or takes off yours. */
+function Reactions({ list, onReact, disabled }: { list: TgReaction[]; onReact: (emoji: string) => void; disabled: boolean }) {
+  return (
+    <div className="mt-0.5 flex flex-wrap gap-1.5">
+      {list.map((r) => (
+        <button
+          key={r.emoji}
+          type="button"
+          disabled={disabled}
+          aria-pressed={r.mine}
+          aria-label={`${showEmoji(r.emoji)} ${r.count}${r.mine ? ", including you" : ""}`}
+          onClick={() => onReact(r.emoji)}
+          onDoubleClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex h-7 items-center gap-1 rounded-full border pr-2.5 pl-1.5 text-xs leading-none font-medium tabular-nums transition-colors duration-150",
+            r.mine ? "border-selected-border bg-selected text-foreground hover:bg-selected-hover" : "bg-background text-muted-foreground hover:bg-tint-hover",
+          )}
+        >
+          <span className="text-sm leading-none">{showEmoji(r.emoji)}</span>
+          {r.count}
+        </button>
+      ))}
     </div>
   );
 }
@@ -621,6 +933,13 @@ function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media:
   );
 }
 
+/** A round video message, played in its circle; its preview picture shows until the video loads. */
+function RoundBubble({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
+  const { bytes } = useMediaBytes(chatId, m, "thumb");
+  const poster = useObjectUrl(bytes, "image/jpeg");
+  return <RoundVideo chatId={chatId} messageId={m.id} media={media} poster={poster} />;
+}
+
 /** What to do with media Relay can't show yet. */
 function mediaHint(kind: TgMedia["kind"]): string {
   if (kind === "voice" || kind === "video" || kind === "gif" || kind === "audio") return "Play it in Telegram";
@@ -651,6 +970,27 @@ function MediaChip({ media, hint }: { media: TgMedia; hint?: string }) {
   );
 }
 
+/** A reply quoted in your own bubble: its own blue and text colour (theirs keep the grey tint). */
+const quoteOut = "border-transparent bg-quote-out text-quote-out-foreground";
+
+/** The quoted message's sender (in groups, in their colour) and its text. */
+function QuoteLines({ chat, reply, out }: { chat: TgChat; reply: NonNullable<TgMessage["reply"]>; out: boolean }) {
+  return (
+    <>
+      {isGroup(chat) &&
+        (out ? (
+          <span className="truncate font-semibold">{reply.sender ?? "Reply"}</span>
+        ) : (
+          <span style={{ "--peer": peerColor(reply.senderId) } as CSSProperties} className={cn("truncate font-semibold", nameColorClass)}>
+            {reply.sender ?? "Reply"}
+          </span>
+        ))}
+      {/* Full strength in yours: fading the text would take it under 4.5:1 on the blue. */}
+      <span className={cn("truncate", !out && "text-muted-foreground")}>{reply.text || "Message"}</span>
+    </>
+  );
+}
+
 /** Read ticks, "edited" and the time, drawn under the last bubble of a run. */
 function Meta({ m, read }: { m: Shown; read: boolean }) {
   return (
@@ -677,9 +1017,14 @@ function Bubble(props: {
   /** Group chats: the sender's picture beside their run (only drawn on its last bubble). */
   showAvatar: boolean;
   onReply: () => void;
+  onReact: (emoji: string) => void;
   onJump: (id: number) => void;
   onRetry: () => void;
   onDiscard: () => void;
+  /** Left out where the message can't be edited / deleted. */
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onFocusComposer: () => void;
 }) {
   const { chat, m, first, last } = props;
   const out = m.outgoing;
@@ -697,9 +1042,17 @@ function Bubble(props: {
   const corners = "rounded-bubble";
   const showTime = last || !!m.pending || m.edited;
   const nameLine = props.showName && <div className="truncate px-1 text-sm font-semibold text-foreground">{m.senderName}</div>;
+  const reactions = m.reactions.length > 0 && <Reactions list={m.reactions} onReact={props.onReact} disabled={!!m.pending} />;
 
   const copy = () => {
     void navigator.clipboard.writeText(m.text).then(() => toast.success("Copied"));
+  };
+  const toComposer = useRef(false);
+  // Text highlighted inside this bubble when the menu opened (empty: the whole message).
+  const [picked, setPicked] = useState("");
+  const pickSelection = (e: React.MouseEvent<HTMLElement>) => {
+    const sel = window.getSelection();
+    setPicked(sel && sel.anchorNode && e.currentTarget.contains(sel.anchorNode) ? sel.toString().trim() : "");
   };
 
   return (
@@ -710,7 +1063,7 @@ function Bubble(props: {
           {first && <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={32} />}
         </div>
       )}
-      {failed ? (
+      {failed && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="destructive" size="icon-xs" className="mb-1 shrink-0 rounded-full" onClick={props.onRetry}>
@@ -720,13 +1073,11 @@ function Bubble(props: {
           </TooltipTrigger>
           <TooltipContent>Not sent. Try again</TooltipContent>
         </Tooltip>
-      ) : (
-        out && !m.pending && <ReplyButton onReply={props.onReply} />
       )}
       <ContextMenu>
         <ContextMenuTrigger asChild>
           {sticker ? (
-            <div onDoubleClick={m.pending ? undefined : props.onReply} className="relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]">
+            <div data-bubble onDoubleClick={m.pending ? undefined : props.onReply} className={cn("relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]", out ? "origin-right" : "origin-left")}>
               {nameLine}
               {(m.forwardedFrom !== null || m.reply) && (
                 <div className={cn("min-w-0 self-start rounded-2xl bg-bubble px-3 py-1.5", out && "self-end")}>
@@ -739,26 +1090,30 @@ function Bubble(props: {
                     <button
                       type="button"
                       onClick={() => m.reply && props.onJump(m.reply.id)}
-                      className="mt-0.5 flex w-full min-w-0 flex-col rounded-md bg-primary/8 px-2 py-1 text-left text-sm leading-snug"
+                      className={cn("mt-0.5 flex w-full min-w-0 flex-col rounded-md border px-2 py-1 text-left text-sm leading-snug", out ? quoteOut : "bg-tint-hover")}
                     >
-                      <span className="truncate font-semibold text-primary">{m.reply.sender ?? "Reply"}</span>
-                      <span className="truncate text-muted-foreground">{m.reply.text || "Message"}</span>
+                      <QuoteLines chat={chat} reply={m.reply} out={out} />
                     </button>
                   )}
                 </div>
               )}
               <div className={cn("relative", out && "self-end")}>
-                {round ? <VideoThumb chatId={chat.id} m={m} media={sticker} /> : <Sticker chatId={chat.id} m={m} media={sticker} />}
+                {round ? <RoundBubble chatId={chat.id} m={m} media={sticker} /> : <Sticker chatId={chat.id} m={m} media={sticker} />}
               </div>
+              {reactions && <div className={cn(out && "self-end")}>{reactions}</div>}
             </div>
           ) : (
-          <div onDoubleClick={m.pending ? undefined : props.onReply} className={cn("flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1", out ? "items-end" : "items-start")}>
+          <div
+            data-bubble
+            onContextMenu={pickSelection}
+            // Double-clicking the text selects a word (as everywhere); only the rest of the bubble replies.
+            onDoubleClick={m.pending ? undefined : (e) => !(e.target as HTMLElement).closest("[data-msg-text]") && props.onReply()} className={cn("flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1", out ? "origin-right items-end" : "origin-left items-start")}>
           {nameLine}
           <div
             className={cn(
-              "relative min-w-0 overflow-hidden text-sm leading-[1.4] break-words",
+              "relative min-w-0 overflow-hidden border text-sm leading-[1.4] break-words text-foreground",
               corners,
-              out ? "bg-primary text-primary-foreground" : "bg-bubble text-foreground",
+              out ? "border-bubble-out-border bg-bubble-out" : "border-bubble-border bg-bubble",
               !photoOnly && "px-2.5 py-[7px]",
             )}
           >
@@ -771,13 +1126,10 @@ function Bubble(props: {
               <button
                 type="button"
                 onClick={() => m.reply && props.onJump(m.reply.id)}
-                className={cn(
-                  "mt-0.5 mb-1 flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left text-sm leading-snug",
-                  out ? "bg-primary-foreground/15" : "bg-primary/8",
-                )}
+                // 5px from the bubble's edge on three sides (the text keeps its 10px sides and 7px top), 4px above the text.
+                className={cn("-mx-[5px] mb-1 flex w-[calc(100%+10px)] min-w-0 flex-col rounded-md border px-2 py-1 text-left text-sm leading-snug", m.forwardedFrom === null ? "-mt-[2px]" : "mt-0.5", out ? quoteOut : "bg-tint-hover")}
               >
-                <span className={cn("truncate font-semibold", !out && "text-primary")}>{m.reply.sender ?? "Reply"}</span>
-                <span className={cn("truncate", out ? "text-primary-foreground/85" : "text-muted-foreground")}>{m.reply.text || "Message"}</span>
+                <QuoteLines chat={chat} reply={m.reply} out={out} />
               </button>
             )}
             {photo && (
@@ -793,24 +1145,55 @@ function Bubble(props: {
             )}
             {otherMedia && (
               <div className={cn(hasText && "mb-1.5")}>
-                {otherMedia.kind === "voice" ? <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} outgoing={out} /> : <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />}
+                {otherMedia.kind === "voice" ? <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} src={m.voice?.url} /> : <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />}
               </div>
             )}
             {hasText ? (
-              <div className="whitespace-pre-wrap">
-                <MessageText text={m.text} entities={m.entities} outgoing={out} />
+              <div data-msg-text className="cursor-text whitespace-pre-wrap select-text">
+                <MessageText text={m.text} entities={m.entities} />
               </div>
             ) : null}
           </div>
+          {reactions}
           </div>
           )}
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-44">
+        <ContextMenuContent
+          className="w-auto min-w-44"
+          // Reply and Edit put the cursor in the message box once the menu has let go of focus,
+          // rather than it going back to the bubble.
+          onCloseAutoFocus={(e) => {
+            if (!toComposer.current) return;
+            toComposer.current = false;
+            e.preventDefault();
+            props.onFocusComposer();
+          }}
+        >
+          {!m.pending && (
+            <>
+              <div className="flex gap-0.5">
+                {QUICK_REACTIONS.map((e) => {
+                  const mine = m.reactions.some((r) => r.emoji === e && r.mine);
+                  return (
+                    <ContextMenuItem
+                      key={e}
+                      aria-label={mine ? `Remove ${showEmoji(e)} reaction` : `React with ${showEmoji(e)}`}
+                      onSelect={() => props.onReact(e)}
+                      className={cn("size-8 justify-center p-0 text-base leading-none", mine && "bg-selected focus:bg-selected-hover")}
+                    >
+                      {showEmoji(e)}
+                    </ContextMenuItem>
+                  );
+                })}
+              </div>
+              <ContextMenuSeparator />
+            </>
+          )}
           {failed && (
             <>
               <ContextMenuItem onSelect={props.onRetry}>
                 <IconRefresh />
-                Try again
+                Try Again
               </ContextMenuItem>
               <ContextMenuItem variant="destructive" onSelect={props.onDiscard}>
                 <IconTrash />
@@ -819,20 +1202,50 @@ function Bubble(props: {
             </>
           )}
           {!m.pending && (
-            <ContextMenuItem onSelect={props.onReply}>
+            <ContextMenuItem
+              onSelect={() => {
+                toComposer.current = true;
+                props.onReply();
+              }}
+            >
               <IconCornerUpLeft />
               Reply
+            </ContextMenuItem>
+          )}
+          {props.onEdit && (
+            <ContextMenuItem
+              onSelect={() => {
+                toComposer.current = true;
+                props.onEdit?.();
+              }}
+            >
+              <IconPencil />
+              Edit
             </ContextMenuItem>
           )}
           {hasText && (
             <ContextMenuItem onSelect={copy}>
               <IconCopy />
-              Copy text
+              Copy Text
             </ContextMenuItem>
+          )}
+          {hasText && (
+            <ContextMenuItem onSelect={() => void quickAddTask(picked || m.text)}>
+              <IconChecklist />
+              {picked ? "Add Selection as Task" : "Add as Task"}
+            </ContextMenuItem>
+          )}
+          {props.onDelete && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem variant="destructive" onSelect={props.onDelete}>
+                <IconTrash />
+                Delete
+              </ContextMenuItem>
+            </>
           )}
         </ContextMenuContent>
       </ContextMenu>
-      {!out && <ReplyButton onReply={props.onReply} />}
     </div>
     {showTime && (
       <div className={cn("flex pt-2", out ? "justify-end" : "justify-start", props.showAvatar && !out ? "pl-10" : "px-1")}>
@@ -843,31 +1256,48 @@ function Bubble(props: {
   );
 }
 
-function ReplyButton({ onReply }: { onReply: () => void }) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
-      className="mb-1 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-visible:opacity-100"
-      onClick={onReply}
-    >
-      <IconCornerUpLeft />
-      <span className="sr-only">Reply</span>
-    </Button>
-  );
-}
-
 function Composer(props: {
   ref: React.Ref<HTMLTextAreaElement>;
+  /** The bar's outer box, measured so the chat leaves room for it. */
+  boxRef: React.Ref<HTMLDivElement>;
   chat: TgChat;
   replyTo: TgMessage | null;
   onCancelReply: () => void;
+  /** Your message being edited: its text fills the box until it's saved or cancelled. */
+  editing: TgMessage | null;
+  onCancelEdit: () => void;
+  onSaveEdit: (text: string) => void;
+  /** Starts editing your last message; false when there's none to edit. */
+  onEditLast: () => boolean;
+  /** Whether the latest message is yours (you've answered); false when it's theirs or there's none. */
+  lastFromYou: boolean;
   /** The text (the caption, with files), and the files to send. */
   onSend: (text: string, files: string[]) => void;
   onSticker: (s: TgSticker) => void;
+  onVoice: (r: Recording) => void;
 }) {
-  const { chat, replyTo } = props;
+  const { chat, replyTo, editing } = props;
+  const [recording, setRecording] = useState(false);
+  const recorder = useRef<VoiceRecorderHandle>(null);
   const [text, setText] = useState(() => drafts.get(chat.id) ?? "");
+  // What you'd typed before editing, put back afterwards.
+  const stash = useRef<string | null>(null);
+  const editingId = editing?.id;
+  useEffect(() => {
+    if (editingId !== undefined && editing) {
+      if (stash.current === null) stash.current = drafts.get(chat.id) ?? "";
+      setText(editing.text);
+      requestAnimationFrame(() => {
+        const el = area.current;
+        if (el) el.setSelectionRange(el.value.length, el.value.length);
+      });
+    } else if (stash.current !== null) {
+      setText(stash.current);
+      stash.current = null;
+    }
+    // Only when a different message starts (or stops) being edited.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
   const [files, setFiles] = useState<string[]>([]);
   const area = useRef<HTMLTextAreaElement | null>(null);
   // The chips stay drawn while the row collapses after the last one is removed.
@@ -878,6 +1308,7 @@ function Composer(props: {
   useEffect(() => {
     setText(drafts.get(chat.id) ?? "");
     setFiles([]);
+    setRecording(false);
   }, [chat.id]);
 
   // Grow with the text, up to about eight lines.
@@ -890,6 +1321,8 @@ function Composer(props: {
 
   const update = (v: string) => {
     setText(v);
+    // An edit in progress isn't a draft.
+    if (editing) return;
     if (v) drafts.set(chat.id, v);
     else drafts.delete(chat.id);
   };
@@ -897,6 +1330,12 @@ function Composer(props: {
   // The box empties straight away and you can keep typing; the bubbles show how sending went.
   const send = () => {
     const body = text.trimEnd();
+    if (editing) {
+      // A message's text can't be emptied (a caption can).
+      if (body.trim() || editing.media) props.onSaveEdit(body);
+      area.current?.focus();
+      return;
+    }
     if (!body.trim() && !files.length) return;
     update("");
     setFiles([]);
@@ -914,39 +1353,51 @@ function Composer(props: {
       .finally(() => area.current?.focus());
   };
 
-  const canSend = text.trim().length > 0 || files.length > 0;
+  const canSend = editing ? text.trim().length > 0 || !!editing.media : text.trim().length > 0 || files.length > 0;
 
   return (
-    <div className="shrink-0 px-4 pt-1 pb-3">
-      <ComposerTray className="mx-auto max-w-3xl">
+    // Floats over the chat's end, so messages scroll up to the bar's edge. Behind its lower half
+    // and the gap under it the page shows, so nothing peeks out below the bar. It's 8px wider each
+    // side than the messages (px-2 and 49rem against their px-4 and 48rem).
+    <div ref={props.boxRef} className="absolute inset-x-0 bottom-0 px-2 pb-3">
+      <div aria-hidden className="absolute inset-x-0 top-1/2 bottom-0 bg-background" />
+      <ComposerTray className="mx-auto max-w-[49rem]">
         <AnimatePresence initial={false}>
-          {replyTo && (
+          {(editing ?? replyTo) && (
             <motion.div
-              key="reply"
+              key="context"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={quick}
               className="overflow-hidden"
             >
-              <div className="flex items-center gap-2.5 pt-0.5 pr-0.5 pb-1.5 pl-3">
-                <IconCornerUpLeft className="size-4 shrink-0 text-primary" />
-                <div className="min-w-0 flex-1 text-sm leading-snug">
-                  <div className="truncate font-semibold text-primary">Reply to {replyTo.outgoing ? "yourself" : (replyTo.senderName ?? chat.name)}</div>
-                  <div className="truncate text-muted-foreground">{replyTo.text || replyTo.media?.label || "Message"}</div>
-                </div>
-                <Button variant="ghost" size="icon-xs" className="text-muted-foreground" onClick={props.onCancelReply}>
-                  <IconX />
-                  <span className="sr-only">Cancel reply</span>
-                </Button>
-              </div>
+              {editing ? (
+                <ComposerContext
+                  icon={IconPencil}
+                  title="Edit Message"
+                  text={editing.text || editing.media?.label || "Message"}
+                  cancelLabel="Cancel edit"
+                  onCancel={props.onCancelEdit}
+                />
+              ) : (
+                replyTo && (
+                  <ComposerContext
+                    icon={IconCornerUpLeft}
+                    title={`Reply to ${replyTo.outgoing ? "Yourself" : (replyTo.senderName ?? chat.name)}`}
+                    text={replyTo.text || replyTo.media?.label || "Message"}
+                    cancelLabel="Cancel reply"
+                    onCancel={props.onCancelReply}
+                  />
+                )
+              )}
             </motion.div>
           )}
         </AnimatePresence>
         <ComposerField>
           {/* The field grows to make room for attachments and shrinks when they go. */}
           <AnimatePresence initial={false}>
-            {files.length > 0 && (
+            {files.length > 0 && !editing && (
               <motion.div
                 key="files"
                 // The box eases open while the chips fade in a beat later (and out first on the way back).
@@ -967,6 +1418,20 @@ function Composer(props: {
               </motion.div>
             )}
           </AnimatePresence>
+          {recording ? (
+            <VoiceRecorder
+              ref={recorder}
+              onDone={(r) => {
+                setRecording(false);
+                props.onVoice(r);
+                requestAnimationFrame(() => area.current?.focus());
+              }}
+              onCancel={() => {
+                setRecording(false);
+                requestAnimationFrame(() => area.current?.focus());
+              }}
+            />
+          ) : (
           <InputGroupTextarea
             ref={(el) => {
               area.current = el;
@@ -980,26 +1445,67 @@ function Composer(props: {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
-              } else if (e.key === "Escape" && replyTo) {
+              } else if (e.key === "Escape" && (editing || replyTo)) {
                 e.preventDefault();
                 e.stopPropagation();
-                props.onCancelReply();
+                if (editing) props.onCancelEdit();
+                else props.onCancelReply();
+              } else if (e.key === "ArrowUp" && !text && !files.length && !editing && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+                if (props.onEditLast()) e.preventDefault();
               }
             }}
-            placeholder={files.length ? "Add a caption…" : chat.kind === "saved" ? "Write a note…" : `Message ${chat.name}…`}
+            placeholder={
+              (editing ? editing.media : files.length)
+                ? "Add a caption…"
+                : props.lastFromYou
+                  ? "Send a follow-up…"
+                  : "Write a reply…"
+            }
             aria-label="Message"
             className="no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60 pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] md:text-title"
           />
-          <ComposerSubmit ready={canSend} label="Send" onClick={send} />
+          )}
+          <ComposerSubmit
+            ready={canSend || recording}
+            label={editing ? "Save" : recording ? "Send voice message" : "Send"}
+            icon={editing ? <IconCheck /> : undefined}
+            onClick={recording ? () => recorder.current?.finish() : send}
+            before={
+              !recording && !editing && !text.trim() && !files.length ? (
+                <InputGroupButton type="button" size="icon-sm" variant="ghost" className="rounded-lg text-muted-foreground" tabIndex={-1} onClick={() => setRecording(true)}>
+                  <IconMicrophone />
+                  <span className="sr-only">Record a voice message</span>
+                </InputGroupButton>
+              ) : undefined
+            }
+          />
         </ComposerField>
         <ComposerOptions>
-          <Button type="button" variant="outline" size="sm" onClick={attach} className="text-muted-foreground">
+          <Button type="button" variant="outline" size="sm" onClick={attach} disabled={!!editing || recording} className="text-muted-foreground">
             <IconPaperclip />
             Attach
           </Button>
-          <StickerPicker onPick={props.onSticker} onClosed={() => area.current?.focus()} />
+          <StickerPicker onPick={props.onSticker} onClosed={() => area.current?.focus()} disabled={!!editing || recording} />
         </ComposerOptions>
       </ComposerTray>
+    </div>
+  );
+}
+
+/** The line above the composer saying what you're replying to or editing, with a button to stop. */
+function ComposerContext(props: { icon: typeof IconFile; title: string; text: string; cancelLabel: string; onCancel: () => void }) {
+  const Icon = props.icon;
+  return (
+    <div className="flex items-center gap-2.5 pt-0.5 pr-0.5 pb-1.5 pl-3">
+      <Icon className="size-5 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1 text-sm leading-snug">
+        <div className="truncate font-semibold text-primary">{props.title}</div>
+        <div className="truncate text-muted-foreground">{props.text}</div>
+      </div>
+      <Button variant="ghost" size="icon-xs" className="text-muted-foreground" onClick={props.onCancel}>
+        <IconX />
+        <span className="sr-only">{props.cancelLabel}</span>
+      </Button>
     </div>
   );
 }

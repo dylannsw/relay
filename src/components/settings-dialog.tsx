@@ -131,7 +131,10 @@ import {
   useCalendarUpdates,
   useCalendars,
 } from "@/calendar/store";
-import { saveDisplayName, saveTasksConfig, useTasksState } from "@/tasks/store";
+import { saveDisplayName, saveTasksConfig, useTasks, useTasksState } from "@/tasks/store";
+import { setQuickAdd, useQuickAdd } from "@/tasks/quick-add";
+import { STATUSES, STATUS_META } from "@/tasks/status";
+import { sectionKey, type TaskStatus } from "@/tasks/tick";
 import { greetingName } from "@/components/home/home-welcome";
 import { chooseVault } from "@/components/tasks/tasks-setup";
 import { chooseBanner } from "@/components/home/home-banner";
@@ -390,8 +393,11 @@ function HaloSwatches() {
 }
 
 /** Where the tasks come from: the Obsidian vault and the Tick plugin's notes. */
+const NO_SECTION = "__default__";
+
 function TasksTab() {
-  const t = useTasksState();
+  const t = useTasks();
+  const quick = useQuickAdd();
   const cfg = t.config;
 
   if (!cfg) {
@@ -436,6 +442,42 @@ function TasksTab() {
             </dl>
           ))}
       </SettingRow>
+      {cfg.vaultPath && t.status === "ready" && (
+        <SettingRow
+          title="Add as task"
+          description="Where a task goes when you right-click highlighted text in a message or chat and choose Add as task."
+        >
+          <div className="flex items-center gap-2">
+            <Select value={quick.section || NO_SECTION} onValueChange={(v) => setQuickAdd({ section: v === NO_SECTION ? "" : v })}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_SECTION}>No category</SelectItem>
+                {t.sections
+                  .filter((s) => sectionKey(s) !== sectionKey(t.settings.defaultSection))
+                  .map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Select value={quick.status} onValueChange={(v) => setQuickAdd({ status: v as TaskStatus })}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {STATUS_META[s].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </SettingRow>
+      )}
     </div>
   );
 }

@@ -92,7 +92,7 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
       {(unread || chat.mentions > 0) && (
         <ContextMenuItem onSelect={markRead}>
           <IconChecks />
-          Mark as read
+          Mark as Read
         </ContextMenuItem>
       )}
       <ContextMenuItem onSelect={onArchive}>
@@ -107,11 +107,11 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
         }}
       >
         <IconCopy />
-        Copy name
+        Copy Name
       </ContextMenuItem>
       <ContextMenuItem variant="destructive" onSelect={onDelete}>
         <IconTrash />
-        Delete chat
+        Delete Chat
       </ContextMenuItem>
     </ContextMenuContent>
     </ContextMenu>

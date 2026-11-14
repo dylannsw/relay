@@ -87,7 +87,7 @@ export function EventMenu({ event: e, editable, onOpen, onDeleted, children }: {
         )}
         <ContextMenuItem onSelect={copyDetails}>
           <IconCopy />
-          Copy details
+          Copy Details
         </ContextMenuItem>
         {e.htmlLink && (
           <ContextMenuItem onSelect={() => void api.openExternal(e.htmlLink)}>

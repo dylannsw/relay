@@ -50,7 +50,12 @@ function loadSets() {
  * The composer's sticker button: a panel with a row of set tabs (recent first) over one scrolling
  * grid of every set. Clicking a sticker sends it; a moving one plays while the pointer is on it.
  */
-export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => void; /** Where focus goes when the panel closes (the message box). */ onClosed?: () => void }) {
+export function StickerPicker({ onPick, onClosed, disabled }: {
+  onPick: (s: TgSticker) => void;
+  /** Where focus goes when the panel closes (the message box). */
+  onClosed?: () => void;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [sets, setSets] = useState<TgStickerSet[] | null>(lastSets);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +112,7 @@ export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="text-muted-foreground">
+        <Button type="button" variant="outline" size="sm" disabled={disabled} className="text-muted-foreground">
           <IconSticker />
           Stickers
         </Button>

@@ -45,19 +45,24 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
   const [, setStatus] = useState<TaskStatus>(lastTask.status);
   const status = lastTask.status;
 
-  // "/" jumps to the input, unless you're already typing somewhere or a dialog/menu is open.
+  // Typing anywhere on Home goes into the input, as in a chat; "/" just jumps there without
+  // typing itself. Skipped while you're typing somewhere else or a dialog/menu is open. It
+  // listens first (capture) so a plain letter types rather than firing an app shortcut like C.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1 || e.key === " ") return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")) return;
-      if (document.querySelector("[role=dialog], [role=menu], [role=listbox]")) return;
+      if (t?.closest?.("input, textarea, select, [contenteditable=''], [contenteditable='true'], [role=menu], [role=listbox]")) return;
+      if (document.querySelector("[role=dialog], [role=alertdialog], [role=menu], [role=listbox]")) return;
       if (!input.current || input.current.disabled) return;
-      e.preventDefault();
+      if (e.key === "/") e.preventDefault();
+      // Focused now, the key's character lands in the input.
       input.current.focus();
+      e.stopPropagation();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   // Keep the last section used (here or in the command bar) while it exists; otherwise the default section.
@@ -144,7 +149,8 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
               placeholder="Add a task…"
               aria-label="New task"
               enterKeyHint="done"
-              className="h-auto pt-3 pr-4 pb-1 pl-[18px] text-title"
+              // The same size, line height and placeholder grey as the chat's message box.
+              className="h-auto pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] placeholder:text-muted-foreground/60 md:text-title"
             />
             {/* The note opens by growing the box (0fr → 1fr) rather than popping in. */}
             <div

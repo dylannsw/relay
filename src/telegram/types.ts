@@ -117,12 +117,22 @@ export interface TgMessage {
   text: string;
   entities: TgEntity[];
   media: TgMedia | null;
-  reply: { id: number; sender: string | null; text: string } | null;
+  /** The message this one answers; `senderId` (for the name colour) is null for your own. */
+  reply: { id: number; sender: string | null; senderId: string | null; text: string } | null;
   forwardedFrom: string | null;
   edited: boolean;
   /** A service line ("Alex joined the group") shown instead of a bubble. */
   service: string | null;
   groupedId: string | null;
+  /** Plain-emoji reactions, in Telegram's order. */
+  reactions: TgReaction[];
+}
+
+/** One reaction under a message: how many people chose it, and whether you did. */
+export interface TgReaction {
+  emoji: string;
+  count: number;
+  mine: boolean;
 }
 
 export interface TgEvent {
@@ -132,4 +142,6 @@ export interface TgEvent {
   edited: boolean;
   deleted: number[];
   deletedChatId: string | null;
+  /** A message's reactions changed. `min`: Telegram left out which are yours, so keep what's shown. */
+  reactions?: { chatId: string; messageId: number; reactions: TgReaction[]; min: boolean } | null;
 }

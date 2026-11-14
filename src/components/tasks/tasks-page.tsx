@@ -826,11 +826,11 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
           }
         >
           <IconCopy />
-          Copy text
+          Copy Text
         </ContextMenuItem>
         <ContextMenuItem onSelect={onCopyForClaude}>
           <IconBrandOpenai />
-          {copyCount > 1 ? `Copy ${copyCount} as prompt` : "Copy as prompt"}
+          {copyCount > 1 ? `Copy ${copyCount} as Prompt` : "Copy as Prompt"}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onSelect={onDelete}>

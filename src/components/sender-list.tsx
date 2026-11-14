@@ -182,7 +182,7 @@ function groupMoves(folder: "inbox" | "archive") {
   return [
     folder === "inbox"
       ? { to: "archive" as const, label: "Archive", icon: <IconArchive /> }
-      : { to: "inbox" as const, label: "Move to inbox", icon: <IconInbox /> },
+      : { to: "inbox" as const, label: "Move to Inbox", icon: <IconInbox /> },
     { to: "trash" as const, label: "Delete", icon: <IconTrash /> },
   ];
 }
@@ -211,7 +211,7 @@ function SenderMenu({ g, s }: { g: SenderGroup; s: SendersProps }) {
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => s.onCheckAll(false)}>
           <IconX />
-          Clear selection
+          Clear Selection
         </ContextMenuItem>
       </ContextMenuContent>
     );
@@ -247,7 +247,7 @@ function SenderMenu({ g, s }: { g: SenderGroup; s: SendersProps }) {
         }
       >
         <IconCopy />
-        {g.isDomain ? "Copy domain" : "Copy address"}
+        {g.isDomain ? "Copy Domain" : "Copy Address"}
       </ContextMenuItem>
     </ContextMenuContent>
   );

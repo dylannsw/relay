@@ -13,9 +13,11 @@ export interface TelegramState {
   chats: TgChat[];
   loaded: boolean;
   error: string | null;
+  /** A chat asked for from outside the Chats page (the command bar); the page opens it and clears this. */
+  openRequest: string | null;
 }
 
-let state: TelegramState = { status: null, folders: [], chats: [], loaded: false, error: null };
+let state: TelegramState = { status: null, folders: [], chats: [], loaded: false, error: null, openRequest: null };
 const listeners = new Set<() => void>();
 const eventListeners = new Set<(e: TgEvent) => void>();
 let started = false;
@@ -56,6 +58,11 @@ export function setStatus(status: TgStatus) {
 /** Changes a chat right away (marking it read), before the backend confirms. */
 export function patchChat(id: string, patch: Partial<TgChat>) {
   set({ chats: state.chats.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+}
+
+/** Asks the Chats page to open this conversation (it opens it once it's showing, and clears the request). */
+export function requestOpenChat(id: string | null) {
+  set({ openRequest: id });
 }
 
 /** Drops a deleted chat from the list. */

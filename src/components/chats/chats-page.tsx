@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { IconDots, IconLogout, IconMessages } from "@tabler/icons-react";
 import { api, errorText, isTauri } from "@/api";
@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { PillTabs } from "@/components/mail-list";
-import { archivedChats, chatsIn, removeChat, setArchived, setStatus, useTelegram } from "@/telegram/store";
+import { archivedChats, chatsIn, removeChat, requestOpenChat, setArchived, setStatus, useTelegram } from "@/telegram/store";
 import type { TgChat } from "@/telegram/types";
 import { Conversation, NoChatOpen } from "./conversation";
 import { ChatList } from "./chat-list";
@@ -53,6 +53,15 @@ export function ChatsPage({ folder }: { folder: number | null }) {
     return l;
   }, [tg.chats, folder, filter, query, selectedId]);
   const selected = tg.chats.find((c) => c.id === selectedId) ?? null;
+
+  // A chat picked in the command bar.
+  useEffect(() => {
+    if (!tg.openRequest) return;
+    setSelectedId(tg.openRequest);
+    setFilter("all");
+    setQuery("");
+    requestOpenChat(null);
+  }, [tg.openRequest]);
 
   if (!tg.status) {
     return (

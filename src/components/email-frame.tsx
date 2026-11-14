@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { IconPhotoOff } from "@tabler/icons-react";
+import { IconChecklist, IconPhotoOff } from "@tabler/icons-react";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { quickAddTask } from "@/tasks/quick-add";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { api } from "@/api";
@@ -56,6 +58,8 @@ interface Props {
 export function EmailFrame({ html, text, onMailto }: Props) {
   const [showImages, setShowImages] = useState(false);
   const ref = useRef<HTMLIFrameElement>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const [picked, setPicked] = useState("");
   const content = useMemo(
     () => (html ? sanitize(html) : `<pre class="plain">${linkify(escapeHtml(text))}</pre>`),
     [html, text],
@@ -78,10 +82,24 @@ export function EmailFrame({ html, text, onMailto }: Props) {
       if (/^mailto:/i.test(href)) onMailtoRef.current(decodeURIComponent(href.slice(7).split("?")[0]));
       else if (/^https?:/i.test(href)) void api.openExternal(href);
     });
+    // Right-clicking highlighted text offers "Add as task". The frame is its own document, so the event
+    // is replayed on the wrapper (at the same spot) for the menu to open there.
+    doc.addEventListener("contextmenu", (ev) => {
+      const text = doc.getSelection()?.toString().trim() ?? "";
+      if (!text) return;
+      ev.preventDefault();
+      setPicked(text);
+      const box = ref.current?.getBoundingClientRect();
+      wrapper.current?.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: ev.clientX + (box?.left ?? 0), clientY: ev.clientY + (box?.top ?? 0) }),
+      );
+    });
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <ContextMenu>
+    <ContextMenuTrigger asChild>
+    <div ref={wrapper} className="flex min-h-0 flex-1 flex-col">
       {hasRemote && !showImages && (
         <Alert className="rounded-none border-x-0 border-t-0">
           <IconPhotoOff />
@@ -105,5 +123,13 @@ export function EmailFrame({ html, text, onMailto }: Props) {
         onLoad={onLoad}
       />
     </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent className="w-auto min-w-44">
+      <ContextMenuItem onSelect={() => void quickAddTask(picked)}>
+        <IconChecklist />
+        Add Selection as Task
+      </ContextMenuItem>
+    </ContextMenuContent>
+    </ContextMenu>
   );
 }
