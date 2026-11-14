@@ -126,7 +126,7 @@ function AccountPicker({ s, accounts }: { s: SendersProps; accounts: Account[] }
 }
 
 /** Tabs with a pill that slides to the active one (stock Tabs, the pill drawn on top). */
-function PillTabs<T extends string>(props: {
+export function PillTabs<T extends string>(props: {
   id: string;
   value: T;
   items: readonly { id: T; label: string }[];

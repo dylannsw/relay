@@ -7,6 +7,7 @@ import type {
   OutgoingMessage, SeriesInfo, TasksConfig,
 } from "./types";
 import { formatDate } from "./tasks/tick/date";
+import { mockTelegram } from "./telegram/mock";
 
 const now = Date.now();
 const h = 3_600_000;
@@ -677,6 +678,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
     case "cancel_sign_in":
       return delay(undefined) as Promise<T>;
     default:
+      if (cmd.startsWith("telegram_")) return mockTelegram<T>(cmd, args);
       return Promise.reject(`mock: unknown command ${cmd}`);
   }
 }

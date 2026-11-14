@@ -20,6 +20,8 @@ import { ComposeDialog, type Draft } from "@/components/compose-dialog";
 import { SettingsDialog, type SettingsSection } from "@/components/settings-dialog";
 import { startAutoCheck } from "@/updater";
 import { SignInDialog } from "@/components/sign-in-dialog";
+import { ChatsPage } from "@/components/chats/chats-page";
+import { useTelegram } from "@/telegram/store";
 
 const PAGE = 200;
 
@@ -45,6 +47,7 @@ function useDebounced<T>(value: T, ms: number): T {
 export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [view, setView] = useState<View>({ kind: "home" });
+  const telegram = useTelegram();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 200);
@@ -532,7 +535,7 @@ export default function App() {
     // Ctrl+Tab / Ctrl+Shift+Tab: the next or previous sidebar item, from anywhere (even while typing).
     if (e.key === "Tab" && e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
-      setView(stepSidebarView(accounts, view, e.shiftKey ? -1 : 1));
+      setView(stepSidebarView(accounts, view, e.shiftKey ? -1 : 1, telegram.status?.stage === "ready" ? telegram.folders : []));
       clearSelection();
       return;
     }
@@ -712,6 +715,8 @@ export default function App() {
             <TasksPage onOpenSettings={() => openSettings("tasks")} />
           ) : view.kind === "calendar" ? (
             <CalendarPage onOpenSettings={() => openSettings("calendar")} />
+          ) : view.kind === "chats" ? (
+            <ChatsPage folder={view.folder} />
           ) : (
           <MailList
             title={viewTitle}

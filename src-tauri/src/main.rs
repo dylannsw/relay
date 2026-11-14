@@ -24,6 +24,7 @@ mod state;
 mod sync;
 mod taskbar;
 mod tasks;
+mod telegram;
 
 use std::sync::Arc;
 
@@ -66,6 +67,11 @@ fn main() {
             let state = Arc::new(state::AppState::init(app.handle())?);
             app.manage(state.clone());
             sync::spawn_background(app.handle().clone(), state.clone());
+            // Telegram reconnects with its saved session (if you've signed in) in the background.
+            let tg = Arc::new(telegram::Telegram::new(state.data_dir()));
+            app.manage(tg.clone());
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { tg.autostart(&handle).await });
             tasks::spawn_watcher(app.handle().clone(), state);
             Ok(())
         })
@@ -107,6 +113,20 @@ fn main() {
             commands::add_calendar_feed,
             commands::update_calendar_feed,
             commands::remove_calendar_feed,
+            telegram::telegram_status,
+            telegram::telegram_set_keys,
+            telegram::telegram_send_code,
+            telegram::telegram_sign_in,
+            telegram::telegram_check_password,
+            telegram::telegram_restart_login,
+            telegram::telegram_reconnect,
+            telegram::telegram_sign_out,
+            telegram::telegram_chats,
+            telegram::telegram_messages,
+            telegram::telegram_send,
+            telegram::telegram_mark_read,
+            telegram::telegram_chat_photo,
+            telegram::telegram_photo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Relay");

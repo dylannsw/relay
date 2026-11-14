@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
+  IconBriefcase2,
   IconCalendar,
+  IconFolder,
+  IconMessages,
+  IconMilitaryRank,
+  IconUsers,
   IconChecklist,
   IconChevronRight,
   IconSchool,
@@ -38,6 +43,8 @@ import { relativeTime } from "@/format";
 import { FOLDERS } from "@/folders";
 import { useTasks } from "@/tasks/store";
 import { useTodayEvents } from "@/calendar/events";
+import { unreadChats, useTelegram } from "@/telegram/store";
+import type { TgFolder } from "@/telegram/types";
 
 /**
  * Home, or the Tasks list (optionally filtered to a section). Mail: all inboxes and groups show
@@ -51,10 +58,23 @@ export type View =
   | { kind: "label"; label: string }
   | { kind: "account"; id: string; folder: Folder }
   /** Sender groups of one account's (or every account's) inbox or archive, for bulk tidying. */
-  | { kind: "cleanup" };
+  | { kind: "cleanup" }
+  /** Telegram: All chats (folder null) or one of your Telegram folders. */
+  | { kind: "chats"; folder: number | null };
 
-/** Home, Tasks and Calendar: pages without a message list. */
-export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks" || v.kind === "calendar";
+/** Home, Tasks, Calendar and Chats: pages without the mail list. */
+export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "chats";
+
+/** An icon for a Telegram folder, guessed from its name. */
+export function chatFolderIcon(title: string): TablerIcon {
+  const t = title.toLowerCase();
+  if (/intern/.test(t)) return IconBriefcase2;
+  if (/work|job|office/.test(t)) return IconBriefcase;
+  if (/friend|family|personal/.test(t)) return IconUsers;
+  if (/army|military|ns\b|camp|unit/.test(t)) return IconMilitaryRank;
+  if (/school|uni|class|study/.test(t)) return IconSchool;
+  return IconFolder;
+}
 
 const LABEL_ORDER = ["Personal", "Work", "School"];
 const LABEL_ICONS: Record<string, TablerIcon> = {
@@ -91,28 +111,32 @@ function sortedLabels(accounts: Account[]): string[] {
  * The sidebar's top-level items, top to bottom, for Ctrl+Tab: each account counts once, as its
  * inbox (its other folders aren't stops of their own).
  */
-export function sidebarViews(accounts: Account[]): View[] {
+export function sidebarViews(accounts: Account[], chatFolders: TgFolder[] = []): View[] {
   return [
     { kind: "home" },
     { kind: "tasks" },
     { kind: "calendar" },
     { kind: "all" },
     { kind: "cleanup" },
+    { kind: "chats", folder: null },
+    ...chatFolders.map((f): View => ({ kind: "chats", folder: f.id })),
     ...sortedLabels(accounts).map((label): View => ({ kind: "label", label })),
     ...accounts.map((a): View => ({ kind: "account", id: a.id, folder: "inbox" })),
   ];
 }
 
 /** The view `step` items after (or before, when negative) `current` in the sidebar, wrapping round. */
-export function stepSidebarView(accounts: Account[], current: View, step: number): View {
-  const views = sidebarViews(accounts);
+export function stepSidebarView(accounts: Account[], current: View, step: number, chatFolders: TgFolder[] = []): View {
+  const views = sidebarViews(accounts, chatFolders);
   // A filtered Tasks list or another of an account's folders counts as that item.
   const at = views.findIndex((v) =>
     v.kind === "account" && current.kind === "account"
       ? v.id === current.id
       : v.kind === "label" && current.kind === "label"
         ? v.label === current.label
-        : v.kind === current.kind,
+        : v.kind === "chats" && current.kind === "chats"
+          ? v.folder === current.folder
+          : v.kind === current.kind,
   );
   const i = at < 0 ? (step > 0 ? -1 : 0) : at;
   return views[(i + step + views.length) % views.length]!;
@@ -250,6 +274,41 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   );
 }
 
+/**
+ * Telegram: All chats, then your own Telegram folders in their order, each with how many unread
+ * chats it has (muted ones don't count, as in Telegram). Before you sign in it's just All chats,
+ * which opens the sign-in.
+ */
+function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) {
+  const tg = useTelegram();
+  const ready = tg.status?.stage === "ready";
+  const items: { folder: number | null; title: string; Icon: TablerIcon }[] = [
+    { folder: null, title: "All chats", Icon: IconMessages },
+    ...(ready ? tg.folders.map((f) => ({ folder: f.id, title: f.title, Icon: chatFolderIcon(f.title) })) : []),
+  ];
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Chats</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map(({ folder, title, Icon }) => {
+            const unread = ready ? unreadChats(tg.chats, folder) : 0;
+            return (
+              <SidebarMenuItem key={folder ?? "all"}>
+                <SidebarMenuButton isActive={view.kind === "chats" && view.folder === folder} onClick={() => onView({ kind: "chats", folder })}>
+                  <Icon />
+                  <span className="min-w-0 flex-1 truncate">{title}</span>
+                </SidebarMenuButton>
+                {unread > 0 && <SidebarMenuBadge>{unread}</SidebarMenuBadge>}
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
 export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = sortedLabels(accounts);
@@ -290,6 +349,8 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <ChatItems view={view} onView={onView} />
 
         {/* Personal, Work, School: a group of their own, set apart from All inboxes and Clean up. */}
         {labels.length > 0 && (

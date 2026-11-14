@@ -32,6 +32,11 @@ tauri-plugin-window-state = "2"
 rrule = "0.14"
 chrono-tz = "0.10"
 psl = "2.1.251"
+# Telegram: a pure-Rust MTProto client (no native library to ship).
+grammers-client = "0.12"
+grammers-mtsender = "0.12"
+grammers-session = { version = "0.12", default-features = false, features = ["serde"] }
+grammers-tl-types = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_UI_WindowsAndMessaging"] }

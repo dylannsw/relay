@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { mockInvoke } from "./mock";
+import { mockTelegramEvents } from "./telegram/mock";
+import type { TgChatList, TgEvent, TgMessage, TgStatus } from "./telegram/types";
 import type {
   Account,
   CalendarConfig,
@@ -124,6 +126,29 @@ export const api = {
 
   onMailUpdated: (cb: (reports: SyncReport[]) => void): Promise<() => void> =>
     isTauri ? listen<SyncReport[]>("mail-updated", (e) => cb(e.payload)) : Promise.resolve(() => {}),
+
+  telegram: {
+    status: () => call<TgStatus>("telegram_status"),
+    setKeys: (apiId: string, apiHash: string) => call<TgStatus>("telegram_set_keys", { apiId, apiHash }),
+    sendCode: (phone: string) => call<TgStatus>("telegram_send_code", { phone }),
+    signIn: (code: string) => call<TgStatus>("telegram_sign_in", { code }),
+    checkPassword: (password: string) => call<TgStatus>("telegram_check_password", { password }),
+    restartLogin: () => call<TgStatus>("telegram_restart_login"),
+    reconnect: () => call<TgStatus>("telegram_reconnect"),
+    signOut: () => call<TgStatus>("telegram_sign_out"),
+    chats: () => call<TgChatList>("telegram_chats"),
+    /** Oldest first: the latest page, or the page before message `before`. */
+    messages: (chatId: string, before?: number, limit?: number) =>
+      call<TgMessage[]>("telegram_messages", { chatId, before: before ?? null, limit: limit ?? null }),
+    send: (chatId: string, text: string, replyTo?: number) =>
+      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null }),
+    markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
+    /** A chat's small profile picture; empty when it has none. */
+    chatPhoto: (chatId: string) => call<ArrayBuffer>("telegram_chat_photo", { chatId }),
+    photo: (chatId: string, messageId: number) => call<ArrayBuffer>("telegram_photo", { chatId, messageId }),
+    onUpdated: (cb: (e: TgEvent) => void): Promise<() => void> =>
+      isTauri ? listen<TgEvent>("telegram-updated", (e) => cb(e.payload)) : mockTelegramEvents(cb),
+  },
 };
 
 export function errorText(e: unknown): string {
