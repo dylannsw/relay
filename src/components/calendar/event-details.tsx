@@ -22,8 +22,8 @@ import type { Attendee, CalendarEvent, CalendarInfo, RsvpResponse } from "@/type
 import { clock } from "./event-style";
 
 export const RESPONSE: Record<RsvpResponse, { label: string; icon: typeof IconCircleCheck; className: string }> = {
-  accepted: { label: "Going", icon: IconCircleCheck, className: "text-emerald-600 dark:text-emerald-500" },
-  tentative: { label: "Maybe", icon: IconHelpCircle, className: "text-amber-600 dark:text-amber-500" },
+  accepted: { label: "Going", icon: IconCircleCheck, className: "text-success" },
+  tentative: { label: "Maybe", icon: IconHelpCircle, className: "text-warning" },
   declined: { label: "Not going", icon: IconCircleX, className: "text-destructive" },
   needsAction: { label: "Not replied yet", icon: IconCircleDashed, className: "text-muted-foreground" },
 };

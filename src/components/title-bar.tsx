@@ -92,7 +92,7 @@ function WindowControls() {
 
 /** Hover colours per button: a soft tinted square behind an icon in the full colour. */
 const TINTS = {
-  amber: "hover:bg-amber-500/12 hover:text-amber-500 dark:hover:bg-amber-400/15 dark:hover:text-amber-400",
-  green: "hover:bg-emerald-500/12 hover:text-emerald-500 dark:hover:bg-emerald-400/15 dark:hover:text-emerald-400",
-  red: "hover:bg-red-500/10 hover:text-red-500 dark:hover:bg-red-400/15 dark:hover:text-red-400",
+  amber: "hover:bg-warning/12 hover:text-warning dark:hover:bg-warning/15",
+  green: "hover:bg-success/12 hover:text-success dark:hover:bg-success/15",
+  red: "hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/15",
 };

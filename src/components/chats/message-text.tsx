@@ -20,7 +20,7 @@ function Link({ href, children, outgoing }: { href: string; children: ReactNode;
         e.stopPropagation();
         openLink(href);
       }}
-      className={cn("break-all underline underline-offset-2", outgoing ? "decoration-current/50 hover:decoration-current" : "text-sky-600 decoration-sky-600/40 hover:decoration-sky-600 dark:text-sky-400 dark:decoration-sky-400/40")}
+      className={cn("break-all underline underline-offset-2", outgoing ? "decoration-current/50 hover:decoration-current" : "text-link decoration-link/40 hover:decoration-link")}
     >
       {children}
     </a>
@@ -98,7 +98,7 @@ export function MessageText({ text, entities, outgoing }: { text: string; entiti
       else if (e.kind === "pre") node = <code key={k} className="my-1 block overflow-x-auto rounded-md bg-current/10 px-2 py-1.5 font-mono text-[0.85em] whitespace-pre">{node}</code>;
       else if (e.kind === "spoiler") node = <Spoiler key={k}>{node}</Spoiler>;
       else if (e.kind === "quote") node = <span key={k} className="my-0.5 block border-l-2 border-current/40 pl-2">{node}</span>;
-      else if (e.kind === "mention") node = <span key={k} className={outgoing ? "font-medium" : "font-medium text-sky-600 dark:text-sky-400"}>{node}</span>;
+      else if (e.kind === "mention") node = <span key={k} className={outgoing ? "font-medium" : "font-medium text-link"}>{node}</span>;
     }
     pieces.push(node);
   }

@@ -134,7 +134,7 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
         // Hover mixes the accent into the card instead of layering a see-through accent over it,
         // so the cards stacked behind never show through.
         "group/row relative flex cursor-default items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-[color-mix(in_oklab,var(--accent)_50%,var(--card))]",
-        checked && "border-foreground/20 bg-muted hover:bg-muted",
+        checked && "border-selected-border bg-selected hover:border-selected-border hover:bg-selected-hover",
       )}
     >
       <SelectionSlot

@@ -1247,7 +1247,7 @@ function UpdatesTab() {
             {s.kind === "idle" && <UpdateLine muted>Relay hasn't checked for updates since it started.</UpdateLine>}
             {s.kind === "checking" && <UpdateLine muted>Checking for updates…</UpdateLine>}
             {s.kind === "current" && (
-              <UpdateLine icon={<IconCircleCheck className="text-emerald-600 dark:text-emerald-500" />} detail={checked}>
+              <UpdateLine icon={<IconCircleCheck className="text-success" />} detail={checked}>
                 Relay is up to date
               </UpdateLine>
             )}

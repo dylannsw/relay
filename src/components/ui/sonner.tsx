@@ -21,21 +21,21 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme={resolvedTheme === "light" ? "light" : "dark"}
       position={toastPosition}
       className="toaster group"
-      // Icon colours follow the toast's own theme (not the page's), since
-      // Mixed shows dark toasts over a light app. Each keeps ≥3:1 on the
+      // Icon colours are the status tokens. They resolve where the toast sits, so
+      // Mixed (dark toasts over a light app) gets the dark values. Each keeps ≥3:1 on the
       // popover background.
       icons={{
         success: (
-          <IconCircleCheckFilled className="size-5.5 text-emerald-600 group-data-[sonner-theme=dark]:text-emerald-400" />
+          <IconCircleCheckFilled className="size-5.5 text-success" />
         ),
         info: (
-          <IconInfoCircleFilled className="size-5.5 text-blue-600 group-data-[sonner-theme=dark]:text-blue-400" />
+          <IconInfoCircleFilled className="size-5.5 text-info" />
         ),
         warning: (
-          <IconAlertTriangleFilled className="size-5.5 text-amber-600 group-data-[sonner-theme=dark]:text-amber-400" />
+          <IconAlertTriangleFilled className="size-5.5 text-warning" />
         ),
         error: (
-          <IconAlertOctagonFilled className="size-5.5 text-red-600 group-data-[sonner-theme=dark]:text-red-400" />
+          <IconAlertOctagonFilled className="size-5.5 text-destructive" />
         ),
         // Tabler has no filled loader; the outline spinner stays.
         loading: (

@@ -70,7 +70,7 @@ export function HomeOverview(p: OverviewProps) {
           {s ? <Delta change={s.week - s.previousWeek} versus="vs past week" /> : "Connect your vault"}
         </Stat>
         <Stat
-          icon={<IconFlame className="text-orange-500" />}
+          icon={<IconFlame className="text-(--chip-tangerine)" />}
           label="Current Streak"
           value={s ? plural(s.currentStreak, "day") : "–"}
           onClick={p.onOpenTasks}
@@ -133,7 +133,7 @@ function Stat({ icon, label, value, onClick, children }: {
 }
 
 /** Up is green, down is red, no change is grey. */
-const DELTA_COLORS = { up: "#2aa250", down: "var(--signal-red)", level: "#8a8a8a" };
+const DELTA_COLORS = { up: "var(--success)", down: "var(--signal-red)", level: "var(--muted-foreground)" };
 
 /**
  * The change since last time: the arrow in a small solid square of its own, then the number in
