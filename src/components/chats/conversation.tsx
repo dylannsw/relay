@@ -44,6 +44,7 @@ import { GlanceHost, openGlance } from "./glance";
 import { VoiceMessage } from "./voice-message";
 import { StickerArt, useInView, useObjectUrl } from "./sticker-view";
 import { StickerPicker } from "./sticker-picker";
+import { PageHeader } from "@/components/page-header";
 
 const PAGE = 50;
 /** Messages from the same person this close together share one run (one name, one avatar, one tail). */
@@ -326,7 +327,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
   return (
     <div className="flex h-full min-w-0 flex-col">
       <GlanceHost />
-      <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
+      <PageHeader>
         <ChatAvatar id={chat.id} name={chat.name} hasPhoto={chat.hasPhoto} saved={chat.kind === "saved"} size={32} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -335,7 +336,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
           </div>
           {sub && <p className="truncate text-xs text-muted-foreground">{sub}</p>}
         </div>
-      </header>
+      </PageHeader>
 
       <div className="relative min-h-0 flex-1">
         <div ref={scroller} onScroll={onScroll} className="absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3 pb-2">

@@ -22,6 +22,7 @@ import { EventPanel } from "./event-panel";
 import type { Draft } from "./event-editor";
 import { draftStyle, eventStyle, timeRange } from "./event-style";
 import { PromptHost } from "./prompt-host";
+import { PageHeader, PageTitle } from "@/components/page-header";
 
 /** Times snap to quarter hours when dragging. */
 const SNAP = 15;
@@ -648,7 +649,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   if (cal.calendars.length === 0) {
     return (
       <div className="flex h-full flex-col">
-        <PageHeader title="Calendar" />
+        <CalendarHeader title="Calendar" />
         <div className="flex flex-1 items-center justify-center p-6">
           <Empty>
             <EmptyHeader>
@@ -686,7 +687,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title={<MonthTitle {...rangeTitle(viewFrom, addDays(viewTo, -1))} />}>
+      <CalendarHeader title={<MonthTitle {...rangeTitle(viewFrom, addDays(viewTo, -1))} />}>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="outline" size="sm" onClick={() => goTo(todayIdx)}>
@@ -745,7 +746,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
           </LayoutGroup>
         </Tabs>
         <span className="-ml-1 text-sm text-muted-foreground">days</span>
-      </PageHeader>
+      </CalendarHeader>
 
       <div className="relative flex min-h-0 flex-1">
         <div
@@ -1103,12 +1104,12 @@ function MonthTitle({ month, year }: { month: string; year: string }) {
   );
 }
 
-function PageHeader({ title, children }: { title: React.ReactNode; children?: React.ReactNode }) {
+function CalendarHeader({ title, children }: { title: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
-      <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
+    <PageHeader>
+      <PageTitle>{title}</PageTitle>
       {children}
-    </header>
+    </PageHeader>
   );
 }
 

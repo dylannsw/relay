@@ -117,6 +117,7 @@ import {
   useShortcutBindings,
   type ShortcutDef,
 } from "@/shortcuts";
+import { ColorDot } from "@/components/color-dot";
 import type { Account, CalendarInfo, Config, Provider } from "@/types";
 import {
   addCalendarFeed,
@@ -480,7 +481,7 @@ function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onA
                     <SelectLabel>{a.email}</SelectLabel>
                     {own.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
-                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.colors.base }} />
+                        <ColorDot color={c.colors.base} className="size-2.5" />
                         <span className="truncate">{calendarName(c)}</span>
                       </SelectItem>
                     ))}
@@ -1551,19 +1552,21 @@ function AppearanceTab() {
             return (
               <Tooltip key={font.id}>
                 <TooltipTrigger asChild>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     aria-label={font.label}
                     aria-pressed={selected}
                     onClick={() => setAppearance({ font: font.id })}
+                    // The sample keeps its colour under the pointer: the accent when chosen, grey otherwise.
                     className={cn(
-                      "flex h-10 w-12 items-center justify-center rounded-lg text-xl transition-colors duration-150 outline-none hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring",
-                      selected ? "text-primary" : "text-muted-foreground",
+                      "h-10 w-12 px-0 text-xl font-normal",
+                      selected ? "text-primary hover:text-primary" : "text-muted-foreground hover:text-muted-foreground",
                     )}
                     style={{ fontFamily: font.family }}
                   >
                     Ag
-                  </button>
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent>{font.label}</TooltipContent>
               </Tooltip>

@@ -145,15 +145,17 @@ export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => 
               {sets.map((s, i) => (
                 <Tooltip key={s.id}>
                   <TooltipTrigger asChild>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       onClick={() => jump(i)}
                       aria-label={s.title}
                       aria-pressed={i === active}
-                      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.05] aria-pressed:bg-foreground/[0.08] aria-pressed:text-foreground dark:hover:bg-foreground/[0.07] dark:aria-pressed:bg-foreground/[0.12]"
+                      className="text-muted-foreground aria-pressed:bg-tint-pressed aria-pressed:text-foreground"
                     >
                       {s.id === "recent" ? <IconClock className="size-5" /> : s.stickers[0] ? <Tile sticker={s.stickers[0]} size={26} /> : null}
-                    </button>
+                    </Button>
                   </TooltipTrigger>
                   <TooltipContent>{s.title}</TooltipContent>
                 </Tooltip>

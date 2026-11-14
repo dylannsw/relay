@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DetailRow, MailWindow } from "@/components/mail-window";
+import { ColorDot } from "@/components/color-dot";
 import type { Account, ComposeMode } from "@/types";
 
 export interface Draft {
@@ -151,7 +152,7 @@ export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Pr
                 <SelectContent>
                   {accounts.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
-                      <span className="size-2 rounded-full" style={{ backgroundColor: a.color }} />
+                      <ColorDot color={a.color} />
                       {a.email}
                       <span className="text-muted-foreground">{a.label}</span>
                     </SelectItem>

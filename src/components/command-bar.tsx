@@ -49,6 +49,7 @@ import { addTask, lastTask, useTasks } from "@/tasks/store";
 import { sectionKey, splitStatus, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META } from "@/tasks/status";
 import { chooseVault } from "@/components/tasks/tasks-setup";
+import { ColorDot } from "@/components/color-dot";
 import type { Account, MessageSummary } from "@/types";
 
 interface Props {
@@ -100,7 +101,7 @@ const matches = (e: Entry, q: string) => {
 /** An account's colour, centred in the same 24px slot as the icon tiles (bare, like a site's favicon in Zen). */
 const Dot = ({ color }: { color: string }) => (
   <span className="flex size-6 shrink-0 items-center justify-center">
-    <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
+    <ColorDot color={color} />
   </span>
 );
 const Ico = ({ icon: I }: { icon: TablerIcon }) => <I />;
@@ -593,14 +594,12 @@ export function CommandBar(p: Props) {
           {!p.search && <ShortcutKbd id="commandBar" />}
         </button>
         {p.search && (
-          <button
-            type="button"
-            aria-label="Clear search"
-            onClick={() => p.onSearch("")}
-            className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <IconX className="size-4" />
-          </button>
+          // (The wrapper holds the position, so the button's own press nudge doesn't fight the centring.)
+          <span className="absolute top-1/2 right-1.5 flex -translate-y-1/2">
+            <Button type="button" variant="ghost" size="icon-2xs" aria-label="Clear search" onClick={() => p.onSearch("")} className="text-muted-foreground">
+              <IconX />
+            </Button>
+          </span>
         )}
       </div>
 

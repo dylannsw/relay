@@ -39,6 +39,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ColorDot } from "@/components/color-dot";
 import type { Account, Folder, Provider } from "@/types";
 import { relativeTime } from "@/format";
 import { FOLDERS } from "@/folders";
@@ -208,7 +209,7 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             ) : (
               // The dot sits in an icon-sized slot so the address lines up with the labels above.
               <span className="flex size-4.5 shrink-0 items-center justify-center">
-                <span className="size-2 rounded-full" style={{ backgroundColor: a.color }} />
+                <ColorDot color={a.color} />
               </span>
             )}
             <span className="min-w-0 flex-1 truncate">{a.email}</span>

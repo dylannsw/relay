@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { createEvent, isoDate, saveChanges, withTimes } from "@/calendar/edit";
 import { addDays, parseDate } from "@/calendar/layout";
 import { describeRule, type Preset, presetLabel, presetOf, PRESETS, ruleFor, seriesStart, useSeries } from "@/calendar/repeat";
+import { ColorDot } from "@/components/color-dot";
 import type { Attendee, CalendarEvent, CalendarInfo, EventChanges, EventTimes } from "@/types";
 import { calendarLabel, initials, RESPONSE } from "./event-details";
 import { DateField, TimeField } from "./date-time-fields";
@@ -339,7 +340,7 @@ export function EventEditor(props: {
                     .filter((c) => c.accountEmail === email)
                     .map((c) => (
                       <SelectItem key={c.id} value={c.id}>
-                        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.colors.base }} />
+                        <ColorDot color={c.colors.base} className="size-2.5" />
                         <span className="truncate">{calendarLabel(c)}</span>
                       </SelectItem>
                     ))}

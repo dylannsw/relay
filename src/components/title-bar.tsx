@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IconArrowBarToDown, IconMaximize, IconMinimize, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { isTauri } from "@/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAppIcon } from "@/app-icon";
@@ -71,20 +72,23 @@ function WindowControls() {
   return (
     <div className="flex items-center gap-1 pr-2">
       {buttons.map(({ label, icon: Icon, tint, onClick }) => (
-        <button
+        <Button
           key={label}
           type="button"
+          variant="ghost"
+          size="icon-sm"
           aria-label={label}
           tabIndex={-1}
           onClick={onClick}
+          // Pressing shrinks these a touch instead of the usual 1px nudge down.
           className={cn(
-            "flex size-8 items-center justify-center rounded-lg text-muted-foreground outline-none",
-            "transition-[background-color,color,scale] duration-200 ease-(--ease-out-soft) active:scale-95",
+            "rounded-lg text-muted-foreground",
+            "transition-[background-color,color,scale] duration-200 ease-(--ease-out-soft) active:scale-95 active:not-aria-[haspopup]:translate-y-0",
             tint,
           )}
         >
           <Icon className="size-4.5" />
-        </button>
+        </Button>
       ))}
     </div>
   );

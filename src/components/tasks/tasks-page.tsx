@@ -50,6 +50,8 @@ import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 import { loadBoardOrder, saveBoardOrder, sortByOrder, type BoardOrder } from "@/tasks/board-order";
 import { TaskDialog } from "./task-dialog";
 import { TasksSetup } from "./tasks-setup";
+import { PageHeader, PageTitle } from "@/components/page-header";
+import { listCard, listCardSelected } from "@/components/list-card";
 
 /** A pause after ticking before the task is archived, so a misclick can be unticked (as in Tick). */
 const COMPLETE_DELAY_MS = 600;
@@ -475,10 +477,8 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <div ref={page} className="relative flex h-full flex-col overflow-hidden">
-      {/* The bottom line is an inset shadow, not border-b, so the content box stays 56px: with a 1px border
-          the 36px selection group sits at 9.5px and snaps up half a pixel when its scale animation ends. */}
-      <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
-        <h1 className="min-w-0 flex-1 truncate text-base font-semibold">Tasks</h1>
+      <PageHeader>
+        <PageTitle>Tasks</PageTitle>
         {/* Always mounted so it can fade in and out; the count holds its last value while fading. It
             springs in from its right edge with a light bounce (like the command bar's task-mode values)
             and fades straight out; a spring picks up from wherever it is, so quick reselects don't
@@ -508,7 +508,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
               </TooltipContent>
             </Tooltip>
         </motion.div>
-      </header>
+      </PageHeader>
 
       <div
         className="relative grid min-h-0 flex-1 grid-cols-3 gap-3 p-3"
@@ -703,10 +703,10 @@ function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick
       onClick={onClick}
       onPointerDown={onPointerDown}
       className={cn(
-        "group/card flex cursor-default gap-3 rounded-lg border bg-card p-3 pr-3.5 text-left transition-[background-color,border-color,box-shadow] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 dark:hover:bg-accent/40",
+        listCard,
+        "group/card flex gap-3 rounded-lg p-3 pr-3.5 transition-[background-color,border-color,box-shadow] dark:hover:bg-accent/40",
         // Selected: a sky frame and the card's own colour tinted sky — a light tint, so it never ends up darker than the column behind it.
-        selected &&
-          "border-selected-border bg-selected hover:border-selected-border hover:bg-selected-hover dark:hover:bg-selected-hover",
+        selected && listCardSelected,
         hidden && "opacity-0 transition-none",
         className,
       )}

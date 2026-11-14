@@ -54,6 +54,8 @@ import type { ShortcutId } from "@/shortcuts";
 import type { Account, ComposeMode, Folder, MessageSummary, Provider, SenderGroup } from "@/types";
 import { listDate, senderName } from "@/format";
 import { FOLDERS, folderLabel } from "@/folders";
+import { PageHeader } from "@/components/page-header";
+import { listCard, listCardSelected } from "@/components/list-card";
 
 export type Filter = "all" | "unread" | "starred";
 
@@ -220,7 +222,7 @@ export function MailList(p: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center px-4 shadow-[inset_0_-1px_0_var(--color-border)]">
+      <PageHeader className="gap-0">
         {gv ? (
           <GroupTitle s={gv} />
         ) : (
@@ -320,7 +322,7 @@ export function MailList(p: Props) {
             </TooltipContent>
           </Tooltip>
         </div>
-      </header>
+      </PageHeader>
 
       <motion.div
         key={`${p.listKey}|${mode}`}
@@ -423,11 +425,11 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
         }
       }}
       className={cn(
-        "group/row flex cursor-default rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-accent/50 data-[state=open]:border-foreground/15 data-[state=open]:bg-accent/60",
+        listCard,
+        "group/row flex rounded-xl p-3.5 data-[state=open]:border-border-strong data-[state=open]:bg-accent/60",
         highlighted && "bg-muted hover:bg-muted",
         // Selected: the same sky frame and sky-tinted card colour as a selected task card.
-        checked &&
-          "border-selected-border bg-selected hover:border-selected-border hover:bg-selected-hover dark:hover:bg-selected-hover",
+        checked && listCardSelected,
       )}
     >
       <SelectionSlot

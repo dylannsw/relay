@@ -24,6 +24,7 @@ import type { TgChat } from "@/telegram/types";
 import { Conversation, NoChatOpen } from "./conversation";
 import { ChatList } from "./chat-list";
 import { TelegramSetup } from "./telegram-setup";
+import { PageHeader, PageTitle } from "@/components/page-header";
 
 type Filter = "all" | "unread" | "archived";
 const FILTERS = [
@@ -112,8 +113,8 @@ export function ChatsPage({ folder }: { folder: number | null }) {
   return (
     <div className="flex h-full min-h-0">
       <aside className="flex w-96 shrink-0 flex-col border-r">
-        <header className="flex h-14 shrink-0 items-center gap-2 pr-2 pl-4 shadow-[inset_0_-1px_0_var(--color-border)]">
-          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
+        <PageHeader className="gap-2 pr-2">
+          <PageTitle>{title}</PageTitle>
           {!isTauri && <Badge variant="outline">Sample data</Badge>}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -138,7 +139,7 @@ export function ChatsPage({ folder }: { folder: number | null }) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </header>
+        </PageHeader>
         <ChatList
           chats={list}
           selectedId={selectedId}

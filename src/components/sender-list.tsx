@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectionSlot } from "@/components/selection-slot";
 import type { Folder, SenderGroup } from "@/types";
 import { listDate } from "@/format";
+import { listCard, listCardSelected } from "@/components/list-card";
 
 /** Everything the Clean up page needs from the app; absent on every other mail view. */
 export interface SendersProps {
@@ -133,8 +134,9 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       className={cn(
         // Hover mixes the accent into the card instead of layering a see-through accent over it,
         // so the cards stacked behind never show through.
-        "group/row relative flex cursor-default items-center gap-3 rounded-xl border bg-card p-3.5 text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-foreground/15 hover:bg-[color-mix(in_oklab,var(--accent)_50%,var(--card))]",
-        checked && "border-selected-border bg-selected hover:border-selected-border hover:bg-selected-hover",
+        listCard,
+        "group/row relative flex items-center gap-3 rounded-xl p-3.5 hover:bg-[color-mix(in_oklab,var(--accent)_50%,var(--card))]",
+        checked && listCardSelected,
       )}
     >
       <SelectionSlot
