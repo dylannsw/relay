@@ -9,7 +9,7 @@ export function PageHeader({ className, ...props }: React.ComponentProps<"header
   return (
     <header
       data-slot="page-header"
-      className={cn("flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--color-border)]", className)}
+      className={cn("flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)]", className)}
       {...props}
     />
   );
