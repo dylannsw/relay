@@ -58,6 +58,11 @@ export function patchChat(id: string, patch: Partial<TgChat>) {
   set({ chats: state.chats.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
 }
 
+/** Drops a deleted chat from the list. */
+export function removeChat(id: string) {
+  set({ chats: state.chats.filter((c) => c.id !== id) });
+}
+
 function onEvent(e: TgEvent) {
   if (e.reload) {
     void refreshStatus();
@@ -100,9 +105,25 @@ export function unreadChats(chats: TgChat[], folder: number | null): number {
   ).length;
 }
 
-/** The chats a folder shows: All chats is everything not archived. */
+/** The chats a folder shows: archived chats live under the Archived filter, not here. */
 export function chatsIn(chats: TgChat[], folder: number | null): TgChat[] {
-  const list = folder === null ? chats.filter((c) => !c.archived) : chats.filter((c) => c.folders.includes(folder));
+  const list = chats.filter((c) => !c.archived && (folder === null || c.folders.includes(folder)));
   // Pinned chats stay on top, as in Telegram (pinned order isn't kept: newest first among them).
   return [...list.filter((c) => c.pinned), ...list.filter((c) => !c.pinned)];
+}
+
+/** Every archived chat, newest first (Telegram's archive is one list, whatever the folder). */
+export function archivedChats(chats: TgChat[]): TgChat[] {
+  return chats.filter((c) => c.archived);
+}
+
+/** Archives or restores a chat right away, undoing it if Telegram refuses. */
+export async function setArchived(id: string, archived: boolean): Promise<void> {
+  patchChat(id, { archived });
+  try {
+    await api.telegram.archive(id, archived);
+  } catch (e) {
+    patchChat(id, { archived: !archived });
+    throw e;
+  }
 }

@@ -38,12 +38,16 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** White text unless the colour is light enough that near-black reads better. */
+/**
+ * White text, which is what the design wants on any accent, unless the colour is so light that
+ * white is hard to read (yellows, light oranges). It's a looser bar than 4.5:1 on purpose: bright
+ * blues and greens keep white labels rather than flipping to dark text at the first chance.
+ */
+const MIN_WHITE_CONTRAST = 2.3;
+
 function textOn(hex: string): string {
-  const l = luminance(hex);
-  const onWhite = 1.05 / (l + 0.05);
-  const onDark = (l + 0.05) / (luminance("#1f1f1f") + 0.05);
-  return onWhite >= onDark ? "oklch(0.985 0 0)" : "#1f1f1f";
+  const onWhite = 1.05 / (luminance(hex) + 0.05);
+  return onWhite >= MIN_WHITE_CONTRAST ? "oklch(0.985 0 0)" : "#1f1f1f";
 }
 
 /** The custom colour as an accent: as picked in light mode, a touch brighter in dark mode. */

@@ -118,20 +118,19 @@ export function VoiceMessage({ chatId, messageId, media, outgoing }: { chatId: s
       >
         {state === "loading" ? <Spinner className="size-4.5" /> : state === "playing" ? <IconPlayerPauseFilled className="size-4.5" /> : <IconPlayerPlayFilled className="size-4.5" />}
       </button>
-      <span className="flex min-w-0 flex-col gap-1">
-        <div role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(length)} aria-valuenow={Math.round(pos)} tabIndex={-1} onPointerDown={(e) => void seek(e)} className="flex h-5 cursor-pointer items-center gap-[1.5px]">
-          {levels.map((v, i) => (
-            <span
-              key={i}
-              style={{ height: `${Math.round(v * 100)}%` }}
-              className={cn("w-[2px] rounded-full bg-current transition-opacity duration-100", (i + 0.5) / BARS <= played ? "opacity-100" : "opacity-35")}
-            />
-          ))}
-        </div>
-        <span className="text-xs tabular-nums opacity-70">
-          {state === "loading" && fraction !== null && fraction < 1 ? `${Math.round(fraction * 100)}%` : clock(active ? pos : length)}
-        </span>
+      <div role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(length)} aria-valuenow={Math.round(pos)} tabIndex={-1} onPointerDown={(e) => void seek(e)} className="flex h-6 min-w-36 flex-1 cursor-pointer items-center gap-[1.5px]">
+        {levels.map((v, i) => (
+          <span
+            key={i}
+            style={{ height: `${Math.round(v * 100)}%` }}
+            className={cn("w-[2px] rounded-full bg-current transition-opacity duration-100", (i + 0.5) / BARS <= played ? "opacity-100" : "opacity-35")}
+          />
+        ))}
+      </div>
+      <span className="shrink-0 text-sm tabular-nums opacity-80">
+        {state === "loading" && fraction !== null && fraction < 1 ? `${Math.round(fraction * 100)}%` : clock(active ? pos : length)}
       </span>
+
     </span>
   );
 }

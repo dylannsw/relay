@@ -744,6 +744,51 @@ pub async fn telegram_mark_read(app: AppHandle, tg: Tg<'_>, chat_id: String) -> 
     Ok(())
 }
 
+/// Moves a chat into Telegram's archive, or back out to the main list (on every device).
+#[tauri::command]
+pub async fn telegram_archive(app: AppHandle, tg: Tg<'_>, chat_id: String, archived: bool) -> Result<()> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (id, peer) = tg.entry(&chat_id)?;
+    client
+        .invoke(&tl::functions::folders::EditPeerFolders {
+            folder_peers: vec![tl::enums::InputFolderPeer::Peer(tl::types::InputFolderPeer {
+                peer: peer.into(),
+                folder_id: if archived { 1 } else { 0 },
+            })],
+        })
+        .await
+        .map_err(tg_error)?;
+    let chat = tg.patch(id, |e| e.chat.archived = archived);
+    let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
+    Ok(())
+}
+
+/// Deletes a chat from the list. One-to-one chats can also be wiped for the other person (`revoke`);
+/// groups and channels are left, which removes them for you only.
+#[tauri::command]
+pub async fn telegram_delete_chat(tg: Tg<'_>, chat_id: String, revoke: bool) -> Result<()> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (id, peer) = tg.entry(&chat_id)?;
+    let one_to_one = tg.chats.read().expect("chats lock").list.get(&id).is_some_and(|e| matches!(e.chat.kind, "user" | "bot" | "saved"));
+    if one_to_one {
+        client
+            .invoke(&tl::functions::messages::DeleteHistory {
+                just_clear: false,
+                revoke,
+                peer: peer.into(),
+                max_id: 0,
+                min_date: None,
+                max_date: None,
+            })
+            .await
+            .map_err(tg_error)?;
+    } else {
+        client.delete_dialog(peer).await.map_err(tg_error)?;
+    }
+    tg.chats.write().expect("chats lock").list.remove(&id);
+    Ok(())
+}
+
 fn cached(path: &Path) -> Option<tauri::ipc::Response> {
     std::fs::read(path).ok().filter(|b| !b.is_empty()).map(tauri::ipc::Response::new)
 }

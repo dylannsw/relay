@@ -26,7 +26,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { quick } from "@/lib/motion";
+import { quick, smooth } from "@/lib/motion";
 import { api, errorText } from "@/api";
 import { clockTime } from "@/format";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
 import type { TgChat, TgMedia, TgMessage, TgSticker } from "@/telegram/types";
-import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
+import { ChatAvatar } from "./chat-avatar";
 import { MessageText } from "./message-text";
 import { InputGroupAddon, InputGroupTextarea } from "@/components/ui/input-group";
 import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
@@ -330,7 +330,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
         <ChatAvatar id={chat.id} name={chat.name} hasPhoto={chat.hasPhoto} saved={chat.kind === "saved"} size={32} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <h2 className="truncate text-[15px] leading-tight font-semibold">{chat.name}</h2>
+            <h2 className="truncate text-base leading-tight font-semibold">{chat.name}</h2>
             {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
           </div>
           {sub && <p className="truncate text-xs text-muted-foreground">{sub}</p>}
@@ -396,7 +396,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
                 <IconArrowDown />
                 <span className="sr-only">Jump to latest</span>
                 {unseen > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full bg-primary px-1.5 text-center text-[11px] leading-5 font-semibold text-primary-foreground tabular-nums">
+                  <span className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full bg-primary px-1.5 text-center text-xs leading-5 font-semibold text-primary-foreground tabular-nums">
                     {unseen}
                   </span>
                 )}
@@ -620,34 +620,42 @@ function mediaHint(kind: TgMedia["kind"]): string {
   return "Open Telegram to see it";
 }
 
+function fileSize(bytes: number | null | undefined): string | null {
+  if (!bytes) return null;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
 function MediaChip({ media, hint }: { media: TgMedia; hint?: string }) {
   const Icon = MEDIA_ICONS[media.kind];
+  const ext = media.kind === "file" ? (media.label.match(/\.([a-z0-9]{1,4})$/i)?.[1] ?? "").toUpperCase() : "";
   return (
-    <span className="flex items-center gap-2.5">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-current/12">
-        <Icon className="size-4.5" />
+    <span className="flex items-center gap-3">
+      <span className="relative flex h-10 w-8 shrink-0 items-center justify-center rounded-md bg-current/10">
+        <Icon className="size-5" />
+        {ext && <span className="absolute -bottom-1 -left-1 rounded-[4px] bg-primary px-1 py-px text-[9px] leading-none font-bold text-primary-foreground">{ext}</span>}
       </span>
       <span className="min-w-0">
         <span className="block truncate font-medium">{media.label}</span>
-        <span className="block text-xs opacity-70">{hint ?? mediaHint(media.kind)}</span>
+        <span className="block text-xs opacity-70">{hint ?? fileSize(media.size) ?? mediaHint(media.kind)}</span>
       </span>
     </span>
   );
 }
 
-/** Time, "edited" and read ticks: drawn at the bubble's bottom right, with room kept for them in the text. */
-function Meta({ m, read, overlay }: { m: Shown; read: boolean; overlay?: boolean }) {
+/** Read ticks, "edited" and the time, drawn under the last bubble of a run. */
+function Meta({ m, read }: { m: Shown; read: boolean }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 text-[11px] leading-none whitespace-nowrap tabular-nums", overlay ? "rounded-full bg-black/45 px-1.5 py-1 text-white" : "opacity-70")}>
+    <span className="inline-flex items-center gap-1 text-xs leading-none whitespace-nowrap text-muted-foreground tabular-nums">
       {m.edited && <span>edited</span>}
-      {clockTime(m.date)}
       {m.pending === "sending" ? (
-        <IconClock className="size-3.5" aria-label="Sending" />
+        <IconClock className="size-4" aria-label="Sending" />
       ) : m.pending === "failed" ? (
-        <IconAlertCircle className="size-3.5" aria-label="Not sent" />
+        <IconAlertCircle className="size-4 text-destructive" aria-label="Not sent" />
       ) : (
-        m.outgoing && (read ? <IconChecks className="size-3.5" aria-label="Read" /> : <IconCheck className="size-3.5" aria-label="Sent" />)
+        m.outgoing && (read ? <IconChecks className="size-4 text-primary" aria-label="Read" /> : <IconCheck className="size-4" aria-label="Sent" />)
       )}
+      {clockTime(m.date)}
     </span>
   );
 }
@@ -677,22 +685,21 @@ function Bubble(props: {
   const otherMedia = media && !photo && !sticker ? media : null;
   const hasText = m.text.trim().length > 0;
   const photoOnly = photo && !hasText && !m.reply && !m.forwardedFrom && !props.showName;
-  const color = peerColor(m.senderId);
-
-  // Runs share a column: rounded all round, except the corners that face the next/previous bubble.
-  const corners = out
-    ? cn("rounded-2xl", !first && "rounded-tr-md", !last && "rounded-br-md")
-    : cn("rounded-2xl", !first && "rounded-tl-md", !last && "rounded-bl-md");
+  // Every bubble is fully rounded; each run has its name above and its time and ticks below.
+  const corners = "rounded-[10px]";
+  const showTime = last || !!m.pending || m.edited;
+  const nameLine = props.showName && <div className="truncate px-1 text-sm font-semibold text-foreground">{m.senderName}</div>;
 
   const copy = () => {
     void navigator.clipboard.writeText(m.text).then(() => toast.success("Copied"));
   };
 
   return (
-    <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-3" : "pt-1", out ? "justify-end" : "justify-start")}>
+    <>
+    <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-4" : "pt-2", out ? "justify-end" : "justify-start")}>
       {props.showAvatar && (
-        <div className="w-8 shrink-0 self-end">
-          {last && <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={32} />}
+        <div className="w-8 shrink-0 self-start">
+          {first && <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={32} />}
         </div>
       )}
       {failed ? (
@@ -711,14 +718,10 @@ function Bubble(props: {
       <ContextMenu>
         <ContextMenuTrigger asChild>
           {sticker ? (
-            <div onDoubleClick={m.pending ? undefined : props.onReply} className="relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-[14.5px] leading-[1.4]">
-              {(props.showName || m.forwardedFrom !== null || m.reply) && (
+            <div onDoubleClick={m.pending ? undefined : props.onReply} className="relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]">
+              {nameLine}
+              {(m.forwardedFrom !== null || m.reply) && (
                 <div className={cn("min-w-0 self-start rounded-2xl bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] px-3 py-1.5", out && "self-end")}>
-                  {props.showName && (
-                    <div style={{ "--peer": color } as CSSProperties} className={cn("truncate text-[13px] font-semibold", nameColorClass)}>
-                      {m.senderName}
-                    </div>
-                  )}
                   {m.forwardedFrom !== null && (
                     <div className="truncate text-xs opacity-75">
                       Forwarded{m.forwardedFrom ? <> from <span className="font-medium">{m.forwardedFrom}</span></> : null}
@@ -728,36 +731,29 @@ function Bubble(props: {
                     <button
                       type="button"
                       onClick={() => m.reply && props.onJump(m.reply.id)}
-                      className="mt-0.5 flex w-full min-w-0 flex-col rounded-md border-l-[3px] border-sky-500 bg-sky-500/10 px-2 py-1 text-left text-[13px] leading-snug"
+                      className="mt-0.5 flex w-full min-w-0 flex-col rounded-md bg-primary/8 px-2 py-1 text-left text-sm leading-snug"
                     >
-                      <span className="truncate font-semibold text-sky-700 dark:text-sky-300">{m.reply.sender ?? "Reply"}</span>
-                      <span className="truncate opacity-80">{m.reply.text || "Message"}</span>
+                      <span className="truncate font-semibold text-primary">{m.reply.sender ?? "Reply"}</span>
+                      <span className="truncate text-muted-foreground">{m.reply.text || "Message"}</span>
                     </button>
                   )}
                 </div>
               )}
               <div className={cn("relative", out && "self-end")}>
                 {round ? <VideoThumb chatId={chat.id} m={m} media={sticker} /> : <Sticker chatId={chat.id} m={m} media={sticker} />}
-                <span className="absolute right-1 bottom-1">
-                  <Meta m={m} read={read} overlay />
-                </span>
               </div>
             </div>
           ) : (
+          <div onDoubleClick={m.pending ? undefined : props.onReply} className={cn("flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1", out ? "items-end" : "items-start")}>
+          {nameLine}
           <div
-            onDoubleClick={m.pending ? undefined : props.onReply}
             className={cn(
-              "relative max-w-[min(78%,34rem)] min-w-0 overflow-hidden text-[14.5px] leading-[1.4] break-words",
+              "relative min-w-0 overflow-hidden text-sm leading-[1.4] break-words",
               corners,
               out ? "bg-primary text-primary-foreground" : "bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] text-foreground",
-              !photoOnly && "px-3 py-1.5",
+              !photoOnly && "px-2.5 py-[7px]",
             )}
           >
-            {props.showName && (
-              <div style={{ "--peer": color } as CSSProperties} className={cn("mb-0.5 truncate text-[13px] font-semibold", nameColorClass)}>
-                {m.senderName}
-              </div>
-            )}
             {m.forwardedFrom !== null && (
               <div className="mb-0.5 truncate text-xs opacity-75">
                 Forwarded{m.forwardedFrom ? <> from <span className="font-medium">{m.forwardedFrom}</span></> : null}
@@ -767,14 +763,17 @@ function Bubble(props: {
               <button
                 type="button"
                 onClick={() => m.reply && props.onJump(m.reply.id)}
-                className={cn("mt-0.5 mb-1 flex w-full min-w-0 flex-col rounded-md border-l-[3px] px-2 py-1 text-left text-[13px] leading-snug", out ? "border-current/60 bg-current/12" : "border-sky-500 bg-sky-500/10")}
+                className={cn(
+                  "mt-0.5 mb-1 flex w-full min-w-0 flex-col rounded-md px-2 py-1 text-left text-sm leading-snug",
+                  out ? "bg-primary-foreground/15" : "bg-primary/8",
+                )}
               >
-                <span className={cn("truncate font-semibold", !out && "text-sky-700 dark:text-sky-300")}>{m.reply.sender ?? "Reply"}</span>
-                <span className="truncate opacity-80">{m.reply.text || "Message"}</span>
+                <span className={cn("truncate font-semibold", !out && "text-primary")}>{m.reply.sender ?? "Reply"}</span>
+                <span className={cn("truncate", out ? "text-primary-foreground/85" : "text-muted-foreground")}>{m.reply.text || "Message"}</span>
               </button>
             )}
             {photo && (
-              <div className={cn(!photoOnly && "-mx-3 mt-1", !photoOnly && !hasText && "-mb-1.5", hasText && "mb-1.5", !photoOnly && !props.showName && !m.reply && !m.forwardedFrom && "-mt-1.5")}>
+              <div className={cn(!photoOnly && "-mx-2.5 mt-1", !photoOnly && !hasText && "-mb-[7px]", hasText && "mb-[7px]", !photoOnly && !m.reply && !m.forwardedFrom && "-mt-[7px]")}>
                 {photo.kind === "gif" ? (
                   <Gif chatId={chat.id} m={m} media={photo} />
                 ) : photo.kind === "video" ? (
@@ -785,32 +784,16 @@ function Bubble(props: {
               </div>
             )}
             {otherMedia && (
-              <div className={cn("py-1", hasText && "mb-1")}>
+              <div className={cn(hasText && "mb-1.5")}>
                 {otherMedia.kind === "voice" ? <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} outgoing={out} /> : <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />}
               </div>
             )}
             {hasText ? (
               <div className="whitespace-pre-wrap">
                 <MessageText text={m.text} entities={m.entities} outgoing={out} />
-                {/* Room on the last line for the time, which sits over it at the bottom right. */}
-                <span aria-hidden className="invisible ml-2 inline-block align-baseline">
-                  <Meta m={m} read={read} />
-                </span>
               </div>
-            ) : (
-              // A voice message's duration line leaves room for the time at its right.
-              !photoOnly &&
-              otherMedia?.kind !== "voice" && (
-                <div className="flex justify-end">
-                  <span aria-hidden className="invisible">
-                    <Meta m={m} read={read} />
-                  </span>
-                </div>
-              )
-            )}
-            <span className={cn("absolute", photoOnly ? "right-1.5 bottom-1.5" : "right-2.5 bottom-1.5")}>
-              <Meta m={m} read={read} overlay={!!photoOnly} />
-            </span>
+            ) : null}
+          </div>
           </div>
           )}
         </ContextMenuTrigger>
@@ -843,25 +826,26 @@ function Bubble(props: {
       </ContextMenu>
       {!out && <ReplyButton onReply={props.onReply} />}
     </div>
+    {showTime && (
+      <div className={cn("flex pt-2", out ? "justify-end" : "justify-start", props.showAvatar && !out ? "pl-10" : "px-1")}>
+        <Meta m={m} read={read} />
+      </div>
+    )}
+    </>
   );
 }
 
 function ReplyButton({ onReply }: { onReply: () => void }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="mb-1 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-visible:opacity-100"
-          onClick={onReply}
-        >
-          <IconCornerUpLeft />
-          <span className="sr-only">Reply</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Reply</TooltipContent>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      className="mb-1 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-visible:opacity-100"
+      onClick={onReply}
+    >
+      <IconCornerUpLeft />
+      <span className="sr-only">Reply</span>
+    </Button>
   );
 }
 
@@ -878,6 +862,10 @@ function Composer(props: {
   const [text, setText] = useState(() => drafts.get(chat.id) ?? "");
   const [files, setFiles] = useState<string[]>([]);
   const area = useRef<HTMLTextAreaElement | null>(null);
+  // The chips stay drawn while the row collapses after the last one is removed.
+  const lastFiles = useRef<string[]>([]);
+  if (files.length) lastFiles.current = files;
+  const shownFiles = files.length ? files : lastFiles.current;
 
   useEffect(() => {
     setText(drafts.get(chat.id) ?? "");
@@ -935,7 +923,7 @@ function Composer(props: {
             >
               <div className="flex items-center gap-2.5 pt-0.5 pr-0.5 pb-1.5 pl-3">
                 <IconCornerUpLeft className="size-4 shrink-0 text-primary" />
-                <div className="min-w-0 flex-1 text-[13px] leading-snug">
+                <div className="min-w-0 flex-1 text-sm leading-snug">
                   <div className="truncate font-semibold text-primary">Reply to {replyTo.outgoing ? "yourself" : (replyTo.senderName ?? chat.name)}</div>
                   <div className="truncate text-muted-foreground">{replyTo.text || replyTo.media?.label || "Message"}</div>
                 </div>
@@ -948,13 +936,29 @@ function Composer(props: {
           )}
         </AnimatePresence>
         <ComposerField>
-          {files.length > 0 && (
-            <InputGroupAddon align="block-start" className="flex-wrap gap-1.5 px-3 pt-3 pb-0">
-              {files.map((f) => (
-                <AttachedFile key={f} path={f} onRemove={() => setFiles((list) => list.filter((x) => x !== f))} />
-              ))}
-            </InputGroupAddon>
-          )}
+          {/* The field grows to make room for attachments and shrinks when they go. */}
+          <AnimatePresence initial={false}>
+            {files.length > 0 && (
+              <motion.div
+                key="files"
+                // The box eases open while the chips fade in a beat later (and out first on the way back).
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1, transition: { height: smooth, opacity: { duration: 0.18, delay: 0.08 } } }}
+                exit={{ height: 0, opacity: 0, transition: { height: { ...smooth, delay: 0.04 }, opacity: { duration: 0.12 } } }}
+                className="order-first w-full overflow-hidden"
+              >
+                <InputGroupAddon align="block-start" className="flex-wrap gap-1.5 px-3 pt-3 pb-0">
+                  <AnimatePresence mode="popLayout">
+                    {shownFiles.map((f) => (
+                      <motion.span key={f} layout initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }} transition={quick} className="inline-flex">
+                        <AttachedFile path={f} onRemove={() => setFiles((list) => list.filter((x) => x !== f))} />
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
+                </InputGroupAddon>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <InputGroupTextarea
             ref={(el) => {
               area.current = el;
@@ -976,20 +980,15 @@ function Composer(props: {
             }}
             placeholder={files.length ? "Add a caption…" : chat.kind === "saved" ? "Write a note…" : `Message ${chat.name}…`}
             aria-label="Message"
-            className="no-scrollbar max-h-50 min-h-0 pt-3 pr-4 pb-1 pl-[18px] text-[15px] leading-[1.4] md:text-[15px]"
+            className="no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60 pt-3 pr-4 pb-1 pl-[18px] text-[16px] leading-[1.4] md:text-[16px]"
           />
-          <ComposerSubmit ready={canSend} label="Send" hint="Send (Enter)" onClick={send} />
+          <ComposerSubmit ready={canSend} label="Send" onClick={send} />
         </ComposerField>
         <ComposerOptions>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="sm" onClick={attach} className="text-muted-foreground">
-                <IconPaperclip />
-                Attach
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Attach files or pictures</TooltipContent>
-          </Tooltip>
+          <Button type="button" variant="outline" size="sm" onClick={attach} className="text-muted-foreground">
+            <IconPaperclip />
+            Attach
+          </Button>
           <StickerPicker onPick={props.onSticker} onClosed={() => area.current?.focus()} />
         </ComposerOptions>
       </ComposerTray>
@@ -1004,7 +1003,7 @@ function AttachedFile({ path, onRemove }: { path: string; onRemove: () => void }
   const name = path.split(/[\\/]/).pop() ?? path;
   const Icon = PICTURE.test(name) ? IconPhoto : IconFile;
   return (
-    <span className="flex h-8 max-w-60 items-center gap-1.5 rounded-lg border bg-muted pr-0.5 pl-2 text-[13px] text-foreground dark:bg-sidebar" title={path}>
+    <span className="flex h-8 max-w-60 items-center gap-1.5 rounded-lg border bg-muted pr-0.5 pl-2 text-sm text-foreground dark:bg-sidebar" title={path}>
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="truncate">{name}</span>
       <Button type="button" variant="ghost" size="icon-xs" className="shrink-0 text-muted-foreground" onClick={onRemove}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { IconClock, IconSticker } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { api, errorText } from "@/api";
@@ -7,22 +7,44 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TgSticker, TgStickerSet } from "@/telegram/types";
-import { StickerArt, useInView } from "./sticker-view";
+import { lottieStill, lottieStillNow, StickerArt, useInView } from "./sticker-view";
 
 /** Sticker files, loaded once while Relay is open. */
 const files = new Map<string, Promise<ArrayBuffer>>();
+/** The ones already here, so a reopened picker draws them straight away. */
+const loaded = new Map<string, ArrayBuffer>();
 function stickerBytes(id: string) {
   let p = files.get(id);
   if (!p) {
     p = api.telegram.stickerFile(id);
-    p.catch(() => files.delete(id));
+    p.then(
+      (b) => loaded.set(id, b),
+      () => files.delete(id),
+    );
     files.set(id, p);
   }
   return p;
 }
 
-/** The sets, kept between openings (recent ones refresh each time). */
+/** The sets, kept between openings (refreshed each time). */
 let lastSets: TgStickerSet[] | null = null;
+let loadingSets: Promise<TgStickerSet[]> | null = null;
+function loadSets() {
+  loadingSets ??= api.telegram.stickerSets().then(
+    (s) => {
+      // Usually nothing changed: keep the same list, so the open panel doesn't redraw.
+      if (lastSets && JSON.stringify(s) === JSON.stringify(lastSets)) s = lastSets;
+      lastSets = s;
+      loadingSets = null;
+      return s;
+    },
+    (e) => {
+      loadingSets = null;
+      throw e;
+    },
+  );
+  return loadingSets;
+}
 
 /**
  * The composer's sticker button: a panel with a row of set tabs (recent first) over one scrolling
@@ -36,17 +58,18 @@ export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => 
   const scroller = useRef<HTMLDivElement>(null);
   const sections = useRef<(HTMLElement | null)[]>([]);
 
+  // Loaded once ahead of the first opening, so the panel opens on them; refreshed each opening.
+  useEffect(() => {
+    if (!lastSets) loadSets().then(setSets, () => {});
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     let live = true;
     setError(null);
-    api.telegram.stickerSets().then(
-      (s) => {
-        if (!live) return;
-        lastSets = s;
-        setSets(s);
-      },
-      (e) => live && setError(errorText(e)),
+    loadSets().then(
+      (s) => live && setSets(s),
+      (e) => live && !lastSets && setError(errorText(e)),
     );
     return () => {
       live = false;
@@ -69,30 +92,44 @@ export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => 
     setActive(i);
   };
 
+  // Stable, so the sets' sections don't redraw when only the active tab changes.
+  const picked = useRef(onPick);
+  picked.current = onPick;
+  const pick = useCallback((st: TgSticker) => {
+    picked.current(st);
+    setOpen(false);
+  }, []);
+  const register = useCallback((i: number, el: HTMLElement | null) => {
+    sections.current[i] = el;
+  }, []);
+  const content = useRef<HTMLDivElement>(null);
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="text-muted-foreground aria-expanded:bg-foreground/[0.07] aria-expanded:text-foreground dark:aria-expanded:bg-foreground/10">
-              <IconSticker />
-              Stickers
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Send a sticker</TooltipContent>
-      </Tooltip>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="text-muted-foreground">
+          <IconSticker />
+          Stickers
+        </Button>
+      </PopoverTrigger>
       <PopoverContent
+        ref={content}
         side="top"
         align="start"
         sideOffset={10}
+        // Focus the panel itself, not its first tab (which would look picked and show its tooltip).
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          content.current?.focus({ preventScroll: true });
+        }}
         // Back to typing, rather than to the button (whose tooltip would pop up).
         onCloseAutoFocus={(e) => {
           if (!onClosed) return;
           e.preventDefault();
           onClosed();
         }}
-        className="w-[356px] gap-0 overflow-hidden p-0"
+        tabIndex={-1}
+        className="w-[356px] gap-0 overflow-hidden p-0 outline-none"
       >
         {!sets ? (
           <div className="flex h-[380px] items-center justify-center p-6 text-center text-sm text-muted-foreground">
@@ -124,27 +161,7 @@ export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => 
             </div>
             <div ref={scroller} onScroll={onScroll} className="relative h-[332px] overflow-y-auto px-2 pb-2">
               {sets.map((s, i) => (
-                // The last set is at least as tall as the panel, so its tab can bring it to the top too.
-                <section key={s.id} ref={(el) => void (sections.current[i] = el)} className={cn(i === sets.length - 1 && "min-h-full")}>
-                  <h3 className="truncate px-1.5 pt-3 pb-1.5 text-xs font-medium text-muted-foreground">{s.title}</h3>
-                  {/* Tiles are 4px apart, so a hovered one never touches its neighbour. */}
-                  <div className="grid grid-cols-5 gap-1">
-                    {s.stickers.map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => {
-                          onPick(st);
-                          setOpen(false);
-                        }}
-                        aria-label={st.emoji ? `${st.emoji} sticker` : "Sticker"}
-                        className="group/tile flex aspect-square items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.06] dark:hover:bg-foreground/[0.08]"
-                      >
-                        <Tile sticker={st} size={56} hover />
-                      </button>
-                    ))}
-                  </div>
-                </section>
+                <Section key={s.id} set={s} index={i} last={i === sets.length - 1} root={scroller} register={register} onPick={pick} />
               ))}
             </div>
           </>
@@ -154,37 +171,110 @@ export function StickerPicker({ onPick, onClosed }: { onPick: (s: TgSticker) => 
   );
 }
 
-/** One sticker, loaded once it scrolls near view; moving ones play while hovered. */
-function Tile({ sticker, size, hover }: { sticker: TgSticker; size: number; hover?: boolean }) {
-  const [ref, near] = useInView<HTMLSpanElement>({ rootMargin: "200px" });
-  const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
+/**
+ * One set's heading and grid. Its stickers are only drawn while it's near view; otherwise one
+ * blank square per row keeps its height, so the tabs and scrollbar stay put.
+ */
+const Section = memo(function Section({
+  set,
+  index,
+  last,
+  root,
+  register,
+  onPick,
+}: {
+  set: TgStickerSet;
+  index: number;
+  last: boolean;
+  root: RefObject<HTMLElement | null>;
+  register: (i: number, el: HTMLElement | null) => void;
+  onPick: (s: TgSticker) => void;
+}) {
+  const [grid, near] = useInView<HTMLDivElement>({ rootMargin: "300px", root });
+  const rows = Math.ceil(set.stickers.length / 5);
+  return (
+    // The last set is at least as tall as the panel, so its tab can bring it to the top too.
+    <section ref={(el) => register(index, el)} className={cn(last && "min-h-full")}>
+      <h3 className="truncate px-1.5 pt-3 pb-1.5 text-xs font-medium text-muted-foreground">{set.title}</h3>
+      {/* Tiles are 4px apart, so a hovered one never touches its neighbour. */}
+      <div ref={grid} className="grid grid-cols-5 gap-1">
+        {near
+          ? set.stickers.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => onPick(st)}
+                aria-label={st.emoji ? `${st.emoji} sticker` : "Sticker"}
+                className="group/tile flex aspect-square items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.06] dark:hover:bg-foreground/[0.08]"
+              >
+                <Tile sticker={st} size={56} hover root={root} />
+              </button>
+            ))
+          : Array.from({ length: rows }, (_, r) => <div key={r} className="col-start-1 aspect-square" />)}
+      </div>
+    </section>
+  );
+});
+
+/**
+ * One sticker, loaded once it comes near view (`root` is the panel it scrolls in) and kept after.
+ * An animated one shows a still of its first frame, and only builds its animation while hovered.
+ */
+function Tile({ sticker, size, hover, root }: { sticker: TgSticker; size: number; hover?: boolean; root?: RefObject<HTMLElement | null> }) {
+  const animated = sticker.mime === "application/x-tgsticker";
+  const [ref, near] = useInView<HTMLSpanElement>({ rootMargin: "200px", root });
+  const [bytes, setBytes] = useState<ArrayBuffer | null>(() => loaded.get(sticker.id) ?? null);
+  // An animated sticker waits for its still; if one can't be drawn, it shows the paused animation.
+  const [still, setStill] = useState<string | null>(() => (animated ? lottieStillNow(sticker.id) : null));
   const [hovered, setHovered] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const ready = bytes && (!animated || still);
   useEffect(() => {
-    if (!near || bytes) return;
+    if (!near || ready) return;
     let live = true;
-    stickerBytes(sticker.id).then(
-      (b) => live && setBytes(b),
-      () => {},
-    );
+    stickerBytes(sticker.id)
+      .then(async (b) => {
+        if (animated) await lottieStill(sticker.id, b).then((u) => live && setStill(u), () => {});
+        if (live) setBytes(b);
+      })
+      .catch(() => {});
     return () => {
       live = false;
     };
-  }, [near, bytes, sticker.id]);
+  }, [near, ready, animated, sticker.id]);
   const w = sticker.width || 512;
   const h = sticker.height || 512;
   const scale = size / Math.max(w, h);
   const style = { width: Math.round(w * scale), height: Math.round(h * scale) };
+  const play = hover ? hovered : false;
   return (
     <span
       ref={ref}
       onPointerEnter={hover ? () => setHovered(true) : undefined}
-      onPointerLeave={hover ? () => setHovered(false) : undefined}
+      onPointerLeave={
+        hover
+          ? () => {
+              setHovered(false);
+              setMoving(false);
+            }
+          : undefined
+      }
       className="flex size-full items-center justify-center"
     >
-      {bytes && near ? (
-        <StickerArt bytes={bytes} mime={sticker.mime} style={style} play={hover ? hovered : false} />
-      ) : (
+      {!bytes ? (
         <span style={style} className={cn("rounded-md bg-foreground/[0.05]", near && "animate-pulse")} />
+      ) : still ? (
+        <span style={style} className="relative">
+          {/* The still stays until the animation over it has drawn, so nothing flickers. */}
+          {!moving && <img src={still} alt="" draggable={false} style={style} className="block object-contain" />}
+          {play && (
+            <span className="absolute inset-0">
+              <StickerArt bytes={bytes} mime={sticker.mime} style={style} play onReady={() => setMoving(true)} />
+            </span>
+          )}
+        </span>
+      ) : (
+        <StickerArt bytes={bytes} mime={sticker.mime} style={style} play={play} />
       )}
     </span>
   );

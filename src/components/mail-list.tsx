@@ -628,15 +628,10 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
 function GroupTitle({ s }: { s: SendersProps & { group: SenderGroup } }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2.5">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground" onClick={s.onBack}>
-            <IconArrowLeft />
-            <span className="sr-only">Back to senders</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Back to senders</TooltipContent>
-      </Tooltip>
+      <Button variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground" onClick={s.onBack}>
+        <IconArrowLeft />
+        <span className="sr-only">Back to senders</span>
+      </Button>
       <h1 className="truncate text-lg font-semibold">{s.group.name}</h1>
       <Badge variant="secondary" className="tabular-nums">
         {s.group.count}

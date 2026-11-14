@@ -145,6 +145,10 @@ export const api = {
     send: (chatId: string, text: string, replyTo?: number) =>
       call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null }),
     markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
+    /** Moves a chat into Telegram's archive, or back out of it. */
+    archive: (chatId: string, archived: boolean) => call<void>("telegram_archive", { chatId, archived }),
+    /** Deletes a chat. `revoke` also deletes it for the other person (one-to-one chats only). */
+    deleteChat: (chatId: string, revoke: boolean) => call<void>("telegram_delete_chat", { chatId, revoke }),
     /** A chat's small profile picture; empty when it has none. */
     chatPhoto: (chatId: string) => call<ArrayBuffer>("telegram_chat_photo", { chatId }),
     photo: (chatId: string, messageId: number) => call<ArrayBuffer>("telegram_photo", { chatId, messageId }),

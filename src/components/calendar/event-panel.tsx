@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { deleteEvent, reply, type Rsvp } from "@/calendar/edit";
 import { plainText } from "@/calendar/layout";
 import type { CalendarEvent, CalendarInfo } from "@/types";
@@ -122,14 +121,9 @@ function IconButton({ label, onClick, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" onClick={onClick}>
-          {children}
-          <span className="sr-only">{label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <Button variant="ghost" size="icon-sm" onClick={onClick}>
+      {children}
+      <span className="sr-only">{label}</span>
+    </Button>
   );
 }

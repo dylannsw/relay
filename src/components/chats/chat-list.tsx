@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { IconAt, IconChecks, IconCopy, IconMessage, IconPin, IconRobot, IconSearch, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconAt, IconChecks, IconCopy, IconPin, IconTrash, IconRobot, IconSearch, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { api, errorText } from "@/api";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -19,7 +19,7 @@ function KindIcon({ chat }: { chat: TgChat }) {
   return null;
 }
 
-function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOpen: () => void }) {
+function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; selected: boolean; onOpen: () => void; onArchive: () => void; onDelete: () => void }) {
   const unread = chat.unread > 0 || chat.markedUnread;
   const last = chat.last;
   const markRead = () => {
@@ -43,16 +43,16 @@ function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOp
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <KindIcon chat={chat} />
-          <span className="min-w-0 truncate text-[15px] font-semibold">{chat.name}</span>
+          <span className="min-w-0 truncate text-[16px] font-semibold">{chat.name}</span>
           {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
           {/* Pin and time share the top row's right end. */}
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[13px] text-muted-foreground tabular-nums">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-[14px] text-muted-foreground tabular-nums">
             {chat.pinned && <IconPin className="size-4" aria-label="Pinned" />}
             {last && listDate(last.date)}
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate text-[13.5px] text-muted-foreground">
+          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
             {last?.sender && <span className="text-foreground/80">{last.sender}: </span>}
             {last?.text || "No messages yet"}
           </p>
@@ -71,7 +71,7 @@ function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOp
                   exit={{ scale: 0.6, opacity: 0 }}
                   transition={quick}
                   className={cn(
-                    "min-w-5 rounded-full px-1.5 text-center text-[11.5px] leading-5 font-semibold tabular-nums",
+                    "min-w-5 rounded-full px-1.5 text-center text-xs leading-5 font-semibold tabular-nums",
                     // Muted chats count in grey, as in Telegram.
                     chat.muted ? "bg-muted-foreground/25 text-foreground/80" : "bg-primary text-primary-foreground",
                   )}
@@ -86,16 +86,16 @@ function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOp
     </button>
     </ContextMenuTrigger>
     <ContextMenuContent className="w-48">
-      <ContextMenuItem onSelect={onOpen}>
-        <IconMessage />
-        Open chat
-      </ContextMenuItem>
       {(unread || chat.mentions > 0) && (
         <ContextMenuItem onSelect={markRead}>
           <IconChecks />
           Mark as read
         </ContextMenuItem>
       )}
+      <ContextMenuItem onSelect={onArchive}>
+        {chat.archived ? <IconArchiveOff /> : <IconArchive />}
+        {chat.archived ? "Unarchive" : "Archive"}
+      </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem
         onSelect={() => {
@@ -105,6 +105,10 @@ function Row({ chat, selected, onOpen }: { chat: TgChat; selected: boolean; onOp
       >
         <IconCopy />
         Copy name
+      </ContextMenuItem>
+      <ContextMenuItem variant="destructive" onSelect={onDelete}>
+        <IconTrash />
+        Delete chat
       </ContextMenuItem>
     </ContextMenuContent>
     </ContextMenu>
@@ -119,13 +123,19 @@ export function ChatList(props: {
   onQuery: (q: string) => void;
   loaded: boolean;
   emptyText: string;
-  /** All | Unread, beside the search box. */
+  /** Archives (or restores) a chat from its context menu. */
+  onArchive: (c: TgChat) => void;
+  /** Asks to delete a chat from its context menu. */
+  onDelete: (c: TgChat) => void;
+  /** All | Unread | Archived, on a row of their own under the search box. */
   filter: ReactNode;
+  /** Changes when the list is swapped (filter tab), replaying the entrance animation. */
+  animateKey?: string;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-foreground/20 dark:focus-within:border-white/20">
+      <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
+        <label className="flex h-8 w-full items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-foreground/20 dark:focus-within:border-white/20">
           <IconSearch className="size-4 shrink-0" />
           <input
             value={props.query}
@@ -137,7 +147,7 @@ export function ChatList(props: {
         </label>
         {props.filter}
       </div>
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div key={props.animateKey} className="no-scrollbar min-h-0 flex-1 animate-in overflow-y-auto px-1.5 pb-2 duration-200 fade-in-0 slide-in-from-bottom-1">
         {!props.loaded ? (
           <div className="flex flex-col gap-1 px-1">
             {Array.from({ length: 8 }, (_, i) => (
@@ -156,7 +166,7 @@ export function ChatList(props: {
           // A 4px gap between rows (as in the sidebar) so hover and selection never touch.
           <div className="flex flex-col gap-1">
             {props.chats.map((c) => (
-              <Row key={c.id} chat={c} selected={c.id === props.selectedId} onOpen={() => props.onOpen(c)} />
+              <Row key={c.id} chat={c} selected={c.id === props.selectedId} onOpen={() => props.onOpen(c)} onArchive={() => props.onArchive(c)} onDelete={() => props.onDelete(c)} />
             ))}
           </div>
         )}

@@ -14,18 +14,22 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { PillTabs } from "@/components/mail-list";
-import { chatsIn, setStatus, useTelegram } from "@/telegram/store";
+import { archivedChats, chatsIn, removeChat, setArchived, setStatus, useTelegram } from "@/telegram/store";
+import type { TgChat } from "@/telegram/types";
 import { Conversation, NoChatOpen } from "./conversation";
 import { ChatList } from "./chat-list";
 import { TelegramSetup } from "./telegram-setup";
 
-type Filter = "all" | "unread";
+type Filter = "all" | "unread" | "archived";
 const FILTERS = [
   { id: "all", label: "All" },
   { id: "unread", label: "Unread" },
+  { id: "archived", label: "Archived" },
 ] as const;
 
 /** Telegram: sign-in until you're connected, then your chats beside the open conversation. */
@@ -35,10 +39,13 @@ export function ChatsPage({ folder }: { folder: number | null }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [signingOut, setSigningOut] = useState(false);
+  const [deleting, setDeleting] = useState<TgChat | null>(null);
+  const [both, setBoth] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const title = folder === null ? "All Chats" : (tg.folders.find((f) => f.id === folder)?.title ?? "Chats");
   const list = useMemo(() => {
-    let l = chatsIn(tg.chats, folder);
+    let l = filter === "archived" ? archivedChats(tg.chats) : chatsIn(tg.chats, folder);
     if (filter === "unread") l = l.filter((c) => c.unread > 0 || c.markedUnread || c.mentions > 0 || c.id === selectedId);
     const q = query.trim().toLowerCase();
     if (q) l = l.filter((c) => c.name.toLowerCase().includes(q));
@@ -65,10 +72,46 @@ export function ChatsPage({ folder }: { folder: number | null }) {
     }
   };
 
+  const archive = (c: TgChat) => {
+    const archived = !c.archived;
+    setArchived(c.id, archived)
+      .then(() => {
+        // The chat leaves this list, so close it rather than leave a conversation with no row.
+        if (archived && c.id === selectedId) setSelectedId(null);
+        toast(archived ? "Chat archived" : "Chat unarchived", {
+          action: { label: "Undo", onClick: () => void setArchived(c.id, !archived).catch((e) => toast.error(errorText(e))) },
+        });
+      })
+      .catch((e) => toast.error(errorText(e)));
+  };
+
+  const askDelete = (c: TgChat) => {
+    setBoth(false);
+    setDeleting(c);
+  };
+  const confirmDelete = async () => {
+    const c = deleting;
+    if (!c) return;
+    setBusy(true);
+    try {
+      await api.telegram.deleteChat(c.id, both);
+      removeChat(c.id);
+      if (c.id === selectedId) setSelectedId(null);
+      toast.success(c.kind === "group" || c.kind === "channel" ? "Left chat" : "Chat deleted");
+      setDeleting(null);
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const oneToOne = deleting && (deleting.kind === "user" || deleting.kind === "bot");
+  const personal = oneToOne || deleting?.kind === "saved";
+
   const me = tg.status.me;
   return (
     <div className="flex h-full min-h-0">
-      <aside className="flex w-84 shrink-0 flex-col border-r">
+      <aside className="flex w-96 shrink-0 flex-col border-r">
         <header className="flex h-14 shrink-0 items-center gap-2 pr-2 pl-4 shadow-[inset_0_-1px_0_var(--color-border)]">
           <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
           {!isTauri && <Badge variant="outline">Sample data</Badge>}
@@ -102,9 +145,14 @@ export function ChatsPage({ folder }: { folder: number | null }) {
           onOpen={(c) => setSelectedId(c.id)}
           query={query}
           onQuery={setQuery}
+          onArchive={archive}
+          onDelete={askDelete}
+          animateKey={filter}
           filter={<PillTabs id="chat-filter" value={filter} items={FILTERS} onChange={setFilter} triggerClass="px-2" />}
           loaded={tg.loaded}
-          emptyText={query ? "No chats match." : filter === "unread" ? "You're all caught up." : "No chats in this folder."}
+          emptyText={
+            query ? "No chats match." : filter === "unread" ? "You're all caught up." : filter === "archived" ? "No archived chats." : "No chats in this folder."
+          }
         />
       </aside>
       <section className="min-w-0 flex-1">
@@ -119,6 +167,38 @@ export function ChatsPage({ folder }: { folder: number | null }) {
           </NoChatOpen>
         )}
       </section>
+
+      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && !busy && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{personal ? "Delete chat?" : "Leave and delete chat?"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {personal
+                ? `This clears your history with ${deleting?.name} and removes the chat from your list.`
+                : `You'll leave ${deleting?.name} and lose its history. The chat stays for everyone else.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {oneToOne && (
+            <div className="flex items-center gap-2">
+              <Checkbox id="delete-both" checked={both} onCheckedChange={(v) => setBoth(v === true)} />
+              <Label htmlFor="delete-both">Also delete for {deleting?.name}</Label>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {oneToOne ? (both ? "Delete for both" : "Delete for me") : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={signingOut} onOpenChange={setSigningOut}>
         <AlertDialogContent>

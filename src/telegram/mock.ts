@@ -41,6 +41,7 @@ const chats: TgChat[] = [
   chat({ id: "104", name: "Marcus", kind: "user", folders: [5, 4], last: { text: "ok bro", outgoing: true, sender: null, date: now - 2 * day } }),
   chat({ id: "100", name: "Saved Messages", kind: "saved", last: { text: "https://example.com/onboarding-notes", outgoing: true, sender: null, date: now - 3 * day } }),
   chat({ id: "105", name: "Relay Bot", kind: "bot", last: { text: "Your weekly summary is ready", outgoing: false, sender: null, date: now - 6 * day } }),
+  chat({ id: "-1005", name: "Old Flatmates", kind: "group", archived: true, last: { text: "bin night is Thursday", outgoing: false, sender: "Dee", date: now - 12 * day } }),
 ];
 
 let nextId = 500;
@@ -92,6 +93,28 @@ const history: Record<string, TgMessage[]> = {
 };
 
 /** A stand-in sticker: a round face in the given hue, as SVG. */
+/** Whether a sample sticker is animated: those numbered in even hundreds from 200. */
+const mockAnimated = (n: number) => n >= 200 && Math.floor(n / 100) % 2 === 0;
+
+/** A pulsing circle as gzipped Lottie, the way Telegram sends animated stickers (hue 0–1; yellow by default). */
+function mockLottie(hue?: number): Promise<ArrayBuffer> {
+  const f = (n: number) => {
+    const k = (n + (hue ?? 0.12) * 12) % 12;
+    return 0.6 - 0.35 * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  const color = [f(0), f(8), f(4), 1];
+  const ring = [{ t: 0, s: [60, 60] }, { t: 30, s: [100, 100] }, { t: 60, s: [60, 60] }];
+  const lottie = {
+    v: "5.5.2", fr: 60, ip: 0, op: 60, w: 512, h: 512, layers: [{
+      ty: 4, ind: 1, ip: 0, op: 60, st: 0,
+      ks: { o: { a: 0, k: 100 }, r: { a: 0, k: 0 }, p: { a: 0, k: [256, 256, 0] }, a: { a: 0, k: [0, 0, 0] }, s: { a: 1, k: ring.map((r) => ({ t: r.t, s: [...r.s, 100], i: { x: [0.4], y: [1] }, o: { x: [0.6], y: [0] } })) } },
+      shapes: [{ ty: "el", p: { a: 0, k: [0, 0] }, s: { a: 0, k: [440, 440] } }, { ty: "fl", c: { a: 0, k: color }, o: { a: 0, k: 100 } }],
+    }],
+  };
+  const gz = new Blob([JSON.stringify(lottie)]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Response(gz).arrayBuffer();
+}
+
 function mockFace(hue: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="240" fill="hsl(${hue} 85% 62%)"/><circle cx="180" cy="210" r="30" fill="#2b1d00"/><circle cx="332" cy="210" r="30" fill="#2b1d00"/><path d="M150 310q106 110 212 0" stroke="#2b1d00" stroke-width="28" fill="none" stroke-linecap="round"/></svg>`;
 }
@@ -243,22 +266,30 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       return r(m, 1200);
     }
     case "telegram_sticker_sets": {
+      // Sets numbered in even hundreds from 200 ("Moods") are animated, so the picker's Lottie
+      // stills can be tried here. ?stickers=many adds 30 big sets, like a well-used account.
       const set = (id: string, title: string, emoji: string[], from: number) => ({
         id,
         title,
-        stickers: emoji.map((e, i) => ({ id: String(from + i), emoji: e, mime: "image/svg+xml", width: 512, height: 512 })),
+        stickers: emoji.map((e, i) => ({ id: String(from + i), emoji: e, mime: mockAnimated(from + i) ? "application/x-tgsticker" : "image/svg+xml", width: 512, height: 512 })),
       });
+      const many = new URLSearchParams(location.search).get("stickers") === "many";
+      const extra = many ? Array.from({ length: 30 }, (_, k) => set(String(2000 + k), `Pack ${k + 1}`, Array(60 + ((k * 13) % 60)).fill("🙂"), (k + 3) * 100)) : [];
       return r(
         [
           set("recent", "Recent", ["😀", "👍", "🎉"], 1),
           set("1001", "Happy Faces", ["😀", "😂", "😍", "😎", "🥳", "😴", "🤔", "😇", "🙃", "😅", "🤩", "😌"], 100),
           set("1002", "Moods", ["😢", "😡", "😱", "🤯", "😬", "🥶", "🤢", "😤"], 200),
+          ...extra,
         ],
         500,
       );
     }
-    case "telegram_sticker_file":
-      return r(new TextEncoder().encode(mockFace((Number(args.id) * 47) % 360)).buffer, 120);
+    case "telegram_sticker_file": {
+      const n = Number(args.id);
+      if (mockAnimated(n)) return wait(null, 120).then(() => mockLottie(((n * 47) % 360) / 360)) as Promise<T>;
+      return r(new TextEncoder().encode(mockFace((n * 47) % 360)).buffer, 120);
+    }
     case "telegram_send_sticker": {
       const id = String(args.chatId);
       const m = msg({ chatId: id, text: "", outgoing: true, senderName: "You", date: Date.now(), media: { kind: "sticker", label: "Sticker", width: 512, height: 512, mime: "image/svg+xml" } });
@@ -274,6 +305,19 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
         listener?.({ reload: false, chat: structuredClone(c), message: null, edited: false, deleted: [], deletedChatId: null });
       }
       return r(undefined, 100);
+    }
+    case "telegram_archive": {
+      const c = chats.find((x) => x.id === String(args.chatId));
+      if (c) {
+        c.archived = Boolean(args.archived);
+        listener?.({ reload: false, chat: structuredClone(c), message: null, edited: false, deleted: [], deletedChatId: null });
+      }
+      return r(undefined, 150);
+    }
+    case "telegram_delete_chat": {
+      const i = chats.findIndex((x) => x.id === String(args.chatId));
+      if (i >= 0) chats.splice(i, 1);
+      return r(undefined, 200);
     }
     case "telegram_chat_photo":
       return r(new ArrayBuffer(0), 50);
@@ -293,19 +337,8 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
     case "telegram_save_media":
       return r("C:\\Users\\you\\Downloads\\Telegram video.mp4", 600);
     case "telegram_sticker": {
-      if (args.chatId === "-1001") {
-        // An animated sticker: a pulsing circle as gzipped Lottie, the way Telegram sends them.
-        const ring = { a: 1, k: [{ t: 0, s: [60, 60], i: { x: [0.4], y: [1] }, o: { x: [0.6], y: [0] } }, { t: 30, s: [100, 100], i: { x: [0.4], y: [1] }, o: { x: [0.6], y: [0] } }, { t: 60, s: [60, 60] }] };
-        const lottie = {
-          v: "5.5.2", fr: 60, ip: 0, op: 60, w: 512, h: 512, layers: [{
-            ty: 4, ind: 1, ip: 0, op: 60, st: 0,
-            ks: { o: { a: 0, k: 100 }, r: { a: 0, k: 0 }, p: { a: 0, k: [256, 256, 0] }, a: { a: 0, k: [0, 0, 0] }, s: { a: 1, k: ring.k.map((f) => ({ ...f, s: [...f.s, 100] })) } },
-            shapes: [{ ty: "el", p: { a: 0, k: [0, 0] }, s: { a: 0, k: [440, 440] } }, { ty: "fl", c: { a: 0, k: [0.97, 0.79, 0.28, 1] }, o: { a: 0, k: 100 } }],
-          }],
-        };
-        const gz = new Blob([JSON.stringify(lottie)]).stream().pipeThrough(new CompressionStream("gzip"));
-        return new Response(gz).arrayBuffer() as Promise<T>;
-      }
+      // An animated sticker.
+      if (args.chatId === "-1001") return mockLottie() as Promise<T>;
       // A stand-in sticker: a round face, drawn as SVG.
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="240" fill="#f7c948"/><circle cx="180" cy="210" r="30" fill="#3d2c00"/><circle cx="332" cy="210" r="30" fill="#3d2c00"/><path d="M150 310q106 110 212 0" stroke="#3d2c00" stroke-width="28" fill="none" stroke-linecap="round"/></svg>`;
       return r(new TextEncoder().encode(svg).buffer, 150);

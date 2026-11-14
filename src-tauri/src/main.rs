@@ -126,6 +126,8 @@ fn main() {
             telegram::telegram_messages,
             telegram::telegram_send,
             telegram::telegram_mark_read,
+            telegram::telegram_archive,
+            telegram::telegram_delete_chat,
             telegram::telegram_chat_photo,
             telegram::telegram_photo,
             telegram::telegram_sticker,

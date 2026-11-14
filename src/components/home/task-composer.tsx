@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { IconCheck, IconChevronDown, IconFolderFilled, IconFolderOpen, IconNotes } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconFolder, IconFolderOpen } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { InputGroupInput, InputGroupTextarea } from "@/components/ui/input-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
 import { errorText } from "@/api";
 import { addTask, lastTask } from "@/tasks/store";
@@ -179,13 +178,13 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                 />
               </div>
             </div>
-            <ComposerSubmit ready={!!text.trim()} busy={busy} label="Add task" hint="Add task (Enter)" />
+            <ComposerSubmit ready={!!text.trim()} busy={busy} label="Add task" />
           </ComposerField>
           <ComposerOptions>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" size="sm" className="max-w-64 text-muted-foreground">
-                  <IconFolderFilled />
+                  <IconFolder />
                   <span className="truncate">{section}</span>
                   <IconChevronDown />
                 </Button>
@@ -235,22 +234,6 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-pressed={noteOpen}
-                  onClick={() => (noteOpen ? closeNote() : openNote())}
-                  className="text-muted-foreground aria-pressed:bg-foreground/[0.07] aria-pressed:text-foreground dark:aria-pressed:bg-foreground/10"
-                >
-                  <IconNotes />
-                  Note
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{noteOpen ? "Remove note" : "Add a note (Shift+Enter)"}</TooltipContent>
-            </Tooltip>
           </ComposerOptions>
         </form>
       ) : (

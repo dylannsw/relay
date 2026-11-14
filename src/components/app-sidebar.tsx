@@ -20,6 +20,7 @@ import {
   IconUser,
   type TablerIcon,
 } from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Sidebar,
@@ -29,7 +30,6 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarCount,
   SidebarMenuBadge,
   SidebarMenuButton,
@@ -94,6 +94,23 @@ interface Props {
   onReconnect: (p: Provider) => void;
   onOpenSettings: () => void;
   className?: string;
+}
+
+/**
+ * Every row keeps 22px on its left (see ui/sidebar.tsx) so icons line up whether or not the row
+ * expands; the chevron lives in that strip, inside the row's highlight. The groups' own left
+ * padding is cut to 4px to give it back.
+ */
+const GUTTER = "pl-1";
+
+/** The expand chevron: small, inside the row at its left edge, turning when the row is open. */
+function RowChevron({ open }: { open: boolean }) {
+  return (
+    <IconChevronRight
+      aria-hidden
+      className={cn("pointer-events-none absolute top-1/2 left-[3px] size-4! -translate-y-1/2 text-muted-foreground transition-transform duration-200", open && "rotate-90")}
+    />
+  );
 }
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
@@ -183,9 +200,9 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
             isActive={viewing && !open}
+            className="relative"
             title={`${a.provider === "google" ? "Gmail" : "Microsoft"} · ${a.label} · synced ${relativeTime(a.lastSync)}`}
           >
-            <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
             {a.lastError ? (
               <IconAlertCircle className="text-destructive" />
             ) : (
@@ -196,12 +213,13 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             )}
             <span className="min-w-0 flex-1 truncate">{a.email}</span>
             {!open && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
+            <RowChevron open={open} />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         {/* Opening takes 220ms, closing a quicker 140ms (getting out of the way shouldn't make you wait), on the app's curve. */}
         <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
           {/* Indented so the folder icons line up under the address, beside the dot. */}
-          <SidebarMenuSub className="pl-6.5">
+          <SidebarMenuSub className="pl-3.5">
             {a.lastError && (
               <SidebarMenuSubItem>
                 <Tooltip>
@@ -316,18 +334,17 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
           onView({ kind: "chats", folder: null });
         }
       }}
-      // Room for the chevron on the left (8px edge + 18px icon + 8px gap), so the icon lines up
-      // with the accounts' dots, whose chevron sits inside the row.
-      className="group-has-data-[sidebar=menu-action]/menu-item:pr-2 group-has-data-[sidebar=menu-action]/menu-item:pl-[34px]"
+      className="relative"
     >
       <IconBrandTelegram />
       <span className="min-w-0 flex-1 truncate">All Chats</span>
       {allUnread > 0 && <SidebarCount>{allUnread}</SidebarCount>}
+      {folders.length > 0 && <RowChevron open={open} />}
     </SidebarMenuButton>
   );
 
   return (
-    <SidebarGroup>
+    <SidebarGroup className={GUTTER}>
       <SidebarGroupLabel>Chats</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
@@ -345,16 +362,9 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
             >
               <SidebarMenuItem>
                 {allButton}
-                <CollapsibleTrigger asChild>
-                  {/* Placed so the 18px chevron in this 20px button sits where the accounts' do: 8px from
-                      the left edge, centred in the 36px row. */}
-                  <SidebarMenuAction className="right-auto left-[7px] peer-data-[size=default]/menu-button:top-2" aria-label={open ? "Hide folders" : "Show folders"} title={open ? "Hide folders" : "Show folders"}>
-                    <IconChevronRight className="text-muted-foreground transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  </SidebarMenuAction>
-                </CollapsibleTrigger>
                 <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
                   {/* Indented like an account's folders, so the icons line up under the label. */}
-                  <SidebarMenuSub className="pl-6.5">
+                  <SidebarMenuSub className="pl-3.5">
                     {folders.map((f) => {
                       const Icon = chatFolderIcon(f.title);
                       const unread = unreadChats(tg.chats, f.id);
@@ -388,7 +398,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
   return (
     <Sidebar variant="inset" className={className}>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className={GUTTER}>
           <SidebarGroupContent>
             <SidebarMenu>
               <PageItems view={view} onView={onView} />
@@ -396,7 +406,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
+        <SidebarGroup className={GUTTER}>
           <SidebarGroupLabel>Mail</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -426,7 +436,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
 
         {/* Personal, Work, School: a group of their own, set apart from All inboxes and Clean up. */}
         {labels.length > 0 && (
-          <SidebarGroup>
+          <SidebarGroup className={GUTTER}>
             <SidebarGroupContent>
               <SidebarMenu>
               {labels.map((label) => {
@@ -449,7 +459,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
         )}
 
         {accounts.length > 0 && (
-          <SidebarGroup>
+          <SidebarGroup className={GUTTER}>
             <SidebarGroupLabel>Accounts</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -468,7 +478,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
         )}
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className={GUTTER}>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onOpenSettings}>
