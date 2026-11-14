@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { quick } from "@/lib/motion";
 import { listDate } from "@/format";
 import type { TgChat } from "@/telegram/types";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ChatAvatar } from "./chat-avatar";
 
 function KindIcon({ chat }: { chat: TgChat }) {
@@ -152,10 +153,10 @@ export function ChatList(props: {
           <div className="flex flex-col gap-1 px-1">
             {Array.from({ length: 8 }, (_, i) => (
               <div key={i} className="flex items-center gap-3 px-1.5 py-2">
-                <div className="size-11 shrink-0 animate-pulse rounded-full bg-muted" />
+                <Skeleton className="size-11 shrink-0 rounded-full" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-3.5 w-2/5 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-4/5 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-3.5 w-2/5 rounded-sm" />
+                  <Skeleton className="h-3 w-4/5 rounded-sm" />
                 </div>
               </div>
             ))}

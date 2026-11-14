@@ -1628,7 +1628,7 @@ function CustomAccentSwatch({ value, selected, dark }: { value: string; selected
           {color && <span className="size-3.5 rounded-full ring-2 ring-background" style={{ backgroundColor: color }} />}
           <input
             type="color"
-            value={value || "#3451d1"}
+            value={value || ACCENTS[0].light}
             onChange={(e) => setAppearance({ accent: CUSTOM_ACCENT, customAccent: e.target.value })}
             className="sr-only"
           />
