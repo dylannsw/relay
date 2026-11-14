@@ -36,7 +36,7 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
       className={cn(
         "flex w-full cursor-default items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-150 select-none",
         // Light mode tints with the text colour (the list sits on white, where --muted barely shows).
-        selected ? "bg-foreground/[0.07] dark:bg-muted" : "hover:bg-foreground/[0.04] dark:hover:bg-accent/60",
+        selected ? "bg-tint-pressed dark:bg-muted" : "hover:bg-tint-hover dark:hover:bg-accent/60",
       )}
     >
       <ChatAvatar id={chat.id} name={chat.name} hasPhoto={chat.hasPhoto} saved={chat.kind === "saved"} size={44} />
@@ -135,7 +135,7 @@ export function ChatList(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
-        <label className="flex h-8 w-full items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-foreground/20 dark:focus-within:border-white/20">
+        <label className="flex h-8 w-full items-center gap-2 rounded-lg border border-transparent bg-muted px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-field-focus">
           <IconSearch className="size-4 shrink-0" />
           <input
             value={props.query}

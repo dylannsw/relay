@@ -537,7 +537,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                 // The overview card's corner (rounded-xl); the cards inside, 6px in, are 6px less.
                 "flex min-h-0 flex-col rounded-xl border bg-muted transition-[background-color,border-color,box-shadow] duration-150 dark:bg-sidebar",
                 // Under the pointer: the column's colour pushed 5% toward the text colour (darker in light mode, lighter in dark).
-                target && "border-foreground/15 bg-[color-mix(in_srgb,var(--muted)_94%,var(--foreground))] dark:border-white/15 dark:bg-[color-mix(in_srgb,var(--sidebar)_93%,var(--foreground))]",
+                target && "border-border-strong bg-[color-mix(in_srgb,var(--muted)_94%,var(--foreground))] dark:border-white/15 dark:bg-[color-mix(in_srgb,var(--sidebar)_93%,var(--foreground))]",
               )}
             >
               <h2 className="flex h-11 shrink-0 items-center gap-2 px-3.5 text-sm font-semibold">

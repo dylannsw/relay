@@ -61,6 +61,7 @@
     /* bg-scrim (behind dialogs), bg-scrim-media (labels and buttons over photos and video). */
     --color-scrim: var(--scrim);
     --color-scrim-media: var(--scrim-media);
+    --color-bubble: var(--bubble);
     --color-focus: var(--focus);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
@@ -137,12 +138,14 @@
     --selected: color-mix(in srgb, var(--card) 92%, var(--selected-border));
     --selected-hover: color-mix(in srgb, var(--card) 89%, var(--selected-border));
     /* Fills over a surface, in three strengths: under the pointer, held down, and switched on. */
-    --tint-hover: color-mix(in oklab, var(--foreground) 5%, transparent);
-    --tint-pressed: color-mix(in oklab, var(--foreground) 8%, transparent);
+    --tint-hover: color-mix(in oklab, var(--foreground) 7%, transparent);
+    --tint-pressed: color-mix(in oklab, var(--foreground) 10%, transparent);
     --tint-active: color-mix(in oklab, var(--foreground) 12%, transparent);
     /* A step up from --border (a hovered card), and a focused text field's quiet edge. */
     --border-strong: color-mix(in oklab, var(--foreground) 15%, transparent);
     --field-focus: color-mix(in oklab, var(--foreground) 20%, transparent);
+    /* An incoming chat bubble: a faint grey that stays solid over whatever is behind it. */
+    --bubble: color-mix(in srgb, var(--foreground) 7%, var(--background));
     /* What dims the window behind a dialog, and what backs labels drawn over photos and video. */
     --scrim: rgb(0 0 0 / 40%);
     --scrim-media: rgb(0 0 0 / 55%);
@@ -210,11 +213,12 @@
     --selected-border: oklch(0.746 0.16 232.661);
     --selected: color-mix(in srgb, var(--card) 86%, var(--selected-border));
     --selected-hover: color-mix(in srgb, var(--card) 82%, var(--selected-border));
-    --tint-hover: color-mix(in oklab, var(--foreground) 7%, transparent);
-    --tint-pressed: color-mix(in oklab, var(--foreground) 10%, transparent);
-    --tint-active: color-mix(in oklab, var(--foreground) 14%, transparent);
+    --tint-hover: color-mix(in oklab, var(--foreground) 10%, transparent);
+    --tint-pressed: color-mix(in oklab, var(--foreground) 13%, transparent);
+    --tint-active: color-mix(in oklab, var(--foreground) 16%, transparent);
     --border-strong: color-mix(in oklab, var(--foreground) 15%, transparent);
     --field-focus: rgb(255 255 255 / 20%);
+    --bubble: color-mix(in srgb, var(--foreground) 7%, var(--background));
     --scrim: rgb(0 0 0 / 60%);
     --scrim-media: rgb(0 0 0 / 55%);
     --sidebar: #111111;

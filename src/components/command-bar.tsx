@@ -585,7 +585,7 @@ export function CommandBar(p: Props) {
         <button
           type="button"
           onClick={() => p.onOpenChange(true)}
-          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-foreground/20 dark:focus-visible:border-white/20"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-border-strong focus-visible:border-field-focus"
         >
           <IconSearch className="size-4 shrink-0" />
           <span className="flex-1 truncate text-left">

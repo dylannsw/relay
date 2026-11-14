@@ -203,7 +203,7 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
   return (
     <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal aria-label={item.kind === "photo" ? "Photo" : "Video"} className={closing ? "pointer-events-none fixed inset-0 z-50 outline-none" : "fixed inset-0 z-50 outline-none"} onClick={close}>
       {/* The same dim as the command bar and dialogs. */}
-      <motion.div style={{ opacity: dim }} className="fixed inset-0 bg-black/40 supports-backdrop-filter:backdrop-blur-xs dark:bg-black/60" />
+      <motion.div style={{ opacity: dim }} className="fixed inset-0 bg-scrim supports-backdrop-filter:backdrop-blur-xs " />
       <motion.div
         style={{ ...box, transform, borderRadius, opacity, transformOrigin: "50% 50%" }}
         className="fixed overflow-hidden bg-black shadow-2xl will-change-transform"
@@ -311,7 +311,7 @@ function GlanceVideo({ item, closing }: { item: GlanceItem; closing: boolean }) 
       )}
       {!ready && !failed && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-sm text-white tabular-nums">
+          <span className="inline-flex items-center gap-2 rounded-full bg-scrim-media px-3 py-1.5 text-sm text-white tabular-nums">
             <Spinner />
             {fraction !== null && fraction < 1 ? `Downloading ${Math.round(fraction * 100)}%` : "Loading"}
           </span>
@@ -319,7 +319,7 @@ function GlanceVideo({ item, closing }: { item: GlanceItem; closing: boolean }) 
       )}
       {failed && (
         <div className="absolute inset-0 flex items-center justify-center p-6">
-          <span className="flex max-w-80 items-center gap-2 rounded-xl bg-black/65 px-3 py-2 text-sm text-white">
+          <span className="flex max-w-80 items-center gap-2 rounded-xl bg-scrim-media px-3 py-2 text-sm text-white">
             <IconVideoOff className="size-4.5 shrink-0" />
             {failed}
           </span>

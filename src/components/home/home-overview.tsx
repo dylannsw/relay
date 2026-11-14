@@ -144,7 +144,7 @@ function Delta({ change, versus }: { change: number; versus: string }) {
   const color = change > 0 ? DELTA_COLORS.up : change < 0 ? DELTA_COLORS.down : DELTA_COLORS.level;
   return (
     <span className="flex min-w-0 items-center gap-2" style={{ "--delta": color } as React.CSSProperties}>
-      <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-(--delta)">
+      <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-(--delta)">
         {/* White on the colour in light mode; a dark arrow on it in dark mode, as in the reference. */}
         <Icon className="size-3.5 stroke-[length:2.25px]! text-white dark:text-black/75" />
       </span>

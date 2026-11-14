@@ -206,7 +206,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
                 )}
                 <TabsTrigger
                   value={x.id}
-                  className="h-9 flex-none justify-start gap-2.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-foreground/[0.03] hover:text-foreground data-active:bg-foreground/[0.05] data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:hover:bg-foreground/[0.05] dark:data-active:border-transparent dark:data-active:bg-foreground/[0.08]"
+                  className="h-9 flex-none justify-start gap-2.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-tint-hover hover:text-foreground data-active:bg-tint-pressed data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-tint-pressed"
                 >
                   <x.icon />
                   {x.label}
@@ -1405,7 +1405,7 @@ function ThemeCard({ id, label, selected, onSelect }: {
       <span
         className={cn(
           "relative block aspect-[16/10] overflow-hidden rounded-xl border transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) group-focus-visible:border-ring",
-          selected ? "border-primary ring-1 ring-primary" : "group-hover:border-foreground/25",
+          selected ? "border-primary ring-1 ring-primary" : "group-hover:border-border-strong",
         )}
       >
         {id === "dark" ? <MiniRelay mode="dark" /> : <MiniRelay mode="light" />}
@@ -1749,7 +1749,7 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
         onBlur={() => setRecording(false)}
         onKeyDown={onKeyDown}
         className={cn(
-          "flex h-8 min-w-28 items-center justify-end rounded-md border bg-background px-2.5 text-sm transition-[border-color,box-shadow] duration-150 ease-(--ease-out-soft) outline-none hover:border-foreground/20 focus-visible:border-ring",
+          "flex h-8 min-w-28 items-center justify-end rounded-md border bg-background px-2.5 text-sm transition-[border-color,box-shadow] duration-150 ease-(--ease-out-soft) outline-none hover:border-border-strong focus-visible:border-ring",
           recording && "border-ring ring-1 ring-ring hover:border-ring",
         )}
       >

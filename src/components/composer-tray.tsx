@@ -23,7 +23,7 @@ export function ComposerField({ className, ...props }: ComponentProps<typeof Inp
   return (
     <InputGroup
       className={cn(
-        "halo-glint h-auto flex-col items-stretch rounded-[14px] bg-background shadow-xs has-[[data-slot=input-group-control]:focus-visible]:border-foreground/20! dark:border-white/10 dark:bg-card dark:has-[[data-slot=input-group-control]:focus-visible]:border-white/20!",
+        "halo-glint h-auto flex-col items-stretch rounded-[14px] bg-background shadow-xs has-[[data-slot=input-group-control]:focus-visible]:border-field-focus! dark:border-white/10 dark:bg-card",
         className,
       )}
       {...props}

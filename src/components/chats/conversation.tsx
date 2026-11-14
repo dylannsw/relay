@@ -544,7 +544,7 @@ function Sticker({ chatId, m, media }: { chatId: string; m: TgMessage; media: Tg
   const style: CSSProperties = { width: Math.round(w * scale), height: Math.round(h * scale) };
   if (failed) {
     return (
-      <div className="rounded-2xl bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] px-3 py-1.5">
+      <div className="rounded-2xl bg-bubble px-3 py-1.5">
         <MediaChip media={media} />
         <div className="h-4" />
       </div>
@@ -605,11 +605,11 @@ function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media:
       {url && <img src={url} alt="" draggable={false} className="absolute inset-0 size-full object-cover" />}
       {!url && !failed && <span className="absolute inset-0 animate-pulse bg-white/10" />}
       <span className="absolute inset-0 flex items-center justify-center">
-        <span className="flex size-12 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
+        <span className="flex size-12 items-center justify-center rounded-full bg-scrim-media text-white backdrop-blur-sm">
           <IconPlayerPlayFilled className="size-5" />
         </span>
       </span>
-      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-black/45 px-1.5 py-1 text-2xs leading-none text-white tabular-nums">{length}</span>}
+      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-scrim-media px-1.5 py-1 text-2xs leading-none text-white tabular-nums">{length}</span>}
     </button>
   );
 }
@@ -634,7 +634,7 @@ function MediaChip({ media, hint }: { media: TgMedia; hint?: string }) {
     <span className="flex items-center gap-3">
       <span className="relative flex h-10 w-8 shrink-0 items-center justify-center rounded-md bg-current/10">
         <Icon className="size-5" />
-        {ext && <span className="absolute -bottom-1 -left-1 rounded-[4px] bg-primary px-1 py-px text-[9px] leading-none font-bold text-primary-foreground">{ext}</span>}
+        {ext && <span className="absolute -bottom-1 -left-1 rounded-sm bg-primary px-1 py-px text-[9px] leading-none font-bold text-primary-foreground">{ext}</span>}
       </span>
       <span className="min-w-0">
         <span className="block truncate font-medium">{media.label}</span>
@@ -722,7 +722,7 @@ function Bubble(props: {
             <div onDoubleClick={m.pending ? undefined : props.onReply} className="relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]">
               {nameLine}
               {(m.forwardedFrom !== null || m.reply) && (
-                <div className={cn("min-w-0 self-start rounded-2xl bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] px-3 py-1.5", out && "self-end")}>
+                <div className={cn("min-w-0 self-start rounded-2xl bg-bubble px-3 py-1.5", out && "self-end")}>
                   {m.forwardedFrom !== null && (
                     <div className="truncate text-xs opacity-75">
                       Forwarded{m.forwardedFrom ? <> from <span className="font-medium">{m.forwardedFrom}</span></> : null}
@@ -751,7 +751,7 @@ function Bubble(props: {
             className={cn(
               "relative min-w-0 overflow-hidden text-sm leading-[1.4] break-words",
               corners,
-              out ? "bg-primary text-primary-foreground" : "bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))] text-foreground",
+              out ? "bg-primary text-primary-foreground" : "bg-bubble text-foreground",
               !photoOnly && "px-2.5 py-[7px]",
             )}
           >

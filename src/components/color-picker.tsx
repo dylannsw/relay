@@ -138,7 +138,7 @@ export function ColorPicker({ value, onChange, label, presets, className }: {
           type="button"
           aria-label={label}
           className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-full border bg-background p-[3px] transition-[border-color,box-shadow] duration-150 outline-none hover:border-foreground/25 focus-visible:ring-1 focus-visible:ring-ring aria-expanded:border-foreground/25",
+            "flex size-7 shrink-0 items-center justify-center rounded-full border bg-background p-[3px] transition-[border-color,box-shadow] duration-150 outline-none hover:border-border-strong focus-visible:ring-1 focus-visible:ring-ring aria-expanded:border-border-strong",
             className,
           )}
         >

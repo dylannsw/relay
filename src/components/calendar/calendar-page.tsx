@@ -1143,7 +1143,7 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
             <div
               key={e.id}
               aria-hidden
-              className="pointer-events-none absolute rounded-lg bg-foreground/[0.07] ring-1 ring-foreground/10 ring-inset"
+              className="pointer-events-none absolute rounded-lg bg-tint-hover ring-1 ring-foreground/10 ring-inset"
               style={{ top, height, left: 2, width: "calc(100% - 5px)" }}
             />
           );

@@ -207,7 +207,7 @@ const Section = memo(function Section({
                 type="button"
                 onClick={() => onPick(st)}
                 aria-label={st.emoji ? `${st.emoji} sticker` : "Sticker"}
-                className="group/tile flex aspect-square items-center justify-center rounded-lg transition-colors hover:bg-foreground/[0.06] dark:hover:bg-foreground/[0.08]"
+                className="group/tile flex aspect-square items-center justify-center rounded-lg transition-colors hover:bg-tint-hover"
               >
                 <Tile sticker={st} size={56} hover root={root} />
               </button>
@@ -264,7 +264,7 @@ function Tile({ sticker, size, hover, root }: { sticker: TgSticker; size: number
       className="flex size-full items-center justify-center"
     >
       {!bytes ? (
-        <span style={style} className={cn("rounded-md bg-foreground/[0.05]", near && "animate-pulse")} />
+        <span style={style} className={cn("rounded-md bg-tint-hover", near && "animate-pulse")} />
       ) : still ? (
         <span style={style} className="relative">
           {/* The still stays until the animation over it has drawn, so nothing flickers. */}

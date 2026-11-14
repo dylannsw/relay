@@ -54,7 +54,7 @@ export function ReadOnlyDetails({ event: e, calendar }: { event: CalendarEvent; 
   return (
     <>
       <div className="flex items-start gap-3">
-        <span className="mt-1.5 size-3.5 shrink-0 rounded-[4px]" style={{ backgroundColor: calendar?.colors.base ?? "#9e9e9e" }} />
+        <span className="mt-1.5 size-3.5 shrink-0 rounded-sm" style={{ backgroundColor: calendar?.colors.base ?? "#9e9e9e" }} />
         <h2 className={cn("text-xl leading-snug font-semibold break-words", e.myResponse === "declined" && "line-through decoration-1")}>
           {e.title}
         </h2>

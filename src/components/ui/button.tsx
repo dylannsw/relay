@@ -14,12 +14,12 @@ const buttonVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
-          "hover:bg-foreground/[0.07] hover:text-foreground aria-expanded:bg-foreground/[0.07] aria-expanded:text-foreground dark:hover:bg-foreground/10",
+          "hover:bg-tint-hover hover:text-foreground aria-expanded:bg-tint-hover aria-expanded:text-foreground",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         // Same tinted pill as destructive, in neutral grey (for the actions beside Delete).
         tinted:
-          "bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.11] hover:text-foreground focus-visible:border-foreground/30 focus-visible:ring-foreground/10 dark:bg-foreground/10 dark:hover:bg-foreground/[0.16]",
+          "bg-tint-hover text-foreground/80 hover:bg-tint-active hover:text-foreground focus-visible:border-foreground/30 focus-visible:ring-foreground/10",
         // The same pill in the star colour (Star).
         mustard:
           "bg-star/15 text-star hover:bg-star/25 focus-visible:border-star/40 focus-visible:ring-star/20",
