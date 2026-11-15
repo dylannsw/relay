@@ -699,28 +699,7 @@ export default function App() {
       className="h-svh min-h-0 flex-col overflow-hidden bg-sidebar"
       style={{ "--titlebar-height": "2.75rem" } as React.CSSProperties}
     >
-      <TitleBar>
-        <CommandBar
-          open={commandOpen}
-          onOpenChange={setCommandOpen}
-          search={search}
-          onSearch={setSearch}
-          scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
-          searchMessages={searchMessages}
-          accounts={accounts}
-          accountById={accountById}
-          onOpenMessage={(m) => void openMessage(m)}
-          onNavigate={(v) => {
-            setView(v);
-            clearSelection();
-          }}
-          onCompose={() => startCompose("new")}
-          onSync={() => void syncNow()}
-          onSettings={() => openSettings()}
-          onFilter={setFilter}
-          onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
-        />
-      </TitleBar>
+      <TitleBar />
       <div className="flex min-h-0 flex-1">
         <AppSidebar
           // The sidebar is position:fixed; start it below the title bar.
@@ -733,6 +712,28 @@ export default function App() {
           }}
           onReconnect={addAccount}
           onOpenSettings={() => openSettings()}
+          search={
+            <CommandBar
+              open={commandOpen}
+              onOpenChange={setCommandOpen}
+              search={search}
+              onSearch={setSearch}
+              scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
+              searchMessages={searchMessages}
+              accounts={accounts}
+              accountById={accountById}
+              onOpenMessage={(m) => void openMessage(m)}
+              onNavigate={(v) => {
+                setView(v);
+                clearSelection();
+              }}
+              onCompose={() => startCompose("new")}
+              onSync={() => void syncNow()}
+              onSettings={() => openSettings()}
+              onFilter={setFilter}
+              onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
+            />
+          }
         />
         <SidebarInset className="frame min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0">
           {view.kind === "home" ? (

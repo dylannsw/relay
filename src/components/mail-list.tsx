@@ -25,6 +25,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { glide, quick, smooth } from "@/lib/motion";
+import { PageTitle } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -154,10 +155,17 @@ export function PillTabs<T extends string>(props: {
                 <motion.span
                   layoutId="pill"
                   transition={glide}
-                  className="absolute inset-0 rounded-md bg-background smooth-shadow-ring-xs dark:bg-input/40"
+                  className="absolute inset-0 rounded-[inherit] corner-smooth bg-background smooth-shadow-ring-xs dark:bg-input/40"
                 />
               )}
-              <span className="relative">{f.label}</span>
+              {/* The selected label is semibold; a hidden semibold copy holds every tab at that
+                  width so switching tabs doesn't nudge the others. */}
+              <span
+                data-label={f.label}
+                className="relative inline-flex flex-col after:invisible after:h-0 after:overflow-hidden after:font-semibold after:content-[attr(data-label)]"
+              >
+                {f.label}
+              </span>
             </TabsTrigger>
           ))}
         </TabsList>
@@ -253,7 +261,7 @@ export function MailList(p: Props) {
         <div className="relative flex h-full min-w-0 flex-1 items-center">
               <div className={cn("flex min-w-0 items-center gap-2.5", headPending && "invisible")}>
                 {/* Folder names are short; when the header is tight the account chip truncates instead. */}
-                <h1 className="shrink-0 text-lg font-bold">{shown.title}</h1>
+                <PageTitle className="flex-none shrink-0">{shown.title}</PageTitle>
                 {/* The folder's size, beside its name: same size, lighter, so it reads as a figure
                     about the title rather than a second title. Follows the filter and search;
                     an empty list says so itself. */}
@@ -705,7 +713,7 @@ function GroupTitle({ s }: { s: SendersProps & { group: SenderGroup } }) {
         <IconArrowLeft />
         <span className="sr-only">Back to senders</span>
       </Button>
-      <h1 className="truncate text-lg font-bold">{s.group.name}</h1>
+      <PageTitle className="flex-initial">{s.group.name}</PageTitle>
       <Badge variant="secondary">
         {s.group.count}
       </Badge>

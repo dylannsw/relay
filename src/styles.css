@@ -6,8 +6,9 @@
 @import "./shadow-plugin.css";
 
 /* Dark covers the whole app in Dark, and everything outside the frames in Mixed (the framed
-   content, marked .frame, stays light there). */
-@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *));
+   content, marked .frame, stays light there, and so do dialogs, menus and popovers: keep the
+   popup list here in step with the three .mixed rules below). */
+@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *, .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]), .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) *));
 
 /* The one red for "down" and "now": Home's falling-delta badge and the calendar's current-time line. */
 :root {
@@ -129,8 +130,10 @@
 }
 
 :root,
-/* Mixed theme: the framed content (main panel, email/compose/settings cards) keeps the light colours. */
-.mixed .frame {
+/* Mixed theme: the framed content (main panel, email/compose/settings cards) keeps the light
+   colours, and so do the popups (dialogs, sheets, popovers, menus, selects), wherever they open. */
+.mixed .frame,
+.mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) {
     color-scheme: light;
     --smooth-ring-color: rgba(0, 0, 0, 0.05);
     /* Relay's accent: the logo blue. Filled buttons, checked boxes, links and unread dots.
@@ -292,7 +295,8 @@
     }
   /* Mixed theme: text inherits body's colour already resolved to the dark theme's near-white,
      so the light frames restate it from their own (light) variables. */
-  .mixed .frame {
+  .mixed .frame,
+  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) {
     @apply text-foreground;
     }
   html {
@@ -354,7 +358,8 @@
      text colour don't read as solid black. Lighter colours (muted grey, chip colours,
      white icons on filled buttons) are already above the floor and stay as they are. */
   :root:not(.dark, .mixed) :is(.tabler-icon, .ph-icon),
-  .mixed .frame :is(.tabler-icon, .ph-icon) {
+  .mixed .frame :is(.tabler-icon, .ph-icon),
+  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) :is(.tabler-icon, .ph-icon) {
     color: oklch(from currentColor max(l, 0.5) c h);
   }
   /* Native scrollbars match the thin ScrollArea ones. */
@@ -423,6 +428,11 @@
   scrollbar-width: none;
 }
 
+/* Light corner smoothing: the curve eases into the straight edges a little instead of meeting
+   them as a circular arc. 1 is a plain round corner, 2 a full squircle; keep it subtle. */
+@utility corner-smooth {
+  corner-shape: superellipse(1.5);
+}
 /* Tasks board columns: cards running past the bottom fade out instead of being cut off. The fade
    follows the column's own scroll: full while more is below, gone at the end, and never there
    when the column doesn't scroll (an inactive scroll timeline leaves --column-fade at 0). */

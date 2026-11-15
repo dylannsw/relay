@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
@@ -94,22 +94,20 @@ interface Props {
   /** Signs an account in again after its sign-in expires. Adding accounts lives in Settings. */
   onReconnect: (p: Provider) => void;
   onOpenSettings: () => void;
+  /** The search bar (the command bar's trigger), above Home. */
+  search?: ReactNode;
   className?: string;
 }
 
-/**
- * Every row keeps 22px on its left (see ui/sidebar.tsx) so icons line up whether or not the row
- * expands; the chevron lives in that strip, inside the row's highlight. The groups' own left
- * padding is cut to 4px to give it back.
- */
-const GUTTER = "pl-1";
+/** The groups' side padding: 6px, a little tighter than the stock 8px. */
+const GUTTER = "px-1.5";
 
-/** The expand chevron: small, inside the row at its left edge, turning when the row is open. */
+/** The right end of a row that expands: just the chevron, turned down when open (no count: its children show theirs). */
 function RowChevron({ open }: { open: boolean }) {
   return (
     <IconChevronRight
       aria-hidden
-      className={cn("pointer-events-none absolute top-1/2 left-[3px] size-4! -translate-y-1/2 text-muted-foreground/50 transition-transform duration-200", open && "rotate-90")}
+      className={cn("pointer-events-none size-4! text-muted-foreground/50 transition-transform duration-200", open && "rotate-90")}
     />
   );
 }
@@ -213,14 +211,13 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
               </span>
             )}
             <span className="min-w-0 flex-1 truncate">{a.email}</span>
-            {!open && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
             <RowChevron open={open} />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         {/* Opening takes 220ms, closing a quicker 140ms (getting out of the way shouldn't make you wait), on the app's curve. */}
         <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
           {/* Indented so the folder icons line up under the address, beside the dot. */}
-          <SidebarMenuSub className="pl-3.5">
+          <SidebarMenuSub className="pl-6">
             {a.lastError && (
               <SidebarMenuSubItem>
                 <Tooltip>
@@ -347,8 +344,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
     >
       <IconBrandTelegram />
       <span className="min-w-0 flex-1 truncate">All Chats</span>
-      {allUnread > 0 && <SidebarCount>{allUnread}</SidebarCount>}
-      {folders.length > 0 && <RowChevron open={open} />}
+      {folders.length > 0 ? <RowChevron open={open} /> : allUnread > 0 && <SidebarCount>{allUnread}</SidebarCount>}
     </SidebarMenuButton>
   );
 
@@ -372,8 +368,8 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
               <SidebarMenuItem>
                 {allButton}
                 <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
-                  {/* Indented like an account's folders, so the icons line up under the label. */}
-                  <SidebarMenuSub className="pl-3.5">
+                  {/* Indented so the folder icons line up under "All Chats", beside its icon. */}
+                  <SidebarMenuSub className="pl-6">
                     {folders.map((f) => {
                       const Icon = chatFolderIcon(f.title);
                       const unread = unreadChats(tg.chats, f.id);
@@ -400,13 +396,14 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   );
 }
 
-export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, className }: Props) {
+export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, search, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = sortedLabels(accounts);
 
   return (
     <Sidebar variant="inset" className={className}>
       <SidebarContent>
+        {search && <SidebarGroup className={cn(GUTTER, "pb-0")}>{search}</SidebarGroup>}
         <SidebarGroup className={GUTTER}>
           <SidebarGroupContent>
             <SidebarMenu>

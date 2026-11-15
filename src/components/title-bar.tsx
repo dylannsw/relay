@@ -8,8 +8,8 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useAppIcon } from "@/app-icon";
 
 interface Props {
-  /** Centre of the bar: the command bar. */
-  children: ReactNode;
+  /** Centre of the bar (empty now that search lives in the sidebar). */
+  children?: ReactNode;
 }
 
 /**
@@ -27,12 +27,16 @@ export function TitleBar({ children }: Props) {
       // rest of the window, and tooltips near the top aren't hidden behind it.
       className="flex h-(--titlebar-height) shrink-0 items-center bg-sidebar text-sidebar-foreground select-none"
     >
-      <div data-tauri-drag-region className="flex flex-1 basis-0 items-center gap-2 self-stretch pl-3">
-        <img src={appIcon} alt="" draggable={false} data-tauri-drag-region className="size-4.5" />
-        <span data-tauri-drag-region className="text-sm font-semibold">
-          Relay
-        </span>
-        <SidebarTrigger className="ml-1 text-muted-foreground" />
+      <div data-tauri-drag-region className="flex flex-1 basis-0 self-stretch">
+        {/* As wide as the sidebar: the logo 22px in, over the sidebar's icons; the toggle's icon
+            ending 22px from the right, level with the counts and chevrons (8px of button around it). */}
+        <div data-tauri-drag-region className="flex w-(--sidebar-width) shrink-0 items-center gap-2 pr-3.5 pl-[22px]">
+          <img src={appIcon} alt="" draggable={false} data-tauri-drag-region className="size-4.5" />
+          <span data-tauri-drag-region className="text-sm font-semibold">
+            Relay
+          </span>
+          <SidebarTrigger className="ml-auto text-muted-foreground" />
+        </div>
       </div>
 
       {children}

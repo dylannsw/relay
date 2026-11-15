@@ -5,7 +5,7 @@ import { Slot } from "radix-ui"
 import { wrapLabels } from "@/lib/labels"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,opacity,translate] outline-none select-none focus-visible:border-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-semibold whitespace-nowrap transition-[color,background-color,border-color,box-shadow,opacity,translate] outline-none select-none focus-visible:border-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
   {
     variants: {
       variant: {
@@ -30,15 +30,14 @@ const buttonVariants = cva(
           "bg-[color-mix(in_srgb,var(--chip-green)_14%,transparent)] text-[oklch(from_var(--chip-green)_min(l,0.5)_c_h)] hover:bg-[color-mix(in_srgb,var(--chip-green)_24%,transparent)] focus-visible:border-(--chip-green)/40 focus-visible:ring-(--chip-green)/20 dark:bg-[color-mix(in_srgb,var(--chip-green)_20%,transparent)] dark:text-[oklch(from_var(--chip-green)_max(l,0.8)_c_h)] dark:hover:bg-[color-mix(in_srgb,var(--chip-green)_30%,transparent)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
-      // Optical balance: an icon's box has empty space around the glyph, so the side with an icon
-      // gets 4px less padding than the text side and both edges look even (data-icon-start/end
-      // are set by Button from what it renders).
+      // Optical balance: the side with an icon gets 1px more padding than the text side
+      // (data-icon-start/end are set by Button from what it renders).
       size: {
         default:
-          "h-9.5 gap-1.5 px-3.5 data-icon-end:pr-2.5 data-icon-start:pl-2.5",
-        xs: "h-7.5 gap-1 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg data-icon-end:pr-1.5 data-icon-start:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        sm: "h-8.5 gap-1 rounded-[min(var(--radius-md),12px)] px-3 text-meta in-data-[slot=button-group]:rounded-lg data-icon-end:pr-2 data-icon-start:pl-2 [&_svg:not([class*='size-'])]:size-4",
-        lg: "h-10.5 gap-1.5 px-4 data-icon-end:pr-3 data-icon-start:pl-3",
+          "h-9.5 gap-1.5 rounded-[10px] corner-smooth px-3.5 data-icon-end:pr-[15px] data-icon-start:pl-[15px]",
+        xs: "h-7.5 gap-1 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg data-icon-end:pr-[11px] data-icon-start:pl-[11px] [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-9.5 gap-1 rounded-[10px] corner-smooth px-3 text-meta in-data-[slot=button-group]:rounded-lg data-icon-end:pr-[13px] data-icon-start:pl-[13px] [&_svg:not([class*='size-'])]:size-4",
+        lg: "h-10.5 gap-1.5 px-4 data-icon-end:pr-[17px] data-icon-start:pl-[17px]",
         icon: "size-9.5",
         // 24px, for a clear or remove button tucked inside a field or chip.
         "icon-2xs":
@@ -46,7 +45,7 @@ const buttonVariants = cva(
         "icon-xs":
           "size-7.5 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
         "icon-sm":
-          "size-8.5 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
+          "size-9.5 rounded-[10px] corner-smooth in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-10.5",
       },
     },
@@ -73,7 +72,7 @@ function visible(n: ChildNode): boolean {
 
 /**
  * Marks which ends of the button are icons next to a label (data-icon-start / data-icon-end), for
- * the 4px-tighter padding on that side. Read from the DOM after each render, since text nodes and
+ * the 1px-wider padding on that side. Read from the DOM after each render, since text nodes and
  * icon components can't be told apart from React children; icon-only buttons get neither.
  */
 function markIconEnds(el: HTMLElement | null) {

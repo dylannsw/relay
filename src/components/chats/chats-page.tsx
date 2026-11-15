@@ -26,10 +26,11 @@ import { ChatList } from "./chat-list";
 import { TelegramSetup } from "./telegram-setup";
 import { PageHeader, PageTitle } from "@/components/page-header";
 
-type Filter = "all" | "unread" | "archived";
+type Filter = "all" | "unread" | "pinned" | "archived";
 const FILTERS = [
   { id: "all", label: "All" },
   { id: "unread", label: "Unread" },
+  { id: "pinned", label: "Pinned" },
   { id: "archived", label: "Archived" },
 ] as const;
 
@@ -48,6 +49,7 @@ export function ChatsPage({ folder }: { folder: number | null }) {
   const list = useMemo(() => {
     let l = filter === "archived" ? archivedChats(tg.chats) : chatsIn(tg.chats, folder);
     if (filter === "unread") l = l.filter((c) => c.unread > 0 || c.markedUnread || c.mentions > 0 || c.id === selectedId);
+    if (filter === "pinned") l = l.filter((c) => c.pinned);
     const q = query.trim().toLowerCase();
     if (q) l = l.filter((c) => c.name.toLowerCase().includes(q));
     return l;
@@ -161,7 +163,7 @@ export function ChatsPage({ folder }: { folder: number | null }) {
           filter={<PillTabs id="chat-filter" value={filter} items={FILTERS} onChange={setFilter} triggerClass="px-2" />}
           loaded={tg.loaded}
           emptyText={
-            query ? "No chats match." : filter === "unread" ? "You're all caught up." : filter === "archived" ? "No archived chats." : "No chats in this folder."
+            query ? "No chats match." : filter === "unread" ? "You're all caught up." : filter === "pinned" ? "No pinned chats." : filter === "archived" ? "No archived chats." : "No chats in this folder."
           }
         />
       </aside>

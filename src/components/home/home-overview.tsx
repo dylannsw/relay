@@ -3,12 +3,12 @@ import { createPortal } from "react-dom";
 import {
   IconArrowDownRight,
   IconArrowUpRight,
-  IconCircleCheck,
-  IconFlame,
+  IconClipboardCheck,
   IconMail,
   IconMinus,
 } from "@tabler/icons-react";
 import { CalendarIcon } from "@/components/icons";
+import { CalendarDot, Fire } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,7 +49,12 @@ export function HomeOverview(p: OverviewProps) {
   const date = (d: Date) => formatDate(d, p.dateFormat, false);
   return (
     // Its edges and lines catch the light of the add-task glow (see `.halo-glint` in styles.css).
-    <Card className={cn("halo-glint-inset relative @container gap-0 py-0", p.className)}>
+    // --heat (the activity grid's colour) is set here so Tasks Completed's icon and its "up" change
+    // share the grid's "More" green.
+    <Card
+      className={cn("halo-glint-inset relative @container gap-0 py-0", p.className)}
+      style={{ "--heat": p.heatColor || "var(--primary)" } as React.CSSProperties}
+    >
       {/* Equal padding above and below: the stock header adds extra bottom padding when bordered,
           and a row gap for the empty second row that CardAction spans. */}
       <CardHeader className="halo-glint relative gap-y-0 border-b py-3.5 [.border-b]:pb-3.5">
@@ -66,11 +71,11 @@ export function HomeOverview(p: OverviewProps) {
       </CardHeader>
       {/* The 1px gaps over a border-coloured background draw the lines between tiles. */}
       <div className={cn("halo-glint-fill grid grid-cols-2 gap-px bg-border @3xl:grid-cols-4", s && "halo-glint relative border-b")}>
-        <Stat icon={<IconCircleCheck />} label="Tasks Completed" value={s ? s.week.toLocaleString() : "–"} onClick={p.onOpenTasks}>
+        <Stat icon={<IconClipboardCheck className="text-(--heat)" />} label="Tasks Completed" value={s ? s.week.toLocaleString() : "–"} onClick={p.onOpenTasks}>
           {s ? <Delta change={s.week - s.previousWeek} versus="vs past week" /> : "Connect your vault"}
         </Stat>
         <Stat
-          icon={<IconFlame className="text-(--chip-tangerine)" />}
+          icon={<Fire weight="bold" className="ph-icon text-(--home)" />}
           label="Current Streak"
           value={s ? plural(s.currentStreak, "day") : "–"}
           onClick={p.onOpenTasks}
@@ -83,7 +88,7 @@ export function HomeOverview(p: OverviewProps) {
                 ? "Your longest yet"
                 : `Longest: ${plural(s.longestStreak, "day")}`}
         </Stat>
-        <Stat icon={<IconMail />} label="Unread Email" value={p.accounts ? p.unread.toLocaleString() : "–"} onClick={p.onOpenMail}>
+        <Stat icon={<IconMail className="text-[#5146df]" />} label="Unread Email" value={p.accounts ? p.unread.toLocaleString() : "–"} onClick={p.onOpenMail}>
           {p.accounts === 0
             ? "No accounts yet"
             : p.unread === 0
@@ -91,7 +96,7 @@ export function HomeOverview(p: OverviewProps) {
               : `in ${plural(p.accountsWithUnread, "inbox", "inboxes")}`}
         </Stat>
         <Stat
-          icon={<CalendarIcon />}
+          icon={<CalendarDot weight="bold" className="ph-icon text-[#03a4f4]" />}
           label="Events Today"
           value={p.events ? p.events.count.toLocaleString() : "–"}
           onClick={p.onOpenCalendar}
@@ -113,7 +118,7 @@ function Stat({ icon, label, value, onClick, children }: {
 }) {
   const body = (
     <>
-      <span className="flex h-5 w-full min-w-0 items-center gap-2 text-sm text-muted-foreground [&_svg]:size-4.5 [&_svg]:shrink-0">
+      <span className="flex h-5 w-full min-w-0 items-center gap-1 text-sm text-muted-foreground [&_svg]:size-4.5 [&_svg]:shrink-0">
         {icon}
         <span className="truncate">{label}</span>
       </span>
@@ -132,8 +137,8 @@ function Stat({ icon, label, value, onClick, children }: {
   );
 }
 
-/** Up is green, down is red, no change is grey. */
-const DELTA_COLORS = { up: "var(--success)", down: "var(--signal-red)", level: "var(--muted-foreground)" };
+/** Up is the activity grid's green (--heat, set on the card), down is red, no change is grey. */
+const DELTA_COLORS = { up: "var(--heat)", down: "var(--signal-red)", level: "var(--muted-foreground)" };
 
 /**
  * The change since last time: the arrow in a small solid square of its own, then the number in
@@ -150,7 +155,7 @@ function Delta({ change, versus }: { change: number; versus: string }) {
       </span>
       {/* One line of text: the number, a plain space, then what it's compared with. */}
       <span data-label className="truncate">
-        <span className="font-medium text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
+        <span className="font-medium text-(--delta)">
           {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "0"}
         </span>{" "}
         {versus}
@@ -184,7 +189,6 @@ function Heatmap({ weeks: all, color, date }: { weeks: HeatmapDay[][]; color: st
 
   const weeks = all.slice(-count);
   const days = weeks.flat();
-  const total = days.reduce((n, d) => n + d.count, 0);
   const max = Math.max(0, ...days.map((d) => d.count));
   const level = (n: number) => (n === 0 ? 0 : Math.max(1, Math.ceil((n / max) * 4)));
 
@@ -207,18 +211,6 @@ function Heatmap({ weeks: all, color, date }: { weeks: HeatmapDay[][]; color: st
       className="flex flex-col gap-3 px-5 pt-4 pb-5"
       style={{ "--heat": color || "var(--primary)" } as React.CSSProperties}
     >
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="text-muted-foreground">
-          {plural(total, "task")} completed in the last {plural(weeks.length, "week")}
-        </span>
-        <div className="flex items-center gap-[3px] text-xs text-muted-foreground">
-          <span className="mr-1">Less</span>
-          {[0, 1, 2, 3, 4].map((l) => (
-            <span key={l} className="size-3 rounded-[2px]" style={{ background: heat(l) }} />
-          ))}
-          <span className="ml-1">More</span>
-        </div>
-      </div>
       <div
         className="grid auto-cols-[minmax(0,1fr)] grid-flow-col grid-rows-[auto_repeat(7,auto)] gap-[3px]"
         onPointerLeave={hideSoon}
@@ -231,9 +223,11 @@ function Heatmap({ weeks: all, color, date }: { weeks: HeatmapDay[][]; color: st
         {weeks.map((week, i) => {
           const first = week[0]?.date;
           let label = "";
-          // Name a month above the first week that starts in it (not the cut-off first column).
+          // Name a month above the first week that starts in it. The cut-off first column is named
+          // too, unless the next month's name follows within 3 columns and would run into it.
           if (first && first.getMonth() !== month) {
-            if (i > 0) label = formatDate(first, "MMM", false);
+            const next = weeks.findIndex((w, j) => j > i && w[0] && w[0].date.getMonth() !== first.getMonth());
+            if (i > 0 || next === -1 || next >= 3) label = formatDate(first, "MMM", false);
             month = first.getMonth();
           }
           return (

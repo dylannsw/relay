@@ -130,8 +130,10 @@ const HOUR = 48;
 const HOUR_MIN = 28;
 const HOUR_MAX = 160;
 const HOUR_KEY = "relay.calendar.hour";
-/** The time column's width (px). */
-const GUTTER = 72;
+/** Empty space above midnight and below 24:00, so the current-time pill (centred on its line) isn't cut off at either end of the day. */
+const DAY_EDGE = 12;
+/** The time column's width (px): room for the widest current-time pill ("10:00 AM", 67px) with about 9px clear of the frame's edge. */
+const GUTTER = 76;
 /** Day names row, and one row of the all-day strip. */
 const DAY_HEAD = 46;
 const BAR = 26;
@@ -348,7 +350,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     if (!placedInitially.current) {
       placedInitially.current = true;
       anchor.current = todayIdx;
-      el.scrollTop = Math.max(0, Math.min(8, new Date().getHours() - 1.5)) * live.current.hour;
+      const h = Math.max(0, Math.min(8, new Date().getHours() - 1.5));
+      el.scrollTop = h > 0 ? h * live.current.hour + DAY_EDGE : 0;
     }
     stopGlide();
     el.scrollLeft = anchor.current * colW;
@@ -804,7 +807,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   }, [bars, origin, settled, days]);
   const stripH = useEased(lanes ? STRIP_TOP + lanes * (BAR + BAR_GAP) : 0);
   const headH = DAY_HEAD + stripH;
-  live.current.headH = headH;
+  // Where midnight sits in the scroller: below the sticky header and the edge space.
+  live.current.headH = headH + DAY_EDGE;
   const viewFrom = addDays(origin, first);
   const viewTo = addDays(origin, first + days);
 
@@ -909,7 +913,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                     <motion.span
                       layoutId="pill"
                       transition={glide}
-                      className="absolute inset-0 rounded-md bg-background smooth-shadow-ring-xs dark:bg-input/40"
+                      className="absolute inset-0 rounded-[inherit] corner-smooth bg-background smooth-shadow-ring-xs dark:bg-input/40"
                     />
                   )}
                   <span className="relative tabular-nums">{n}</span>
@@ -930,7 +934,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
           className="relative min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-width:none]"
           data-calendar-grid
         >
-          <div className="relative" style={{ width: trackW, height: headH + 24 * hour }}>
+          <div className="relative" style={{ width: trackW, height: headH + 24 * hour + 2 * DAY_EDGE }}>
             {/* Day names, and the all-day row under them, stay put while the hours scroll. */}
             <div className="sticky top-0 z-(--z-sticky) bg-background" style={{ width: trackW, height: headH }}>
               <div className="relative border-b" style={{ height: DAY_HEAD }}>
@@ -1035,7 +1039,14 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
               )}
             </div>
 
-            <div className="relative" style={{ height: 24 * hour }} onPointerDown={onGridPointerDown}>
+            {/* --day-edge: the day dividers and the time column's background run on through the space above
+                midnight and below 24:00, so they don't stop short there. Each divider is one ::before line (not the
+                column's border plus an extension, which drift apart where a 1px border renders thinner). */}
+            <div
+              className="relative"
+              style={{ height: 24 * hour, marginTop: DAY_EDGE, "--day-edge": `${DAY_EDGE}px` } as React.CSSProperties}
+              onPointerDown={onGridPointerDown}
+            >
               {/* Hour lines across the whole track. */}
               <div
                 aria-hidden
@@ -1051,7 +1062,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 return (
                   <div
                     key={i}
-                    className="absolute top-0 border-l"
+                    className="absolute top-0 before:pointer-events-none before:absolute before:-top-(--day-edge) before:-bottom-(--day-edge) before:left-0 before:border-l before:border-border"
                     style={{ left: GUTTER + i * colW, width: colW, height: 24 * hour }}
                   >
                     <DayEvents
@@ -1084,7 +1095,10 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 />
               )}
               {/* The time column, pinned to the left while the days scroll. */}
-              <div className="sticky left-0 z-(--z-raised) h-full bg-background" style={{ width: GUTTER }}>
+              <div
+                className="sticky left-0 z-(--z-raised) h-full bg-background before:absolute before:inset-x-0 before:-top-(--day-edge) before:-bottom-(--day-edge) before:bg-background"
+                style={{ width: GUTTER }}
+              >
                 {range(1, 23).map((h) => (
                   <span
                     key={h}
@@ -1096,7 +1110,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                   </span>
                 ))}
                 <span
-                  className="absolute right-1.5 z-(--z-raised) -translate-y-1/2 rounded-md bg-signal-red px-1.5 py-px text-[12px] font-semibold whitespace-nowrap text-white tabular-nums"
+                  // Touching the line (right-0). Proportional digits: tabular ones give a leading "1" a full digit's width, which reads as extra left padding.
+                  className="absolute right-0 z-(--z-raised) -translate-y-1/2 rounded-md bg-signal-red px-1.5 py-px text-[12px] font-semibold whitespace-nowrap text-white"
                   style={{ top: minutesInto(now) * (hour / 60) }}
                 >
                   <span data-label className="block">{clockTime(now)}</span>
