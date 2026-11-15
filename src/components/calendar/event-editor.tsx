@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { IconCalendar, IconClock, IconMapPin, IconRepeat, IconUsers, IconX } from "@tabler/icons-react";
+import { IconClock, IconMapPin, IconRepeat, IconUsers, IconX } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -327,7 +328,7 @@ export function EventEditor(props: {
           </div>
         </FieldRow>
 
-        <FieldRow icon={<IconCalendar />}>
+        <FieldRow icon={<CalendarIcon />}>
           <Select value={f.calendarId} onValueChange={(id) => set({ calendarId: id })} disabled={choices.length < 2}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Choose a calendar" />

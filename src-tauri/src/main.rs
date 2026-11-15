@@ -128,6 +128,7 @@ fn main() {
             telegram::telegram_messages,
             telegram::telegram_send,
             telegram::telegram_mark_read,
+            telegram::telegram_set_online,
             telegram::telegram_react,
             telegram::telegram_forward,
             telegram::telegram_edit,

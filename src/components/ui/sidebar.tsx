@@ -3,6 +3,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
+import { wrapLabels } from "@/lib/labels"
 import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -470,7 +471,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md py-2 pr-2 pl-[22px] text-left text-sm text-sidebar-foreground/70 ring-sidebar-ring outline-hidden transition-[width,height,padding,color,background-color] duration-150 group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-has-data-[sidebar=menu-badge]/menu-item:pr-10 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_10%,transparent)] data-active:text-sidebar-accent-foreground data-active:[&>svg:first-child]:text-(--sidebar-icon-active) [&_svg]:size-4.5 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-1.5 overflow-hidden rounded-md py-2 pr-2 pl-[22px] text-left text-sm text-sidebar-foreground/70 ring-sidebar-ring outline-hidden transition-[width,height,padding,color,background-color] duration-150 hover:duration-0 group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-has-data-[sidebar=menu-badge]/menu-item:pr-10 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_10%,transparent)] data-active:text-sidebar-accent-foreground data-active:[&>svg:first-child]:text-(--sidebar-icon-active) [&_svg]:size-4.5 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: {
@@ -498,6 +499,7 @@ function SidebarMenuButton({
   size = "default",
   tooltip,
   className,
+  children,
   ...props
 }: React.ComponentProps<"button"> & {
   asChild?: boolean
@@ -515,7 +517,9 @@ function SidebarMenuButton({
       data-active={isActive}
       className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
       {...props}
-    />
+    >
+      {asChild ? children : wrapLabels(children)}
+    </Comp>
   )
 
   if (!tooltip) {
@@ -571,12 +575,17 @@ function SidebarMenuAction({
 const SIDEBAR_COUNT = cn(keyChip, "shrink-0 border-sidebar-border bg-transparent leading-none dark:bg-background")
 
 /** A count inside a row's own layout (rather than pinned to the right edge like SidebarMenuBadge). */
-function SidebarCount({ className, ...props }: React.ComponentProps<"span">) {
-  return <span data-slot="sidebar-count" className={cn(SIDEBAR_COUNT, className)} {...props} />
+function SidebarCount({ className, children, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span data-slot="sidebar-count" className={cn(SIDEBAR_COUNT, className)} {...props}>
+      {wrapLabels(children)}
+    </span>
+  )
 }
 
 function SidebarMenuBadge({
   className,
+  children,
   ...props
 }: React.ComponentProps<"div">) {
   return (
@@ -588,7 +597,9 @@ function SidebarMenuBadge({
         className
       )}
       {...props}
-    />
+    >
+      {wrapLabels(children)}
+    </div>
   )
 }
 
@@ -678,7 +689,7 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        "transition-[color,background-color] duration-150 flex h-9 min-w-0 items-center gap-2 overflow-hidden rounded-md px-2 text-left text-sidebar-foreground/70 ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-sm data-[size=sm]:text-xs data-active:bg-sidebar-accent data-active:font-medium data-active:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_10%,transparent)] data-active:text-sidebar-accent-foreground data-active:[&>svg:first-child]:text-(--sidebar-icon-active) [&>span:last-child]:truncate [&>svg]:size-4.5 [&>svg]:shrink-0",
+        "transition-[color,background-color] duration-150 hover:duration-0 flex h-9 min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-left text-sidebar-foreground/70 ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-sm data-[size=sm]:text-xs data-active:bg-sidebar-accent data-active:font-medium data-active:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_10%,transparent)] data-active:text-sidebar-accent-foreground data-active:[&>svg:first-child]:text-(--sidebar-icon-active) [&>span:last-child]:truncate [&>svg]:size-4.5 [&>svg]:shrink-0",
         className
       )}
       {...props}

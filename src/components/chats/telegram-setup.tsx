@@ -140,9 +140,9 @@ function KeysStep({ busy, error, onSubmit }: { busy: boolean; error: string | nu
         <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-muted-foreground marker:text-muted-foreground">
           <li>
             Open{" "}
-            <button type="button" className="font-medium text-foreground underline underline-offset-4 hover:text-primary" onClick={() => void api.openExternal("https://my.telegram.org/apps")}>
-              my.telegram.org
-              <IconExternalLink className="ml-0.5 inline size-3.5 -translate-y-px" />
+            <button type="button" className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-4 hover:text-primary" onClick={() => void api.openExternal("https://my.telegram.org/apps")}>
+              <span>my.telegram.org</span>
+              <IconExternalLink className="size-3.5" />
             </button>{" "}
             and log in with your phone number.
           </li>

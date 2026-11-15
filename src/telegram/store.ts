@@ -86,6 +86,35 @@ function start() {
   started = true;
   void refreshStatus();
   void api.telegram.onUpdated(onEvent);
+  keepPresence();
+}
+
+/** Online while Relay's window is focused (refreshed each minute, as Telegram's "online" runs out),
+ *  offline when it isn't. Telegram only sends other people's online status to online clients. */
+function keepPresence() {
+  let timer: number | undefined;
+  const send = (online: boolean) => {
+    if (state.status?.stage !== "ready") return;
+    void api.telegram.setOnline(online).catch(() => {});
+  };
+  const focus = () => {
+    send(true);
+    window.clearInterval(timer);
+    timer = window.setInterval(() => send(true), 60_000);
+  };
+  const blur = () => {
+    window.clearInterval(timer);
+    send(false);
+  };
+  window.addEventListener("focus", focus);
+  window.addEventListener("blur", blur);
+  // Signing in (or the first status) while focused.
+  let wasReady = false;
+  listeners.add(() => {
+    const ready = state.status?.stage === "ready";
+    if (ready && !wasReady && document.hasFocus()) focus();
+    wasReady = ready;
+  });
 }
 
 function subscribe(l: () => void) {

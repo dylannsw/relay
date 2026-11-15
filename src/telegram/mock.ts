@@ -26,17 +26,18 @@ const chat = ({ last, ...c }: Omit<Partial<TgChat>, "last"> & Pick<TgChat, "id" 
   archived: false,
   hasPhoto: false,
   readOutbox: 10_000,
+  presence: null,
   folders: [],
   ...c,
 });
 
 const chats: TgChat[] = [
-  chat({ id: "101", name: "Maya Lim", kind: "user", unread: 2, folders: [2], last: { text: "Can you send me the deck before standup?", outgoing: false, sender: null, date: now - 4 * min } }),
+  chat({ id: "101", name: "Maya Lim", kind: "user", presence: { kind: "online", at: Math.floor((now + 60 * min) / 1000) }, unread: 2, folders: [2], last: { text: "Can you send me the deck before standup?", outgoing: false, sender: null, date: now - 4 * min } }),
   chat({ id: "-1001", name: "Product Interns 2026", kind: "group", unread: 14, mentions: 1, folders: [2], last: { text: "@you can you take the demo on Friday?", outgoing: false, sender: "Jun", date: now - 22 * min } }),
-  chat({ id: "102", name: "Daniel Ong", kind: "user", folders: [3], pinned: true, last: { text: "Sounds good, see you at 3", outgoing: true, sender: null, date: now - 1.5 * hr } }),
+  chat({ id: "102", name: "Daniel Ong", kind: "user", presence: { kind: "offline", at: Math.floor((now - 25 * min) / 1000) }, folders: [3], pinned: true, last: { text: "Sounds good, see you at 3", outgoing: true, sender: null, date: now - 1.5 * hr } }),
   chat({ id: "-1002", name: "Ops Team", kind: "group", unread: 3, muted: true, folders: [3], last: { text: "Photo · Rota for next week", outgoing: false, sender: "Priya", date: now - 3 * hr } }),
   chat({ id: "-1003", name: "Weekend Hikers", kind: "group", unread: 31, muted: true, folders: [4], last: { text: "who's bringing snacks 😂", outgoing: false, sender: "Ken", date: now - 5 * hr } }),
-  chat({ id: "103", name: "Aisha", kind: "user", unread: 1, folders: [4], last: { text: "Voice message · 0:42", outgoing: false, sender: null, date: now - 9 * hr } }),
+  chat({ id: "103", name: "Aisha", kind: "user", presence: { kind: "recently", at: null }, unread: 1, folders: [4], last: { text: "Voice message · 0:42", outgoing: false, sender: null, date: now - 9 * hr } }),
   chat({ id: "-1004", name: "Platoon 3 Admin", kind: "group", unread: 5, folders: [5], last: { text: "Book-in timing changed to 2100", outgoing: false, sender: "Sgt Tan", date: now - 1.2 * day } }),
   chat({ id: "104", name: "Marcus", kind: "user", folders: [5, 4], last: { text: "ok bro", outgoing: true, sender: null, date: now - 2 * day } }),
   chat({ id: "100", name: "Saved Messages", kind: "saved", last: { text: "https://example.com/onboarding-notes", outgoing: true, sender: null, date: now - 3 * day } }),
@@ -419,6 +420,8 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="240" fill="#f7c948"/><circle cx="180" cy="210" r="30" fill="#3d2c00"/><circle cx="332" cy="210" r="30" fill="#3d2c00"/><path d="M150 310q106 110 212 0" stroke="#3d2c00" stroke-width="28" fill="none" stroke-linecap="round"/></svg>`;
       return r(new TextEncoder().encode(svg).buffer, 150);
     }
+    case "telegram_set_online":
+      return r(undefined, 0);
     default:
       return Promise.reject(`mock: unknown command ${cmd}`);
   }

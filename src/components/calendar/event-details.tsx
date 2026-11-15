@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import {
-  IconCalendar,
   IconCircleCheck,
   IconCircleDashed,
   IconCircleX,
@@ -11,6 +10,7 @@ import {
   IconUsers,
   IconVideo,
 } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -82,7 +82,7 @@ export function ReadOnlyDetails({ event: e, calendar }: { event: CalendarEvent; 
           </Row>
         )}
         {calendar && (
-          <Row icon={<IconCalendar />}>
+          <Row icon={<CalendarIcon />}>
             <div>{calendarLabel(calendar)}</div>
             <div className="truncate text-muted-foreground">{calendar.accountEmail}</div>
           </Row>

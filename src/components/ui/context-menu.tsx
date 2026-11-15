@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { wrapLabels } from "@/lib/labels"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import { IconChevronRight, IconCheck } from "@tabler/icons-react"
 
@@ -78,6 +79,7 @@ function ContextMenuItem({
   className,
   inset,
   variant = "default",
+  children,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Item> & {
   inset?: boolean
@@ -93,7 +95,9 @@ function ContextMenuItem({
         className
       )}
       {...props}
-    />
+    >
+      {props.asChild ? children : wrapLabels(children)}
+    </ContextMenuPrimitive.Item>
   )
 }
 
@@ -115,7 +119,7 @@ function ContextMenuSubTrigger({
       )}
       {...props}
     >
-      {children}
+      {props.asChild ? children : wrapLabels(children)}
       <IconChevronRight className="ml-auto" />
     </ContextMenuPrimitive.SubTrigger>
   )
@@ -160,7 +164,7 @@ function ContextMenuCheckboxItem({
           />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
-      {children}
+      {props.asChild ? children : wrapLabels(children)}
     </ContextMenuPrimitive.CheckboxItem>
   )
 }
@@ -189,7 +193,7 @@ function ContextMenuRadioItem({
           />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
-      {children}
+      {props.asChild ? children : wrapLabels(children)}
     </ContextMenuPrimitive.RadioItem>
   )
 }

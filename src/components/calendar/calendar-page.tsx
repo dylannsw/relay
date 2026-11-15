@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring, useVelocity, type MotionValue } from "motion/react";
-import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat, IconTrash } from "@tabler/icons-react";
+import { IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat, IconTrash } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { ease, glide, smooth, tilt, trail } from "@/lib/motion";
@@ -10,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
+import { SelectionBar, SelectionBarAction } from "@/components/selection-bar";
 import { clockTime } from "@/format";
 import { useCalendars } from "@/calendar/store";
 import { RANGE_DAYS, useCalendarEvents } from "@/calendar/events";
@@ -244,7 +246,6 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   };
 
   /** The header's count, held while it fades out. */
-  const pickedCount = useRef(0);
   /** Deletes the picked events that are yours to change; the rest (invitations, shared calendars) stay. */
   const deletePicked = () => {
     const mine = pickedEvents.filter(editable);
@@ -822,7 +823,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <IconCalendar />
+                <CalendarIcon />
               </EmptyMedia>
               <EmptyTitle>No calendars yet</EmptyTitle>
               <EmptyDescription>
@@ -852,37 +853,14 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     }
   }
   const lifted = moving ?? landing;
-  const anyPicked = pickedEvents.length > 0;
-  if (anyPicked) pickedCount.current = pickedEvents.length;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
+      {/* Out of the way while the picked events are being dragged. */}
+      <SelectionBar open={pickedEvents.length > 0 && !moving} label={`${pickedEvents.length} selected`} onClear={() => setPicked(NONE_PICKED)}>
+        <SelectionBarAction label="Delete" text="Delete" icon={<IconTrash />} hint="Delete selected events" fixedKey="Delete" destructive onClick={deletePicked} />
+      </SelectionBar>
       <CalendarHeader title={<MonthTitle {...rangeTitle(viewFrom, addDays(viewTo, -1))} />}>
-        {/* Like the task board's: always mounted so it can spring in and fade out, holding its last count while it fades. */}
-        <motion.div
-          inert={!anyPicked}
-          initial={false}
-          animate={anyPicked ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
-          transition={
-            anyPicked
-              ? { type: "spring", duration: 0.3, bounce: 0.4, opacity: { duration: 0.15, ease: "easeOut" } }
-              : { duration: 0.12, ease: "easeOut" }
-          }
-          className={cn("mr-1 flex origin-right items-center gap-3 text-sm text-muted-foreground", !anyPicked && "pointer-events-none")}
-        >
-          <span className="tabular-nums">{pickedCount.current} selected</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" onClick={deletePicked}>
-                <IconTrash />
-                Delete
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Delete selected events <Kbd>Del</Kbd>
-            </TooltipContent>
-          </Tooltip>
-        </motion.div>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="outline" size="sm" onClick={() => goTo(todayIdx)}>
@@ -957,10 +935,11 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
             <div className="sticky top-0 z-(--z-sticky) bg-background" style={{ width: trackW, height: headH }}>
               <div className="relative border-b" style={{ height: DAY_HEAD }}>
                 <div
-                  className="sticky left-0 z-(--z-sticky) flex h-full items-end bg-background pr-2 pb-1.5 text-2xs font-semibold text-muted-foreground"
+                  className="sticky left-0 z-(--z-sticky) flex h-full items-center bg-background pr-2 text-2xs font-semibold text-muted-foreground"
                   style={{ width: GUTTER }}
                 >
-                  <span className="ml-auto">{zoneLabel()}</span>
+                  {/* Level with the day names beside it. */}
+                  <span data-label className="ml-auto">{zoneLabel()}</span>
                 </div>
                 {columns.map((i) => {
                   const d = addDays(origin, i);
@@ -990,10 +969,13 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 // bars in lanes below the row's current height wait for it to grow.
                 <div className="relative overflow-clip border-b" style={{ height: stripH }}>
                   <div
-                    className="sticky left-0 z-(--z-sticky) flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
-                    style={{ width: GUTTER }}
+                    className="sticky left-0 z-(--z-sticky) flex h-full items-start justify-end bg-background pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
+                    style={{ width: GUTTER, paddingTop: STRIP_TOP }}
                   >
-                    All day
+                    {/* As tall as the first lane of bars, so the label sits level with their titles. */}
+                    <span className="flex items-center" style={{ height: BAR }}>
+                      <span data-label>All day</span>
+                    </span>
                   </div>
                   {columns.map((i) => (
                     <div key={i} className="absolute top-0 h-full border-l" style={{ left: GUTTER + i * colW, width: colW }}>
@@ -1030,7 +1012,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                               ...(isDraft ? draftStyle(barCal, dark) : eventStyle(b.event, barCal, dark, selected === b.event.id || picked.has(b.event.id))),
                             }}
                           >
-                            <span className="truncate">{b.event.title}</span>
+                            <span data-label className="truncate">{b.event.title}</span>
                             {b.event.recurringEventId && <RepeatMark className="ml-1 size-3" />}
                           </button>
                         );
@@ -1106,6 +1088,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 {range(1, 23).map((h) => (
                   <span
                     key={h}
+                    data-label
                     className="absolute right-2.5 -translate-y-1/2 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ top: h * hour }}
                   >
@@ -1116,7 +1099,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                   className="absolute right-1.5 z-(--z-raised) -translate-y-1/2 rounded-md bg-signal-red px-1.5 py-px text-[12px] font-semibold whitespace-nowrap text-white tabular-nums"
                   style={{ top: minutesInto(now) * (hour / 60) }}
                 >
-                  {clockTime(now)}
+                  <span data-label className="block">{clockTime(now)}</span>
                 </span>
               </div>
             </div>
@@ -1344,10 +1327,12 @@ function CardBody({ event: e, height }: { event: CalendarEvent; height: number }
     );
   }
   // Title, repeat mark and time on one line; the time only gets the room left, so it gives way first.
+  // The title and time share a baseline (they differ in size), and the title is centred on its
+  // capitals (data-label), so the line sits in the middle of the card.
   return (
-    <span className="flex min-w-0 items-center gap-1 leading-snug">
-      <span className={cn("min-w-0 truncate text-meta font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
-      {e.recurringEventId && <RepeatMark className="size-3.5" />}
+    <span className="flex min-w-0 items-baseline gap-1 leading-snug">
+      <span data-label className={cn("min-w-0 truncate text-meta font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
+      {e.recurringEventId && <RepeatMark className="size-3.5 self-center" />}
       <span className="w-0 min-w-0 flex-1 truncate text-(color:--event-muted)">{timeRange(e, true)}</span>
     </span>
   );

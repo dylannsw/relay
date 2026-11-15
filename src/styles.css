@@ -37,8 +37,8 @@
     --color-star: var(--star);
     --color-home: var(--home);
     --font-heading: var(--font-sans);
-    /* Regular text is a touch heavier than 400 so it doesn't read thin (needs a variable font; others stay at 400). */
-    --font-weight-normal: 450;
+    /* Regular text is heavier than 400 so it doesn't read thin. Its own value: font-medium keeps its 500 whatever this is. */
+    --font-weight-normal: 500;
     /* Settings > Appearance > Font style sets --app-font. */
     --font-sans: var(--app-font, 'Geist Variable', sans-serif);
     /* The type scale, a step up from Tailwind's (12/14/16/18px) so text reads comfortably on a desktop. */
@@ -176,11 +176,12 @@
     --border-strong: color-mix(in oklab, var(--foreground) 15%, transparent);
     --field-focus: color-mix(in oklab, var(--foreground) 20%, transparent);
     /* An incoming chat bubble: a light grey that stays solid over whatever is behind it, with a
-       hairline frame. Yours: a pale sky blue framed in a deeper one. */
+       hairline frame. Yours: a pale sky blue framed in a deeper one. Frames are softened 30% toward
+       their fill. */
     --bubble: color-mix(in srgb, var(--foreground) 4%, var(--background));
-    --bubble-border: var(--border);
+    --bubble-border: color-mix(in oklab, var(--border) 70%, var(--bubble));
     --bubble-out: #e3f6ff;
-    --bubble-out-border: #96dcff;
+    --bubble-out-border: color-mix(in oklab, #96dcff 70%, var(--bubble-out));
     /* A reply quoted in your bubble: a soft sky blue, a step deeper than the bubble, with navy text (5.7:1). */
     --quote-out: #c6e7f7;
     --quote-out-foreground: #2d5882;
@@ -259,9 +260,9 @@
     --border-strong: color-mix(in oklab, var(--foreground) 15%, transparent);
     --field-focus: rgb(255 255 255 / 20%);
     --bubble: color-mix(in srgb, var(--foreground) 6%, var(--background));
-    --bubble-border: var(--border);
+    --bubble-border: color-mix(in oklab, var(--border) 70%, var(--bubble));
     --bubble-out: #314b58;
-    --bubble-out-border: #356882;
+    --bubble-out-border: color-mix(in oklab, #356882 70%, var(--bubble-out));
     /* A deep slate-blue ground with sky-blue text (9.4:1), so it isn't a light patch in a dark bubble. */
     --quote-out: #233842;
     --quote-out-foreground: #c6e7f7;
@@ -305,6 +306,26 @@
   [data-slot="tooltip-content"] {
     pointer-events: none !important;
   }
+  /* Icon + label rows: the label's box is centred on its capitals, so items-center puts the
+     middle of the capitals exactly level with the icon's middle. Left alone, flex centres
+     the font's whole line box, and once Chrome rounds the font's metrics the capitals sit
+     up to ~0.4px high: a whole screen pixel at 150–175% scaling. The trim cuts the box to
+     the capitals; the padding gives back the same height, split evenly above and below them,
+     so rows keep their size and descenders aren't clipped by truncate.
+     Applies to any text-only child of a centred row that has an icon (span, div, p, label),
+     except components with their own layout (data-slot), and to [data-label], the spans
+     wrapLabels (src/lib/labels.tsx) puts around the bare text of Button, Badge, Kbd, counts, menu, select,
+     tab, command and sidebar items. Text sitting bare in a row next to an icon has no box to
+     trim: wrap it in a span. A label the rule can't see (it holds markup, or its icon is
+     inside a wrapper such as a key cap) gets data-label by hand. */
+  :where(.items-center:has(> svg)) > :where(span, div, p, label):not(:has(*), [data-slot]),
+  [data-label],
+  /* A one-line toast's title (its icon and title sit in separate wrappers). With a
+     description, the icon stays centred on the two lines. */
+  [data-sonner-toast]:has([data-icon]):not(:has([data-description])) [data-title] {
+    text-box: trim-both cap alphabetic;
+    padding-block: calc((1lh - 1cap) / 2);
+  }
   /* Tabler icons: every line is 1.75 screen pixels whatever the icon's size. Without
      non-scaling-stroke the width is in the icon's 24-unit grid and grows with the icon,
      so a 14px icon would get thinner lines than a 20px one. */
@@ -332,8 +353,8 @@
   /* Light mode: icons are never darker than mid-grey, so ones that inherit near-black
      text colour don't read as solid black. Lighter colours (muted grey, chip colours,
      white icons on filled buttons) are already above the floor and stay as they are. */
-  :root:not(.dark, .mixed) .tabler-icon,
-  .mixed .frame .tabler-icon {
+  :root:not(.dark, .mixed) :is(.tabler-icon, .ph-icon),
+  .mixed .frame :is(.tabler-icon, .ph-icon) {
     color: oklch(from currentColor max(l, 0.5) c h);
   }
   /* Native scrollbars match the thin ScrollArea ones. */
@@ -527,6 +548,59 @@
    are found from boxes, not from what's under the pointer. */
 :root[data-dragging-card] [data-card-key] {
   pointer-events: none;
+}
+
+/* The floating action bar for selected items (selection-bar.tsx): a white bar with grey chips in
+   Light; near-black with a step-lighter chip in Dark, and in Mixed too, where it floats over the
+   light content. Its own tokens, since inside Mixed's light frame the dark: variant doesn't apply.
+   Unlayered, so these win over utilities. */
+.selection-bar {
+  --sb-bg: oklch(1 0 0);
+  --sb-edge: oklch(0.922 0 0);
+  --sb-chip: oklch(0.965 0 0);
+  --sb-chip-hover: oklch(0.935 0 0);
+  --sb-hover: oklch(0.955 0 0);
+  --sb-pressed: oklch(0.92 0 0);
+  --sb-text: oklch(0.34 0 0);
+  --sb-danger: oklch(0.577 0.245 27.325);
+  --sb-shadow: 0 1px 2px rgb(0 0 0 / 5%), 0 8px 24px rgb(0 0 0 / 8%);
+  background-color: var(--sb-bg);
+  color: var(--sb-text);
+  border: 1px solid var(--sb-edge);
+  box-shadow: var(--sb-shadow);
+}
+:is(.dark, .mixed) .selection-bar {
+  --sb-bg: #111111;
+  --sb-edge: rgb(255 255 255 / 8%);
+  --sb-chip: #1e1e1e;
+  --sb-chip-hover: #282828;
+  --sb-hover: #1e1e1e;
+  --sb-pressed: #2c2c2c;
+  --sb-text: oklch(0.96 0 0);
+  --sb-danger: oklch(0.704 0.191 22.216);
+  --sb-shadow: 0 0 0 1px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%);
+}
+.selection-bar .sb-chip {
+  background-color: var(--sb-chip);
+}
+.selection-bar .sb-action {
+  color: var(--sb-text);
+  transition: background-color 0.15s ease;
+}
+.selection-bar .sb-action:hover {
+  background-color: var(--sb-hover);
+}
+.selection-bar .sb-action.sb-chip:hover {
+  background-color: var(--sb-chip-hover);
+}
+.selection-bar .sb-action:active {
+  background-color: var(--sb-pressed);
+}
+.selection-bar .sb-action[data-destructive] {
+  color: var(--sb-danger);
+}
+.selection-bar .sb-separator {
+  background-color: var(--sb-edge);
 }
 
 /* ==== Command bar: the Zen theme's floating URL bar (my-tweaks.css sections 8, 9, 14, 20, 21, 24) ====

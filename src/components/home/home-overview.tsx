@@ -3,12 +3,12 @@ import { createPortal } from "react-dom";
 import {
   IconArrowDownRight,
   IconArrowUpRight,
-  IconCalendarEvent,
   IconCircleCheck,
   IconFlame,
   IconMail,
   IconMinus,
 } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +58,7 @@ export function HomeOverview(p: OverviewProps) {
         </CardTitle>
         <CardAction className="flex">
           <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-meta font-normal text-muted-foreground">
-            <IconCalendarEvent />
+            <CalendarIcon />
             {/* Trim the line box to the cap height so the digits sit exactly level with the icon. */}
             <span className="[text-box:trim-both_cap_alphabetic]">{date(new Date())}</span>
           </Badge>
@@ -91,7 +91,7 @@ export function HomeOverview(p: OverviewProps) {
               : `in ${plural(p.accountsWithUnread, "inbox", "inboxes")}`}
         </Stat>
         <Stat
-          icon={<IconCalendarEvent />}
+          icon={<CalendarIcon />}
           label="Events Today"
           value={p.events ? p.events.count.toLocaleString() : "–"}
           onClick={p.onOpenCalendar}
@@ -149,7 +149,7 @@ function Delta({ change, versus }: { change: number; versus: string }) {
         <Icon className="size-3.5 stroke-[length:2.25px]! text-white dark:text-black/75" />
       </span>
       {/* One line of text: the number, a plain space, then what it's compared with. */}
-      <span className="truncate">
+      <span data-label className="truncate">
         <span className="font-medium text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
           {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "0"}
         </span>{" "}
@@ -259,6 +259,8 @@ function Heatmap({ weeks: all, color, date }: { weeks: HeatmapDay[][]; color: st
         createPortal(
           <div
             role="tooltip"
+            // Same slot as the stock tooltips, so Mixed's dark-tooltip rule (styles.css) covers it too.
+            data-slot="tooltip-content"
             className="pointer-events-none fixed z-(--z-overlay) rounded-md bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background transition-[left,top,opacity] duration-150 ease-(--ease-out-soft)"
             style={{ left: tip.x, top: tip.y - 6, transform: "translate(-50%, -100%)", opacity: tip.shown ? 1 : 0 }}
           >

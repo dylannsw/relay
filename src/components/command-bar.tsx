@@ -7,7 +7,6 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconArrowUp,
-  IconCalendar,
   IconChecklist,
   IconChevronLeft,
   IconChevronRight,
@@ -29,6 +28,7 @@ import {
   IconX,
   type TablerIcon,
 } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -484,7 +484,7 @@ export function CommandBar(p: Props) {
     return [
       { id: "go-home", label: "Home", keywords: "overview dashboard start", icon: <IconSmartHome />, run: () => p.onNavigate({ kind: "home" }) },
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
-      { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <IconCalendar />, run: () => p.onNavigate({ kind: "calendar" }) },
+      { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <CalendarIcon />, run: () => p.onNavigate({ kind: "calendar" }) },
       { id: "go-cleanup", label: "Clean up", keywords: "senders group bulk delete tidy declutter", icon: <IconSparkles />, run: () => p.onNavigate({ kind: "cleanup" }) },
       { id: "go-all", label: "All inboxes", keywords: "home everything", icon: <IconInbox />, shortcut: "goAll", run: () => p.onNavigate({ kind: "all" }) },
       ...labels.map((label) => ({
@@ -577,7 +577,7 @@ export function CommandBar(p: Props) {
           {KEY_FACE[k]}
         </span>
       ))}
-      <span className="ml-1">{label}</span>
+      <span data-label className="ml-1">{label}</span>
     </span>
   );
   const footer = (hints: ReactNode) => (
@@ -741,7 +741,7 @@ export function CommandBar(p: Props) {
                     <Tile>
                       <IconSearch />
                     </Tile>
-                    <span className="truncate">
+                    <span data-label className="truncate">
                       Search {p.scopeLabel} for “<span className="font-medium">{q}</span>”
                     </span>
                     <CommandShortcut className="tracking-normal">

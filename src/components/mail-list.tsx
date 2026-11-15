@@ -27,7 +27,6 @@ import { cn } from "@/lib/utils";
 import { glide, quick, smooth } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ButtonGroup } from "@/components/ui/button-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
@@ -50,6 +49,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AccountChip } from "@/components/account-chip";
 import { ShortcutKbd, ShortcutText } from "@/components/shortcut-kbd";
 import { SelectionSlot } from "@/components/selection-slot";
+import { SELECTION_BAR_ROOM, SelectionBar, SelectionBarAction, SelectionBarSeparator } from "@/components/selection-bar";
 import { SenderRows, type SendersProps } from "@/components/sender-list";
 import type { ShortcutId } from "@/shortcuts";
 import type { Account, ComposeMode, Folder, MessageSummary, Provider, SenderGroup } from "@/types";
@@ -170,7 +170,7 @@ export function PillTabs<T extends string>(props: {
 function movesFrom(folder: Folder): { to: Folder; label: string; icon: ReactNode; shortcut: ShortcutId }[] {
   return [
     folder !== "inbox" && { to: "inbox" as const, label: "Move to Inbox", icon: <IconInbox />, shortcut: "moveInbox" as const },
-    folder !== "archive" && { to: "archive" as const, label: "Archive", icon: <IconArchive className="translate-y-[0.5px]" />, shortcut: "archive" as const },
+    folder !== "archive" && { to: "archive" as const, label: "Archive", icon: <IconArchive />, shortcut: "archive" as const },
     folder !== "trash" && { to: "trash" as const, label: "Delete", icon: <IconTrash />, shortcut: "delete" as const },
   ].filter((x) => !!x);
 }
@@ -235,7 +235,7 @@ export function MailList(p: Props) {
   const shown = head ?? { title: p.title, account: p.account, count: undefined };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <PageHeader className="gap-0">
         {gv ? (
           <GroupTitle s={gv} />
@@ -251,49 +251,7 @@ export function MailList(p: Props) {
           />
         </SelectionSlot>
         <div className="relative flex h-full min-w-0 flex-1 items-center">
-          <AnimatePresence mode="popLayout" initial={false}>
-            {nChecked > 0 ? (
-              <motion.div
-                key="bulk"
-                className="flex min-w-0 items-center gap-3"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={quick}
-              >
-                <span className="text-base font-bold whitespace-nowrap tabular-nums">
-                  {nChecked} {sd ? (nChecked === 1 ? "sender" : "senders") : ""} selected
-                </span>
-                <ButtonGroup>
-                  {movesFrom(p.folder).map((a) => (
-                    <IconAction key={a.to} variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={sd ? undefined : a.shortcut} onClick={() => bulkMove(a.to)}>
-                      {a.icon}
-                    </IconAction>
-                  ))}
-                </ButtonGroup>
-                {!sd && (
-                  <ButtonGroup>
-                    <IconAction variant="outline" label="Mark as read" onClick={() => p.onBulkRead(true)}>
-                      <IconMailOpened className="-translate-y-px" />
-                    </IconAction>
-                    <IconAction variant="outline" label="Mark as unread" onClick={() => p.onBulkRead(false)}>
-                      <IconMail />
-                    </IconAction>
-                  </ButtonGroup>
-                )}
-                <IconAction label="Clear selection" fixedKey="Escape" onClick={() => checkAll(false)}>
-                  <IconX />
-                </IconAction>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="title"
-                className={cn("flex min-w-0 items-center gap-2.5", headPending && "invisible")}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={quick}
-              >
+              <div className={cn("flex min-w-0 items-center gap-2.5", headPending && "invisible")}>
                 {/* Folder names are short; when the header is tight the account chip truncates instead. */}
                 <h1 className="shrink-0 text-lg font-bold">{shown.title}</h1>
                 {/* The folder's size, beside its name: same size, lighter, so it reads as a figure
@@ -322,17 +280,15 @@ export function MailList(p: Props) {
                   </TooltipContent>
                 </Tooltip>
                 {p.isDemo && <Badge variant="outline">Sample data</Badge>}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </div>
         </div>
           </>
         )}
         <div className="ml-3 flex shrink-0 items-center gap-2">
-          {/* Clean up swaps the filter for Inbox | Archived. Hidden while rows are ticked (the
-              bulk bar needs the room) and inside a group (it belongs to the sender list). */}
+          {/* Clean up swaps the filter for Inbox | Archived. Hidden inside a group (it belongs
+              to the sender list). */}
           {p.senders ? (
-            !selecting && !gv && <PillTabs id="cleanup-folder" value={p.senders.folder} items={CLEANUP_FOLDERS} onChange={p.senders.onFolder} />
+            !gv &&<PillTabs id="cleanup-folder" value={p.senders.folder} items={CLEANUP_FOLDERS} onChange={p.senders.onFolder} />
           ) : (
             <PillTabs id="mail-filter" value={p.filter} items={FILTERS} onChange={p.onFilter} />
           )}
@@ -378,6 +334,45 @@ export function MailList(p: Props) {
           <MessageRows {...p} selecting={selecting} />
         )}
       </motion.div>
+
+      {/* An open group is always in selection mode, so its bar stays up (Keep Latest works with
+          nothing ticked); elsewhere it comes up with the first tick. */}
+      <SelectionBar
+        open={gv ? gv.ready && p.messages.length > 0 : selecting}
+        label={gv ? `${nChecked} of ${p.messages.length} selected` : `${nChecked} ${sd ? (nChecked === 1 ? "sender " : "senders ") : ""}selected`}
+        onClear={gv ? undefined : () => checkAll(false)}
+      >
+        {movesFrom(p.folder).map((a) => (
+          <SelectionBarAction
+            key={a.to}
+            label={a.label}
+            icon={a.icon}
+            destructive={a.to === "trash"}
+            disabled={nChecked === 0}
+            shortcut={sd ? undefined : a.shortcut}
+            onClick={() => bulkMove(a.to)}
+          />
+        ))}
+        {mode === "messages" && (
+          <>
+            <SelectionBarSeparator />
+            <SelectionBarAction label="Mark as Read" icon={<IconMailOpened />} onClick={() => p.onBulkRead(true)} />
+            <SelectionBarAction label="Mark as Unread" icon={<IconMail />} onClick={() => p.onBulkRead(false)} />
+          </>
+        )}
+        {gv && (
+          <>
+            <SelectionBarSeparator />
+            <SelectionBarAction
+              label="Keep Latest"
+              text="Keep Latest"
+              hint="Tick everything except the newest message"
+              disabled={p.messages.length < 2}
+              onClick={gv.onKeepLatest}
+            />
+          </>
+        )}
+      </SelectionBar>
     </div>
   );
 }
@@ -403,7 +398,8 @@ function MessageRows(p: Props & { selecting: boolean; groupMode?: boolean }) {
     getItemKey: (i) => messages[i]!.id,
     overscan: 6,
     paddingStart: 12,
-    paddingEnd: 4,
+    // While the selection bar floats over the bottom, the last row can still scroll clear of it.
+    paddingEnd: p.selecting ? SELECTION_BAR_ROOM : 4,
   });
   const items = virtualizer.getVirtualItems();
 
@@ -518,19 +514,19 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
-          <span className={cn("truncate text-title", m.isRead ? "font-medium" : "font-semibold")}>
-            {senderName(m.from)}
-          </span>
+          <span className="truncate text-title font-semibold">{senderName(m.from)}</span>
           <AnimatePresence initial={false}>
             {!m.isRead && (
               <motion.span
                 key="unread"
-                className="size-2 shrink-0 rounded-full bg-primary"
+                className="shrink-0 rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.5, opacity: 0 }}
                 transition={quick}
-              />
+              >
+                New
+              </motion.span>
             )}
           </AnimatePresence>
           <div className="relative ml-auto flex shrink-0 items-center">
@@ -726,7 +722,7 @@ function AddressChip({ active, onClick, children }: { active: boolean; onClick: 
   );
 }
 
-/** Under an open group's title: the bulk actions on its ticked mail, and the addresses to narrow by. */
+/** Under an open group's title: select-all, and the addresses to narrow by. (Its actions are in the floating bar.) */
 function GroupToolbar({ s, p, nChecked }: { s: SendersProps & { group: SenderGroup }; p: Props; nChecked: number }) {
   // Until the group's mail loads, `messages` still holds the previous list: count from the group.
   const total = s.ready ? p.messages.length : s.group.count;
@@ -734,31 +730,13 @@ function GroupToolbar({ s, p, nChecked }: { s: SendersProps & { group: SenderGro
   const addresses = s.group.addresses;
   return (
     <div className="flex shrink-0 flex-col gap-2.5 border-b px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <label className="flex w-fit cursor-default items-center gap-3 text-sm font-medium">
         <Checkbox
-          aria-label={allChecked ? "Clear selection" : "Select all"}
           checked={allChecked ? true : nChecked > 0 ? "indeterminate" : false}
           onCheckedChange={() => p.onCheckAll(!allChecked)}
         />
-        <span className="text-base font-semibold whitespace-nowrap tabular-nums">
-          {nChecked} of {total} selected
-        </span>
-        <ButtonGroup>
-          {movesFrom(p.folder).map((a) => (
-            <IconAction key={a.to} variant="tinted" destructive={a.to === "trash"} disabled={nChecked === 0} label={a.label} shortcut={a.shortcut} onClick={() => p.onBulkMove(a.to)}>
-              {a.icon}
-            </IconAction>
-          ))}
-        </ButtonGroup>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="outline" size="sm" disabled={total < 2} onClick={s.onKeepLatest}>
-              Keep latest
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Tick everything except the newest message</TooltipContent>
-        </Tooltip>
-      </div>
+        Select all
+      </label>
       {addresses.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
           <AddressChip active={s.narrow === null} onClick={() => s.onNarrow(null)}>

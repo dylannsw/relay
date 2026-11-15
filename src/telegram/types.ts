@@ -27,6 +27,13 @@ export interface TgPreview {
   date: number;
 }
 
+/** "recently" / "week" / "month": they hide the exact time. */
+export interface TgPresence {
+  kind: "online" | "offline" | "recently" | "week" | "month";
+  /** Unix seconds: when "online" runs out, or when "offline" was last seen. */
+  at: number | null;
+}
+
 export type TgChatKind = "user" | "bot" | "group" | "channel" | "saved";
 
 export interface TgChat {
@@ -42,6 +49,8 @@ export interface TgChat {
   hasPhoto: boolean;
   /** Your messages up to this id have been read by the other side. */
   readOutbox: number;
+  /** People only: online or last seen; null when unknown. */
+  presence: TgPresence | null;
   last: TgPreview | null;
   folders: number[];
 }
@@ -144,4 +153,6 @@ export interface TgEvent {
   deletedChatId: string | null;
   /** A message's reactions changed. `min`: Telegram left out which are yours, so keep what's shown. */
   reactions?: { chatId: string; messageId: number; reactions: TgReaction[]; min: boolean } | null;
+  /** Someone started (`action`: "typing", "recording a voice message"…) or stopped (null) typing. */
+  typing?: { chatId: string; userId: string; name: string | null; action: string | null } | null;
 }

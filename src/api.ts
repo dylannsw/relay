@@ -147,6 +147,8 @@ export const api = {
     send: (chatId: string, text: string, replyTo?: number) =>
       call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null }),
     markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
+    /** Shows you online to others (and gets their online status pushed) while Relay is focused. */
+    setOnline: (online: boolean) => call<void>("telegram_set_online", { online }),
     /** Sets your reactions on a message (an empty list takes yours off). */
     react: (chatId: string, messageId: number, emojis: string[]) => call<void>("telegram_react", { chatId, messageId, emojis }),
     /** Forwards messages to another chat; resolves to the new messages there, oldest first. */

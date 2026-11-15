@@ -82,6 +82,8 @@ pub struct Telegram {
     inner: tokio::sync::Mutex<Inner>,
     chats: RwLock<Chats>,
     stickers: RwLock<stickers::StickerCache>,
+    /// Whether Relay last told Telegram you're online.
+    online: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Serialize)]
@@ -120,6 +122,19 @@ struct TgEvent {
     deleted_chat_id: Option<String>,
     /// A message's reactions changed.
     reactions: Option<TgReactionsEvent>,
+    /// Someone started or stopped typing.
+    typing: Option<TgTyping>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TgTyping {
+    chat_id: String,
+    user_id: String,
+    /// Their name, when Relay knows them (from a one-to-one chat).
+    name: Option<String>,
+    /// "typing", "recording a voice message"…; none when they stopped.
+    action: Option<&'static str>,
 }
 
 #[derive(Serialize, Clone)]
@@ -181,6 +196,7 @@ impl Telegram {
             inner: tokio::sync::Mutex::new(Inner { conn: None, login: Login::None, error: None }),
             chats: RwLock::new(Chats::default()),
             stickers: RwLock::new(stickers::StickerCache::default()),
+            online: Default::default(),
         }
     }
 
@@ -343,6 +359,17 @@ impl Telegram {
         Some(Self::with_folders(&chats, &e))
     }
 
+    /// A typing update for the UI, for chats in the list and actions worth showing.
+    fn typing(&self, chat: PeerId, user: PeerId, action: &tl::enums::SendMessageAction) -> Option<TgTyping> {
+        let action = convert::typing_action(action)?;
+        let chats = self.chats.read().expect("chats lock");
+        if !chats.list.contains_key(&chat) || chats.me == Some(user) {
+            return None;
+        }
+        let name = chats.list.get(&user).map(|e| e.chat.name.clone());
+        Some(TgTyping { chat_id: chat_id(chat), user_id: chat_id(user), name, action })
+    }
+
     async fn on_update(self: &Arc<Self>, client: &Client, app: &AppHandle, update: Update) {
         let event = match update {
             Update::NewMessage(m) => {
@@ -404,6 +431,27 @@ impl Telegram {
                     let tl::enums::DialogPeer::Peer(p) = &u.peer else { return };
                     let unread = u.unread;
                     TgEvent { chat: self.patch(PeerId::from(p.peer.clone()), |e| e.chat.marked_unread = unread), ..Default::default() }
+                }
+                tl::enums::Update::UserTyping(u) => {
+                    let Some(id) = PeerId::user(u.user_id) else { return };
+                    let Some(t) = self.typing(id, id, &u.action) else { return };
+                    TgEvent { typing: Some(t), ..Default::default() }
+                }
+                tl::enums::Update::ChatUserTyping(u) => {
+                    let Some(id) = PeerId::chat(u.chat_id) else { return };
+                    let Some(t) = self.typing(id, PeerId::from(&u.from_id), &u.action) else { return };
+                    TgEvent { typing: Some(t), ..Default::default() }
+                }
+                tl::enums::Update::ChannelUserTyping(u) => {
+                    let Some(id) = PeerId::channel(u.channel_id) else { return };
+                    let Some(t) = self.typing(id, PeerId::from(&u.from_id), &u.action) else { return };
+                    TgEvent { typing: Some(t), ..Default::default() }
+                }
+                tl::enums::Update::UserStatus(u) => {
+                    let p = convert::presence(&u.status);
+                    let Some(id) = PeerId::user(u.user_id) else { return };
+                    let Some(chat) = self.patch(id, |e| e.chat.presence = p) else { return };
+                    TgEvent { chat: Some(chat), ..Default::default() }
                 }
                 tl::enums::Update::NotifySettings(n) => {
                     let tl::enums::NotifyPeer::Peer(p) = &n.peer else { return };
@@ -916,6 +964,20 @@ pub async fn telegram_delete_messages(app: AppHandle, tg: Tg<'_>, chat_id: Strin
         let latest = client.iter_messages(peer).limit(1).next().await.ok().flatten();
         let chat = tg.patch(id, |e| e.chat.last = latest.as_ref().map(|m| convert::preview(m, group)));
         let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
+    }
+    Ok(())
+}
+
+/// Shows you online (or not) to others. Telegram only sends other people's online status to clients
+/// that are online, so Relay goes online while its window is focused, like Telegram's own apps.
+/// Coming online also re-reads the chat list, whose statuses went stale while offline.
+#[tauri::command]
+pub async fn telegram_set_online(app: AppHandle, tg: Tg<'_>, online: bool) -> Result<()> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    client.invoke(&tl::functions::account::UpdateStatus { offline: !online }).await.map_err(tg_error)?;
+    let was = tg.online.swap(online, std::sync::atomic::Ordering::Relaxed);
+    if online && !was && tg.load_chats(&client).await.is_ok() {
+        let _ = app.emit(TELEGRAM_UPDATED, TgEvent { reload: true, ..Default::default() });
     }
     Ok(())
 }

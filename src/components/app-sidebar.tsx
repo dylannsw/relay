@@ -3,7 +3,6 @@ import {
   IconAlertCircle,
   IconBriefcase,
   IconBriefcase2,
-  IconCalendar,
   IconFolder,
   IconBrandTelegram,
   IconMilitaryRank,
@@ -20,6 +19,7 @@ import {
   IconUser,
   type TablerIcon,
 } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -294,7 +294,7 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
           onClick={() => onView({ kind: "calendar" })}
           className="[--sidebar-icon-active:var(--home)]"
         >
-          <IconCalendar />
+          <CalendarIcon />
           <span>Calendar</span>
         </SidebarMenuButton>
         {today > 0 && <SidebarMenuBadge>{today}</SidebarMenuBadge>}

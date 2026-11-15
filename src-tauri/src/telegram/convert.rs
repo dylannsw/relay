@@ -60,6 +60,8 @@ pub struct TgChat {
     pub has_photo: bool,
     /// Your messages up to this id have been read by the other side.
     pub read_outbox: i32,
+    /// People only: online or last seen; none when unknown.
+    pub presence: Option<TgPresence>,
     pub last: Option<TgPreview>,
     /// The folders it's in.
     pub folders: Vec<i32>,
@@ -176,6 +178,54 @@ fn has_photo(peer: &Peer) -> bool {
     }
 }
 
+/// A person's online status.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgPresence {
+    /// "online", "offline", "recently", "week" or "month" (the last three when they hide the exact time).
+    pub kind: &'static str,
+    /// Unix seconds: when "online" runs out, or when "offline" was last seen.
+    pub at: Option<i64>,
+}
+
+pub fn presence(status: &tl::enums::UserStatus) -> Option<TgPresence> {
+    use tl::enums::UserStatus as S;
+    let (kind, at) = match status {
+        S::Online(o) => ("online", Some(i64::from(o.expires))),
+        S::Offline(o) => ("offline", Some(i64::from(o.was_online))),
+        S::Recently(_) => ("recently", None),
+        S::LastWeek(_) => ("week", None),
+        S::LastMonth(_) => ("month", None),
+        S::Empty => return None,
+    };
+    Some(TgPresence { kind, at })
+}
+
+/// What someone is doing, as the chat header says it: `Some(None)` when they stopped, `None` to ignore.
+pub fn typing_action(action: &tl::enums::SendMessageAction) -> Option<Option<&'static str>> {
+    use tl::enums::SendMessageAction as A;
+    Some(Some(match action {
+        A::SendMessageTypingAction => "typing",
+        A::SendMessageCancelAction => return Some(None),
+        A::SendMessageRecordAudioAction => "recording a voice message",
+        A::SendMessageRecordRoundAction => "recording a video message",
+        A::SendMessageRecordVideoAction => "recording a video",
+        A::SendMessageUploadPhotoAction(_) => "sending a photo",
+        A::SendMessageUploadVideoAction(_) | A::SendMessageUploadRoundAction(_) => "sending a video",
+        A::SendMessageUploadAudioAction(_) => "sending a voice message",
+        A::SendMessageUploadDocumentAction(_) => "sending a file",
+        A::SendMessageChooseStickerAction => "choosing a sticker",
+        _ => return None,
+    }))
+}
+
+fn peer_presence(peer: &Peer) -> Option<TgPresence> {
+    match peer {
+        Peer::User(u) if !u.is_self() && !u.is_bot() => presence(u.status()),
+        _ => None,
+    }
+}
+
 fn now_secs() -> i64 {
     chrono::Utc::now().timestamp()
 }
@@ -216,6 +266,7 @@ pub fn chat_from_dialog(dialog: &grammers_client::peer::Dialog) -> Option<ChatEn
             archived: d.folder_id == Some(1),
             has_photo: has_photo(&peer),
             read_outbox: d.read_outbox_max_id,
+            presence: peer_presence(&peer),
             last,
             folders: Vec::new(),
         },

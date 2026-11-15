@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconCalendarEvent, IconClock } from "@tabler/icons-react";
+import { IconClock } from "@tabler/icons-react";
+import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -22,7 +23,7 @@ export function DateField({ value, onChange, label, className }: {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" aria-label={label} className={cn("min-w-0 justify-start font-normal", className)}>
-          <IconCalendarEvent className="text-muted-foreground" />
+          <CalendarIcon className="text-muted-foreground" />
           <span className="truncate">
             {date ? date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "Pick a date"}
           </span>

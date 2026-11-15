@@ -1,10 +1,11 @@
 import { cn } from "@/lib/utils"
+import { wrapLabels } from "@/lib/labels"
 
 /** The small rounded square a key sits in. The sidebar's counts wear the same one. */
 const keyChip =
   "inline-flex h-5 min-w-5 items-center justify-center rounded-sm border px-1 text-xs font-medium text-muted-foreground select-none"
 
-function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
+function Kbd({ className, children, ...props }: React.ComponentProps<"kbd">) {
   return (
     <kbd
       data-slot="kbd"
@@ -14,7 +15,9 @@ function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
         className
       )}
       {...props}
-    />
+    >
+      {wrapLabels(children)}
+    </kbd>
   )
 }
 

@@ -2,6 +2,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 import { Slot } from "radix-ui"
+import { wrapLabels } from "@/lib/labels"
 
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,opacity,translate] outline-none select-none focus-visible:border-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
@@ -34,19 +35,19 @@ const buttonVariants = cva(
       // are set by Button from what it renders).
       size: {
         default:
-          "h-9 gap-2 px-3.5 data-icon-end:pr-2.5 data-icon-start:pl-2.5",
-        xs: "h-7 gap-1.5 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg data-icon-end:pr-1.5 data-icon-start:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        sm: "h-8 gap-1.5 rounded-[min(var(--radius-md),12px)] px-3 text-meta in-data-[slot=button-group]:rounded-lg data-icon-end:pr-2 data-icon-start:pl-2 [&_svg:not([class*='size-'])]:size-4",
-        lg: "h-10 gap-2 px-4 data-icon-end:pr-3 data-icon-start:pl-3",
-        icon: "size-9",
+          "h-9.5 gap-1.5 px-3.5 data-icon-end:pr-2.5 data-icon-start:pl-2.5",
+        xs: "h-7.5 gap-1 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg data-icon-end:pr-1.5 data-icon-start:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: "h-8.5 gap-1 rounded-[min(var(--radius-md),12px)] px-3 text-meta in-data-[slot=button-group]:rounded-lg data-icon-end:pr-2 data-icon-start:pl-2 [&_svg:not([class*='size-'])]:size-4",
+        lg: "h-10.5 gap-1.5 px-4 data-icon-end:pr-3 data-icon-start:pl-3",
+        icon: "size-9.5",
         // 24px, for a clear or remove button tucked inside a field or chip.
         "icon-2xs":
           "size-6 rounded-md [&_svg:not([class*='size-'])]:size-4",
         "icon-xs":
-          "size-7 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
+          "size-7.5 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
         "icon-sm":
-          "size-8 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-10",
+          "size-8.5 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
+        "icon-lg": "size-10.5",
       },
     },
     defaultVariants: {
@@ -90,6 +91,7 @@ function Button({
   size = "default",
   asChild = false,
   ref,
+  children,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
@@ -121,7 +123,10 @@ function Button({
       data-icon={SMALL_DEFAULT_ICON.test(classes) ? "sm" : undefined}
       className={classes}
       {...props}
-    />
+    >
+      {/* asChild hands its one child element to Slot, which must receive it unwrapped. */}
+      {asChild ? children : wrapLabels(children)}
+    </Comp>
   )
 }
 

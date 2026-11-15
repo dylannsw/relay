@@ -102,7 +102,7 @@ export function ComposeDialog({ draft, accounts, onChange, onSend, onClose }: Pr
           }}
           onClose={requestClose}
           icon={<IconEdit />}
-          title={<DialogTitle className="truncate text-base font-semibold">{TITLES[draft.mode]}</DialogTitle>}
+          title={<DialogTitle data-label className="truncate text-base font-semibold">{TITLES[draft.mode]}</DialogTitle>}
           footer={
             <>
               <Tooltip>

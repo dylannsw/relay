@@ -4,8 +4,6 @@ import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import {
   IconArrowBackUp,
-  IconCalendar,
-  IconCalendarOff,
   IconCheck,
   IconChecklist,
   IconFolderOpen,
@@ -29,6 +27,7 @@ import {
   IconTrash,
   IconUsers,
 } from "@tabler/icons-react";
+import { CalendarIcon, CalendarOffIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -159,7 +158,7 @@ const SECTIONS = [
   { id: "accounts", group: "Accounts", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
   { id: "home", group: "Features", label: "Home", icon: IconSmartHome, note: "Home settings save automatically." },
   { id: "mail", group: "Features", label: "Mail", icon: IconMail, note: "Mail settings save automatically." },
-  { id: "calendar", group: "Features", label: "Calendar", icon: IconCalendar, note: "Calendar settings save automatically." },
+  { id: "calendar", group: "Features", label: "Calendar", icon: CalendarIcon, note: "Calendar settings save automatically." },
   { id: "tasks", group: "Features", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
   { id: "appearance", group: "Relay", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
   { id: "shortcuts", group: "Relay", label: "Shortcuts", icon: IconKeyboard, note: "Shortcut changes save automatically." },
@@ -180,7 +179,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
         onEscapeKeyDown={(e) => isRecordingShortcut() && e.preventDefault()}
         onClose={onClose}
         icon={<IconSettings />}
-        title={<DialogTitle className="truncate text-base font-semibold">Settings</DialogTitle>}
+        title={<DialogTitle data-label className="truncate text-base font-semibold">Settings</DialogTitle>}
         footer={
           <>
             <span className="truncate px-1.5 text-xs text-muted-foreground">
@@ -210,7 +209,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
                 )}
                 <TabsTrigger
                   value={x.id}
-                  className="h-9 flex-none justify-start gap-2.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-tint-hover hover:text-foreground data-active:bg-tint-pressed data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-tint-pressed"
+                  className="h-9 flex-none justify-start gap-1.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-tint-hover hover:text-foreground data-active:bg-tint-pressed data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-tint-pressed"
                 >
                   <x.icon />
                   {x.label}
@@ -822,7 +821,7 @@ function AccountCalendars({ account: a, calendars, onAccountsChanged }: {
       </div>
       {!a.calendarAccess ? (
         <div className="flex items-center gap-4 rounded-lg border border-dashed px-4 py-3.5">
-          <IconCalendarOff className="size-5 shrink-0 text-muted-foreground" />
+          <CalendarOffIcon className="size-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1 text-sm">
             <div className="font-medium">Calendar access needed</div>
             <div className="text-muted-foreground">

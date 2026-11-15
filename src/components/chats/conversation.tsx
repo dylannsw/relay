@@ -46,7 +46,7 @@ import {
 import { cn } from "@/lib/utils";
 import { quick, smooth } from "@/lib/motion";
 import { api, errorText } from "@/api";
-import { clockTime } from "@/format";
+import { clockTime, relativeTime } from "@/format";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -58,6 +58,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
@@ -66,7 +67,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
-import type { TgChat, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
+import { typingText, useTyping } from "@/telegram/typing";
+import type { TgChat, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
 import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
 import { MessageText } from "./message-text";
 import { InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
@@ -178,6 +180,56 @@ function settle(list: Shown[], tempId: number, m: TgMessage): Shown[] {
   const next = [...list];
   next[i] = m;
   return next;
+}
+
+/** Three dots pulsing in turn, before "is typing…". */
+function TypingDots() {
+  return (
+    <span className="flex shrink-0 items-center gap-0.5 text-primary" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="size-1 rounded-full bg-current"
+          animate={{ opacity: [0.3, 1, 0.3] }}
+          transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2, ease: "easeInOut" }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Beside a person's name: green "Online", or a grey "Last seen …" chip. */
+function PresenceChip({ presence }: { presence: TgPresence | null }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    setNow(Date.now() / 1000);
+    if (!presence) return;
+    // Online: flip to "last seen" when Telegram's online window runs out; otherwise keep "5 min ago" fresh.
+    const left = presence.kind === "online" && presence.at ? presence.at * 1000 - Date.now() : 0;
+    const t = left > 0
+      ? window.setTimeout(() => setNow(Date.now() / 1000), left + 50)
+      : window.setInterval(() => setNow(Date.now() / 1000), 60_000);
+    return () => { window.clearTimeout(t); window.clearInterval(t); };
+  }, [presence]);
+  if (!presence) return null;
+  const online = presence.kind === "online" && (presence.at ?? 0) > now;
+  const label = online
+    ? "Online"
+    : presence.kind === "recently" ? "Last seen recently"
+    : presence.kind === "week" ? "Last seen within a week"
+    : presence.kind === "month" ? "Last seen within a month"
+    : presence.at ? `Last seen ${relativeTime(presence.at * 1000)}`
+    : null;
+  if (!label) return null;
+  return (
+    <Badge
+      variant="tint"
+      style={{ "--chip": online ? "var(--chip-green)" : "var(--chip-gray)" } as CSSProperties}
+    >
+      {online && <span className="size-1.5 rounded-full bg-current" aria-hidden />}
+      {label}
+    </Badge>
+  );
 }
 
 export function Conversation({ chat }: { chat: TgChat }) {
@@ -567,6 +619,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
 
   const group = isGroup(chat);
   const sub = subtitle(chat);
+  const typing = typingText(useTyping(chat.id), chat.kind === "user" || chat.kind === "bot");
   // Service lines ("Alex joined") don't count; your unsent or failed message does.
   const lastReal = messages?.filter((x) => !x.service).at(-1);
   const lastFromYou = !!lastReal?.outgoing;
@@ -580,6 +633,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
           <div className="flex items-center gap-1.5">
             <h2 className="truncate text-base leading-tight font-bold">{chat.name}</h2>
             {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
+            <PresenceChip presence={chat.presence} />
           </div>
           {sub && <p className="truncate text-xs text-muted-foreground">{sub}</p>}
         </div>
@@ -644,6 +698,12 @@ export function Conversation({ chat }: { chat: TgChat }) {
                   </div>
                 );
               })}
+              {typing && (
+                <p className="mt-1.5 flex min-w-0 items-center gap-1.5 self-start px-1 text-xs text-muted-foreground italic" aria-live="polite">
+                  <TypingDots />
+                  <span className="truncate">{typing}…</span>
+                </p>
+              )}
             </div>
           )}
         </div>

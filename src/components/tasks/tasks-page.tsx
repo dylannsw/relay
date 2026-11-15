@@ -23,7 +23,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
@@ -37,8 +36,6 @@ import {
 } from "@/components/ui/context-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ShortcutKbd } from "@/components/shortcut-kbd";
 import { matchShortcut } from "@/shortcuts";
 import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { errorText } from "@/api";
@@ -51,6 +48,7 @@ import { loadBoardOrder, saveBoardOrder, sortByOrder, type BoardOrder } from "@/
 import { TaskDialog } from "./task-dialog";
 import { TasksSetup } from "./tasks-setup";
 import { PageHeader, PageTitle } from "@/components/page-header";
+import { SelectionBar, SelectionBarAction } from "@/components/selection-bar";
 import { listCard, listCardSelected } from "@/components/list-card";
 
 /** A pause after ticking before the task is archived, so a misclick can be unticked (as in Tick). */
@@ -466,10 +464,6 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     endDrag.current = cancel;
   };
 
-  const pickedCount = useRef(0);
-  if (picked.length > 0) pickedCount.current = picked.length;
-  const anyPicked = picked.length > 0;
-
   const chip = (section: string) => sectionChip(section, t.sections, t.settings.defaultSection);
   /** A section's chip label: the default section ("no category") in Title Case, others as written. */
   const label = (section: string) =>
@@ -479,36 +473,18 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     <div ref={page} className="relative flex h-full flex-col overflow-hidden">
       <PageHeader>
         <PageTitle>Tasks</PageTitle>
-        {/* Always mounted so it can fade in and out; the count holds its last value while fading. It
-            springs in from its right edge with a light bounce (like the command bar's task-mode values)
-            and fades straight out; a spring picks up from wherever it is, so quick reselects don't
-            restart it. Under reduced motion (MotionConfig) only the fade is left. */}
-        <motion.div
-          inert={!anyPicked}
-          initial={false}
-          animate={anyPicked ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
-          // From 0.9 this peaks about 1% past full size: a bounce you feel, without the text going soft.
-          transition={
-            anyPicked
-              ? { type: "spring", duration: 0.3, bounce: 0.4, opacity: { duration: 0.15, ease: "easeOut" } }
-              : { duration: 0.12, ease: "easeOut" }
-          }
-          className={cn("flex origin-right items-center gap-3 text-sm text-muted-foreground", !anyPicked && "pointer-events-none")}
-        >
-            <span className="tabular-nums">{pickedCount.current} selected</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" className="shrink-0" onClick={() => copyForClaude()}>
-                  <IconBrandOpenai />
-                  Copy as Prompt
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Copy selected tasks as a prompt <ShortcutKbd id="copyTasks" />
-              </TooltipContent>
-            </Tooltip>
-        </motion.div>
       </PageHeader>
+      {/* Out of the way while cards are held, so it never covers the Done zone. */}
+      <SelectionBar open={picked.length > 0 && !held} label={`${picked.length} selected`} onClear={() => setSelected(new Set())}>
+        <SelectionBarAction
+          label="Copy as Prompt"
+          text="Copy as Prompt"
+          icon={<IconBrandOpenai />}
+          hint="Copy selected tasks as a prompt"
+          shortcut="copyTasks"
+          onClick={() => copyForClaude()}
+        />
+      </SelectionBar>
 
       <div
         className="relative grid min-h-0 flex-1 grid-cols-3 gap-3 p-3"
@@ -542,7 +518,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
             >
               <h2 className="flex h-11 shrink-0 items-center gap-2 px-3.5 text-sm font-semibold">
                 <StatusIcon status={status} className="size-4" />
-                {STATUS_META[status].label}
+                <span>{STATUS_META[status].label}</span>
                 <span className="font-normal text-muted-foreground">{cards.length}</span>
               </h2>
               {/* Radix wraps the content in a display:table box that grows to fit it; block keeps cards at the

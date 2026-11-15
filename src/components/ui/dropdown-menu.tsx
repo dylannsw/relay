@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { wrapLabels } from "@/lib/labels"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 import { IconCheck, IconChevronRight } from "@tabler/icons-react"
 
@@ -61,6 +62,7 @@ function DropdownMenuItem({
   className,
   inset,
   variant = "default",
+  children,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean
@@ -76,7 +78,9 @@ function DropdownMenuItem({
         className
       )}
       {...props}
-    />
+    >
+      {props.asChild ? children : wrapLabels(children)}
+    </DropdownMenuPrimitive.Item>
   )
 }
 
@@ -109,7 +113,7 @@ function DropdownMenuCheckboxItem({
           />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
-      {children}
+      {props.asChild ? children : wrapLabels(children)}
     </DropdownMenuPrimitive.CheckboxItem>
   )
 }
@@ -152,7 +156,7 @@ function DropdownMenuRadioItem({
           />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
-      {children}
+      {props.asChild ? children : wrapLabels(children)}
     </DropdownMenuPrimitive.RadioItem>
   )
 }
@@ -230,7 +234,7 @@ function DropdownMenuSubTrigger({
       )}
       {...props}
     >
-      {children}
+      {props.asChild ? children : wrapLabels(children)}
       <IconChevronRight className="ml-auto" />
     </DropdownMenuPrimitive.SubTrigger>
   )
