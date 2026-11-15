@@ -49,7 +49,7 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
           <span className="min-w-0 truncate text-title font-semibold">{chat.name}</span>
           {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
           {/* Pin and time share the top row's right end. */}
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-meta text-muted-foreground tabular-nums">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-meta text-muted-foreground">
             {chat.pinned && <IconPin className="size-4" aria-label="Pinned" />}
             {last && listDate(last.date)}
           </span>
@@ -74,7 +74,7 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
                   exit={{ scale: 0.6, opacity: 0 }}
                   transition={quick}
                   className={cn(
-                    "min-w-5 rounded-full px-1.5 text-center text-xs leading-5 font-semibold tabular-nums",
+                    "min-w-5 rounded-full px-1.5 text-center text-xs leading-5 font-semibold",
                     // Muted chats count in grey, as in Telegram.
                     chat.muted ? "bg-muted-foreground/25 text-foreground/80" : "bg-primary text-primary-foreground",
                   )}

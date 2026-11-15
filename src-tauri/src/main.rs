@@ -3,6 +3,7 @@
 
 mod calendar;
 mod calendar_edit;
+mod clipboard;
 mod colors;
 mod commands;
 mod config;
@@ -87,6 +88,7 @@ fn main() {
             commands::remove_account,
             commands::update_account,
             commands::list_messages,
+            commands::count_messages,
             commands::list_sender_groups,
             commands::get_message,
             commands::download_attachment,
@@ -127,6 +129,7 @@ fn main() {
             telegram::telegram_send,
             telegram::telegram_mark_read,
             telegram::telegram_react,
+            telegram::telegram_forward,
             telegram::telegram_edit,
             telegram::telegram_delete_messages,
             telegram::telegram_archive,
@@ -138,6 +141,8 @@ fn main() {
             telegram::telegram_thumb,
             telegram::telegram_save_media,
             telegram::telegram_send_file,
+            clipboard::clipboard_file_paths,
+            clipboard::stage_pasted_file,
             telegram::telegram_send_voice,
             telegram::stickers::telegram_sticker_sets,
             telegram::stickers::telegram_sticker_file,

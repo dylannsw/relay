@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring, useVelocity } from "motion/react";
-import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat } from "@tabler/icons-react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, LayoutGroup, animate, motion, useMotionValue, useSpring, useVelocity, type MotionValue } from "motion/react";
+import { IconCalendar, IconChevronLeft, IconChevronRight, IconMapPin, IconRepeat, IconTrash } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { ease, glide, smooth, tilt, trail } from "@/lib/motion";
@@ -15,7 +15,7 @@ import { useCalendars } from "@/calendar/store";
 import { RANGE_DAYS, useCalendarEvents } from "@/calendar/events";
 import { addDays, daysBetween, isAllDayLike, laneBars, placeDay, startOfDay, type Placed } from "@/calendar/layout";
 import { toast } from "sonner";
-import { deleteEvent, saveChanges, shiftTimes, withTimes } from "@/calendar/edit";
+import { deleteEvent, deleteMany, saveChanges, saveTimesMany, shiftTimes, withTimes } from "@/calendar/edit";
 import type { CalendarEvent, CalendarInfo, EventTimes } from "@/types";
 import { EventMenu } from "./event-menu";
 import { EventPanel } from "./event-panel";
@@ -48,19 +48,60 @@ type Drag =
       days: number;
       mins: number;
       moved: boolean;
+      /** The other picked events, which move along with this one. */
+      others: CalendarEvent[];
     }
   | { kind: "resize"; event: CalendarEvent; startY: number; mins: number; moved: boolean }
-  | { kind: "bar"; event: CalendarEvent; startX: number; days: number; moved: boolean };
+  | { kind: "bar"; event: CalendarEvent; startX: number; days: number; moved: boolean; others: CalendarEvent[] };
+
+/** No events picked. */
+const NONE_PICKED: ReadonlySet<string> = new Set();
+
+/** Where the other picked events go when the held one moves: by the same days and minutes. */
+function groupMoves(d: Extract<Drag, { kind: "move" | "bar" }>): { event: CalendarEvent; times: EventTimes }[] {
+  const mins = d.kind === "move" ? d.mins : 0;
+  return d.others.map((o) => ({ event: o, times: shiftTimes(o, d.days, mins) }));
+}
 
 /** A dropped card gliding into the slot it was dropped on. */
 interface Landing {
   event: CalendarEvent;
   label: string;
-  x: number;
-  y: number;
   w: number;
   h: number;
 }
+
+/**
+ * Whether two steps of a drag draw the same grid: the same snapped slot, so the page needn't
+ * re-render. (The lifted card follows the pointer through motion values, not renders.)
+ */
+function sameSlot(a: Drag, b: Drag): boolean {
+  if (a.kind !== b.kind || a.moved !== b.moved) return false;
+  switch (b.kind) {
+    case "create": {
+      const p = a as typeof b;
+      return p.day === b.day && p.from === b.from && p.to === b.to;
+    }
+    case "move": {
+      const p = a as typeof b;
+      return p.days === b.days && p.mins === b.mins;
+    }
+    case "resize":
+      return (a as typeof b).mins === b.mins;
+    case "bar":
+      return (a as typeof b).days === b.days;
+  }
+}
+
+/** A function that keeps its identity across renders but always calls the latest `fn`. */
+function useStable<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args: A) => ref.current(...args), []);
+}
+
+const NO_EVENTS: CalendarEvent[] = [];
+const NOTHING_PLACED: Placed[] = [];
 
 /** Where an event is being dragged to, as new times. */
 function dragTimes(d: Drag): EventTimes | null {
@@ -75,6 +116,11 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 
 /** A faint outline in the calendar's colour around event cards (the selected one's shadow replaces it). */
 const CARD_EDGE = "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--event-bar)_22%,transparent)]";
+/** The same edge as a box-shadow value, for the lifted copy (which sets its shadows inline). */
+const CARD_EDGE_SHADOW = "inset 0 0 0 1px color-mix(in srgb, var(--event-bar) 22%, transparent)";
+/** Under a card held off the grid (Tailwind's shadow-2xl), and the same shape faded out. */
+const HELD_SHADOW = "0 25px 50px -12px rgb(0 0 0 / 0.25)";
+const NO_SHADOW = "0 2px 8px rgb(0 0 0 / 0)";
 const editable = (e: CalendarEvent) => e.canEdit && !!e.remoteId && e.id !== DRAFT_ID;
 
 /** Height of one hour: 48px to start, Ctrl+scroll zooms between these. */
@@ -158,12 +204,21 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
 
   /** A new event being made; its details are in the panel. */
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** The draft's ghost was made with a click (not drawn), so it animates in. */
+  const [ghostEnters, setGhostEnters] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [landing, setLanding] = useState<Landing | null>(null);
+  /** The lifted card's top-left while moving an event, straight from the pointer. */
+  const liftX = useMotionValue(0);
+  const liftY = useMotionValue(0);
+  /** Events picked with Ctrl+click, to move or delete together. (The open one is `selected`.) */
+  const [picked, setPicked] = useState<ReadonlySet<string>>(NONE_PICKED);
+  const pickedEvents = useMemo(() => ev.events.filter((e) => picked.has(e.id)), [ev.events, picked]);
   // Current values for pointer handlers that outlive a render.
-  const live = useRef({ drag: null as Drag | null, selected, draft, headH: DAY_HEAD, hour, colW });
+  const live = useRef({ drag: null as Drag | null, selected, draft, picked: pickedEvents, headH: DAY_HEAD, hour, colW });
   live.current.selected = selected;
   live.current.draft = draft;
+  live.current.picked = pickedEvents;
   live.current.hour = hour;
   live.current.colW = colW;
   /** Set when a drag ends on an event, so the click that follows doesn't also select it. */
@@ -172,6 +227,37 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   const select = (id: string | null) => {
     setSelected(id);
     if (id) setDraft(null);
+  };
+
+  /** Ctrl+click: add the event to the picked ones, or take it out. The open event joins them. */
+  const togglePick = (id: string) => {
+    setPicked((cur) => {
+      const next = new Set(cur);
+      const open = ev.events.find((e) => e.id === selected);
+      if (next.size === 0 && open && open.id !== id) next.add(open.id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setSelected(null);
+    setDraft(null);
+  };
+
+  /** The header's count, held while it fades out. */
+  const pickedCount = useRef(0);
+  /** Deletes the picked events that are yours to change; the rest (invitations, shared calendars) stay. */
+  const deletePicked = () => {
+    const mine = pickedEvents.filter(editable);
+    const theirs = pickedEvents.length - mine.length;
+    if (mine.length === 0) {
+      toast.info(theirs === 1 ? "This event isn't yours to delete." : "None of these events are yours to delete.");
+      return;
+    }
+    void deleteMany(mine).then((ok) => {
+      if (!ok) return;
+      setPicked(NONE_PICKED);
+      if (theirs) toast.info(`${theirs} ${theirs === 1 ? "event wasn't" : "events weren't"} yours to delete, so ${theirs === 1 ? "it was" : "they were"} left.`);
+    });
   };
 
   // ----- scrolling -----
@@ -374,6 +460,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       else if (["4", "5", "6", "7"].includes(e.key)) chooseDays(Number(e.key));
       else if (e.key === "Escape" && draft) setDraft(null);
       else if (e.key === "Escape" && selected) setSelected(null);
+      else if (e.key === "Escape" && pickedEvents.length) setPicked(NONE_PICKED);
+      else if ((e.key === "Delete" || e.key === "Backspace") && pickedEvents.length) deletePicked();
       else if ((e.key === "Delete" || e.key === "Backspace") && selectedEvent && editable(selectedEvent)) {
         void deleteEvent(selectedEvent).then((ok) => ok && setSelected(null));
       } else return;
@@ -381,7 +469,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goTo, todayIdx, days, selected, selectedEvent, draft]);
+  }, [goTo, todayIdx, days, selected, selectedEvent, draft, pickedEvents]);
 
   // ----- dragging: create on empty space, move events, resize from the bottom edge -----
 
@@ -446,7 +534,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
 
   const finish = (d: Drag) => {
     if (d.kind === "create") {
-      // A click on empty space while something is open just closes it.
+      setPicked(NONE_PICKED);
+      // A click on empty space while something is open (or picked) just closes it.
       if (!d.moved && d.dismiss) {
         setSelected(null);
         setDraft(null);
@@ -459,7 +548,9 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       const day = addDays(origin, d.day);
       const from = d.moved ? d.from : d.anchor;
       const to = d.moved ? d.to : d.anchor + 60;
-      // Straight into the panel, where the name field has focus.
+      // Straight into the panel, where the name field has focus. A click's ghost unrolls into
+      // place; a drawn one is already there under the pointer.
+      setGhostEnters(!d.moved);
       setSelected(null);
       setDraft({
         calendarId: defaultCal.id,
@@ -474,19 +565,41 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     suppressClick.current = true;
     const t = dragTimes(d);
     if (!t || (t.start === d.event.start && t.end === d.event.end && t.startDate === d.event.startDate)) return;
+    // The new event's ghost: moving it just changes the times in the open panel.
+    if (d.event.id === DRAFT_ID) {
+      setDraft((cur) => (cur ? { ...cur, times: t } : cur));
+      return;
+    }
+    // Several picked events move together, by the same days and minutes.
+    if ((d.kind === "move" || d.kind === "bar") && d.others.length) {
+      void saveTimesMany([{ event: d.event, times: t }, ...groupMoves(d)]);
+      return;
+    }
     void saveChanges(d.event, { times: t }, withTimes(t));
   };
 
   const beginDrag = (d: Drag) => {
     live.current.drag = d;
     setDrag(d);
+    // A ghost being drawn follows the pointer, and moving one to another day remounts it there;
+    // neither should unroll. (A click's ghost is turned back on when the press ends.)
+    if (d.kind === "create" || d.event.id === DRAFT_ID) setGhostEnters(false);
+    if (d.kind === "move") {
+      liftX.jump(d.x - d.grabX);
+      liftY.jump(d.y - d.grabY);
+    }
     const move = (pe: PointerEvent) => {
       const cur = live.current.drag;
       if (!cur) return;
       const next = step(cur, pe);
       live.current.drag = next;
-      setDrag(next);
-      if (next.kind === "move" && next.moved) document.body.style.cursor = "grabbing";
+      if (next.kind === "move") {
+        liftX.set(next.x - next.grabX);
+        liftY.set(next.y - next.grabY);
+        if (next.moved && !cur.moved) document.body.style.cursor = "grabbing";
+      }
+      // Only a new slot redraws the grid; in between, the lifted card moves on its own.
+      if (!sameSlot(cur, next)) setDrag(next);
     };
     const end = (pe: PointerEvent) => {
       window.removeEventListener("pointermove", move);
@@ -497,7 +610,9 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       live.current.drag = null;
       // A moved card glides from where it was let go into its new slot.
       if (cur?.kind === "move" && cur.moved && pe.type === "pointerup") {
-        setLanding({ event: cur.event, label: landingLabel(cur), x: cur.x - cur.grabX, y: cur.y - cur.grabY, w: cur.w, h: cur.h });
+        // At its new times, so the copy reads exactly as the card it hands over to.
+        const t = dragTimes(cur);
+        setLanding({ event: t ? { ...cur.event, ...withTimes(t) } : cur.event, label: landingLabel(cur), w: cur.w, h: cur.h });
       }
       setDrag(null);
       if (cur && pe.type === "pointerup") finish(cur);
@@ -508,6 +623,9 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   };
 
   const onGridPointerDown = (e: React.PointerEvent) => {
+    // React passes presses up through portals, so a press in an event's right-click menu (or a
+    // dialog it opened) arrives here too; only presses on the grid itself draw a new event.
+    if (!e.currentTarget.contains(e.target as Node)) return;
     if (e.button !== 0 || (e.target as HTMLElement).closest("button, [data-draft]")) return;
     const p = pointAt(e.clientX, e.clientY);
     if (!p) return;
@@ -521,12 +639,19 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       to: anchorMin + SNAP,
       startY: e.clientY,
       moved: false,
-      dismiss: !!(live.current.selected || live.current.draft),
+      dismiss: !!(live.current.selected || live.current.draft || live.current.picked.length),
     });
   };
 
+  /** The other picked events that go along when `event` is dragged (none if it isn't picked). */
+  const companions = (event: CalendarEvent) => {
+    const group = live.current.picked;
+    if (!group.some((e) => e.id === event.id)) return [];
+    return group.filter((e) => e.id !== event.id && editable(e));
+  };
+
   const onEventPointerDown = (pe: React.PointerEvent, event: CalendarEvent, mode: "move" | "resize" | "bar") => {
-    if (pe.button !== 0 || !editable(event)) return;
+    if (pe.button !== 0 || !(editable(event) || event.id === DRAFT_ID)) return;
     pe.preventDefault();
     if (mode === "resize") pe.stopPropagation();
     if (mode === "move") {
@@ -545,21 +670,39 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
         days: 0,
         mins: 0,
         moved: false,
+        others: companions(event),
       });
     } else if (mode === "resize") beginDrag({ kind: "resize", event, startY: pe.clientY, mins: 0, moved: false });
-    else beginDrag({ kind: "bar", event, startX: pe.clientX, days: 0, moved: false });
+    else beginDrag({ kind: "bar", event, startX: pe.clientX, days: 0, moved: false, others: companions(event) });
   };
 
-  const onEventClick = (id: string) => {
+  /** A click opens the event; Ctrl+click (⌘ on a Mac) picks it, to move or delete with others. */
+  const onEventClick = (id: string, additive: boolean) => {
     if (suppressClick.current) {
       suppressClick.current = false;
       return;
     }
-    if (id !== DRAFT_ID) select(id);
+    if (id === DRAFT_ID) return;
+    // Any event can be picked; moving and deleting then act on the ones that are yours to change.
+    if (additive) {
+      togglePick(id);
+      return;
+    }
+    setPicked(NONE_PICKED);
+    select(id);
   };
 
-  /** A deleted event's panel closes if it was open. */
-  const onEventDeleted = (id: string) => setSelected((s) => (s === id ? null : s));
+  /** A deleted event's panel closes if it was open, and a deleted pick (or picked group) is let go. */
+  const onEventDeleted = (id: string) => {
+    setSelected((s) => (s === id ? null : s));
+    setPicked((p) => (p.has(id) ? NONE_PICKED : p));
+  };
+
+  // The day columns are memoised, so what they're handed keeps its identity across renders.
+  const stableClick = useStable(onEventClick);
+  const stableSelect = useStable(select);
+  const stableDeleted = useStable(onEventDeleted);
+  const stablePointerDown = useStable(onEventPointerDown);
 
   // What the grid draws: the events, with one being dragged at its new place, plus a new
   // event's ghost (from the open draft, or being drawn).
@@ -567,9 +710,19 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     let list = ev.events;
     if (drag && drag.kind !== "create" && drag.moved) {
       const t = dragTimes(drag);
-      if (t) list = list.map((e) => (e.id === drag.event.id ? { ...e, ...withTimes(t) } : e));
+      const moved = new Map<string, EventTimes>(t ? [[drag.event.id, t]] : []);
+      // Picked events going along with the held one are drawn at their new places too.
+      if (drag.kind === "move" || drag.kind === "bar") for (const m of groupMoves(drag)) moved.set(m.event.id, m.times);
+      list = list.map((e) => {
+        const to = moved.get(e.id);
+        return to ? { ...e, ...withTimes(to) } : e;
+      });
     }
     let ghost: EventTimes | null = draft && !draft.saving ? draft.times : null;
+    // Dragging or resizing the ghost itself: it follows the pointer like any other event.
+    if (ghost && drag && drag.kind !== "create" && drag.moved && drag.event.id === DRAFT_ID) {
+      ghost = dragTimes(drag) ?? ghost;
+    }
     if (drag?.kind === "create" && drag.moved) {
       const day = addDays(origin, drag.day).getTime();
       ghost = { allDay: false, start: day + drag.from * 60_000, end: day + drag.to * 60_000, startDate: null, endDate: null };
@@ -608,6 +761,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
   const lo = Math.max(0, Math.floor(pos) - days);
   const hi = Math.min(TOTAL_DAYS - 1, Math.ceil(pos) + days * 2);
 
+  const prevByDay = useRef(new Map<number, CalendarEvent[]>());
+  const placedCache = useRef(new WeakMap<CalendarEvent[], Placed[]>());
   const timedByDay = useMemo(() => {
     const map = new Map<number, CalendarEvent[]>();
     for (const e of display) {
@@ -620,8 +775,21 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
         else map.set(i, [e]);
       }
     }
+    // A day holding the same events as last time keeps last time's list, so its column (and
+    // its overlap layout) isn't redrawn while an event elsewhere is dragged.
+    for (const [i, list] of map) {
+      const old = prevByDay.current.get(i);
+      if (old && old.length === list.length && old.every((e, k) => e === list[k])) map.set(i, old);
+    }
+    prevByDay.current = map;
     return map;
   }, [display, origin]);
+  const placedFor = (d: Date, list: CalendarEvent[]) => {
+    if (list === NO_EVENTS) return NOTHING_PLACED;
+    let placed = placedCache.current.get(list);
+    if (!placed) placedCache.current.set(list, (placed = placeDay(d, list)));
+    return placed;
+  };
 
   const bars = useMemo(() => laneBars(display), [display]);
   // The all-day row fits the days in view, but only once scrolling has settled on a day, and
@@ -684,10 +852,37 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
     }
   }
   const lifted = moving ?? landing;
+  const anyPicked = pickedEvents.length > 0;
+  if (anyPicked) pickedCount.current = pickedEvents.length;
 
   return (
     <div className="flex h-full flex-col">
       <CalendarHeader title={<MonthTitle {...rangeTitle(viewFrom, addDays(viewTo, -1))} />}>
+        {/* Like the task board's: always mounted so it can spring in and fade out, holding its last count while it fades. */}
+        <motion.div
+          inert={!anyPicked}
+          initial={false}
+          animate={anyPicked ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
+          transition={
+            anyPicked
+              ? { type: "spring", duration: 0.3, bounce: 0.4, opacity: { duration: 0.15, ease: "easeOut" } }
+              : { duration: 0.12, ease: "easeOut" }
+          }
+          className={cn("mr-1 flex origin-right items-center gap-3 text-sm text-muted-foreground", !anyPicked && "pointer-events-none")}
+        >
+          <span className="tabular-nums">{pickedCount.current} selected</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={deletePicked}>
+                <IconTrash />
+                Delete
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Delete selected events <Kbd>Del</Kbd>
+            </TooltipContent>
+          </Tooltip>
+        </motion.div>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="outline" size="sm" onClick={() => goTo(todayIdx)}>
@@ -759,10 +954,10 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
         >
           <div className="relative" style={{ width: trackW, height: headH + 24 * hour }}>
             {/* Day names, and the all-day row under them, stay put while the hours scroll. */}
-            <div className="sticky top-0 z-20 bg-background" style={{ width: trackW, height: headH }}>
+            <div className="sticky top-0 z-(--z-sticky) bg-background" style={{ width: trackW, height: headH }}>
               <div className="relative border-b" style={{ height: DAY_HEAD }}>
                 <div
-                  className="sticky left-0 z-30 flex h-full items-end bg-background pr-2 pb-1.5 text-2xs font-semibold text-muted-foreground"
+                  className="sticky left-0 z-(--z-sticky) flex h-full items-end bg-background pr-2 pb-1.5 text-2xs font-semibold text-muted-foreground"
                   style={{ width: GUTTER }}
                 >
                   <span className="ml-auto">{zoneLabel()}</span>
@@ -778,8 +973,8 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                     >
                       <span
                         className={cn(
-                          "truncate rounded-md px-2 py-1 text-sm font-semibold whitespace-nowrap tabular-nums",
-                          isToday ? "bg-foreground text-background" : "text-foreground/85",
+                          "truncate rounded-md px-2 py-1 text-sm font-semibold whitespace-nowrap",
+                          isToday ? "bg-home text-white" : "text-foreground/85",
                         )}
                       >
                         {d.toLocaleDateString(undefined, { weekday: colW < 64 ? "narrow" : "short" })} {d.getDate()}
@@ -795,7 +990,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 // bars in lanes below the row's current height wait for it to grow.
                 <div className="relative overflow-clip border-b" style={{ height: stripH }}>
                   <div
-                    className="sticky left-0 z-30 flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
+                    className="sticky left-0 z-(--z-sticky) flex h-full items-start justify-end bg-background pt-1.5 pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ width: GUTTER }}
                   >
                     All day
@@ -820,19 +1015,19 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                         const bar = (
                           <button
                             type="button"
-                            onClick={() => onEventClick(b.event.id)}
+                            onClick={(ce) => onEventClick(b.event.id, ce.ctrlKey || ce.metaKey)}
                             onPointerDown={(pe) => onEventPointerDown(pe, b.event, "bar")}
                             className={cn(
                               "absolute flex items-center truncate rounded-md px-2 text-left text-xs font-semibold outline-none focus-visible:ring-1 focus-visible:ring-ring",
                               !isDraft && CARD_EDGE,
-                              drag?.kind === "bar" && drag.event.id === b.event.id && drag.moved && "z-10 shadow-lg",
+                              drag?.kind === "bar" && drag.event.id === b.event.id && drag.moved && "z-(--z-raised) shadow-lg",
                             )}
                             style={{
                               left: GUTTER + a * colW + 2,
                               width: (z - a) * colW - 5,
                               top: STRIP_TOP + b.lane * (BAR + BAR_GAP),
                               height: BAR,
-                              ...(isDraft ? draftStyle(barCal, dark) : eventStyle(b.event, barCal, dark, selected === b.event.id)),
+                              ...(isDraft ? draftStyle(barCal, dark) : eventStyle(b.event, barCal, dark, selected === b.event.id || picked.has(b.event.id))),
                             }}
                           >
                             <span className="truncate">{b.event.title}</span>
@@ -846,6 +1041,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                             key={b.event.id}
                             event={b.event}
                             editable={editable(b.event)}
+                            group={picked.has(b.event.id) ? pickedEvents : undefined}
                             onOpen={() => select(b.event.id)}
                             onDeleted={() => onEventDeleted(b.event.id)}
                           >
@@ -877,18 +1073,20 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                     style={{ left: GUTTER + i * colW, width: colW, height: 24 * hour }}
                   >
                     <DayEvents
-                      placed={placeDay(d, timedByDay.get(i) ?? [])}
+                      placed={placedFor(d, timedByDay.get(i) ?? NO_EVENTS)}
                       hour={hour}
                       calendars={calendars}
                       dark={dark}
                       selected={selected}
+                      picked={pickedEvents}
+                      ghostEnters={ghostEnters}
                       resizing={drag?.kind === "resize" && drag.moved ? drag.event.id : null}
                       placeholder={moving?.event.id ?? null}
                       hidden={landing?.event.id ?? null}
-                      onClick={onEventClick}
-                      onOpen={select}
-                      onDeleted={onEventDeleted}
-                      onPointerDown={onEventPointerDown}
+                      onClick={stableClick}
+                      onOpen={stableSelect}
+                      onDeleted={stableDeleted}
+                      onPointerDown={stablePointerDown}
                     />
                   </div>
                 );
@@ -904,18 +1102,18 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 />
               )}
               {/* The time column, pinned to the left while the days scroll. */}
-              <div className="sticky left-0 z-10 h-full bg-background" style={{ width: GUTTER }}>
+              <div className="sticky left-0 z-(--z-raised) h-full bg-background" style={{ width: GUTTER }}>
                 {range(1, 23).map((h) => (
                   <span
                     key={h}
-                    className="absolute right-2.5 -translate-y-1/2 text-[12px] font-semibold whitespace-nowrap text-muted-foreground tabular-nums"
+                    className="absolute right-2.5 -translate-y-1/2 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ top: h * hour }}
                   >
                     {hourLabel(h)}
                   </span>
                 ))}
                 <span
-                  className="absolute right-1.5 z-10 -translate-y-1/2 rounded-md bg-signal-red px-1.5 py-px text-[12px] font-semibold whitespace-nowrap text-white tabular-nums"
+                  className="absolute right-1.5 z-(--z-raised) -translate-y-1/2 rounded-md bg-signal-red px-1.5 py-px text-[12px] font-semibold whitespace-nowrap text-white tabular-nums"
                   style={{ top: minutesInto(now) * (hour / 60) }}
                 >
                   {clockTime(now)}
@@ -930,7 +1128,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
             // Floats over the grid (rather than squeezing it), like a card laid on top.
             <motion.aside
               key="panel"
-              className="absolute top-2 right-2 bottom-2 z-30 w-[392px] overflow-hidden rounded-xl bg-popover text-popover-foreground smooth-shadow-ring-xl"
+              className="absolute top-2 right-2 bottom-2 z-(--z-floating) w-[392px] overflow-hidden rounded-xl bg-popover text-popover-foreground smooth-shadow-ring-xl"
               initial={{ opacity: 0, x: 24 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 24 }}
@@ -948,12 +1146,13 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
       {lifted && (
         <LiftedEvent
           key={lifted.event.id}
-          event={lifted.event}
+          event={moving ? { ...moving.event, ...withTimes(dragTimes(moving)!) } : landing!.event}
           calendar={calendars.get(lifted.event.calendarId)}
           dark={dark}
+          selected={selected === lifted.event.id || picked.has(lifted.event.id)}
           label={moving ? landingLabel(moving) : landing!.label}
-          x={moving ? moving.x - moving.grabX : landing!.x}
-          y={moving ? moving.y - moving.grabY : landing!.y}
+          x={liftX}
+          y={liftY}
           w={lifted.w}
           h={lifted.h}
           landing={!moving}
@@ -980,20 +1179,24 @@ function landingLabel(d: Extract<Drag, { kind: "move" }>): string {
 const TRAIL = trail;
 const TILT = tilt;
 
-function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLanded }: {
+function LiftedEvent({ event, calendar, dark, selected, label, x, y, w, h, landing, onLanded }: {
+  /** The event at the times it would land on (so the card reads as it will once dropped). */
   event: CalendarEvent;
   calendar: CalendarInfo | undefined;
   dark: boolean;
+  /** Drawn selected, as the grid will draw it (its panel is open, or it's picked). */
+  selected: boolean;
   label: string;
-  x: number;
-  y: number;
+  /** The card's top-left, following the pointer. */
+  x: MotionValue<number>;
+  y: MotionValue<number>;
   w: number;
   h: number;
   landing: boolean;
   onLanded: () => void;
 }) {
-  const mx = useMotionValue(x);
-  const my = useMotionValue(y);
+  const mx = useMotionValue(x.get());
+  const my = useMotionValue(y.get());
   const mw = useMotionValue(w);
   const mh = useMotionValue(h);
   const scale = useMotionValue(1.04);
@@ -1005,13 +1208,6 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLand
   // so the landing glide below owns the motion.
   const tx = useSpring(x, TRAIL);
   const ty = useSpring(y, TRAIL);
-  useLayoutEffect(() => {
-    if (landing) return;
-    mx.set(x);
-    my.set(y);
-    tx.set(x);
-    ty.set(y);
-  }, [x, y, landing, mx, my, tx, ty]);
   useLayoutEffect(() => {
     if (!landing) return;
     mx.jump(tx.get());
@@ -1057,15 +1253,26 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLand
     };
   }, [landing, event.id, mx, my, mw, mh, scale, lift, rotate]);
 
+  // Drawn exactly like the card on the grid (same classes, body and colours) so the hand-over at
+  // the end is invisible. Only the outer shadow differs: a deep one while held, easing into the
+  // real card's own (the selected lift, or none) as it lands.
+  const isDraft = event.id === DRAFT_ID;
+  const look = isDraft ? draftStyle(calendar, dark) : eventStyle(event, calendar, dark, selected);
+  const edge = isDraft || selected ? "inset 0 0 0 1px transparent" : CARD_EDGE_SHADOW;
+  const outer = !landing ? HELD_SHADOW : selected ? "var(--shadow-lift)" : NO_SHADOW;
   return (
     <motion.div
       aria-hidden
       className={cn(
-        "pointer-events-none fixed top-0 left-0 z-50 flex flex-col overflow-hidden rounded-lg px-2 py-1.5 text-xs",
-        landing ? "shadow-md" : "shadow-2xl",
+        "pointer-events-none fixed top-0 left-0 z-(--z-overlay) flex flex-col overflow-hidden rounded-lg px-2 text-left text-xs",
+        h >= ROOMY ? "gap-0.5 py-1.5" : "justify-center",
+        // The card's own lines show faintly under the landing time while held, then fully.
+        "[&>:not([data-label])]:transition-opacity [&>:not([data-label])]:duration-200",
+        !landing && "[&>:not([data-label])]:opacity-30",
       )}
       style={{
-        ...eventStyle(event, calendar, dark, false),
+        ...look,
+        boxShadow: `${outer}, ${edge}`,
         x: landing ? mx : tx,
         y: landing ? my : ty,
         width: mw,
@@ -1076,18 +1283,14 @@ function LiftedEvent({ event, calendar, dark, label, x, y, w, h, landing, onLand
         transition: "box-shadow 240ms var(--ease-out-soft)",
       }}
     >
-      <span className={cn("truncate text-meta leading-snug font-semibold transition-opacity duration-200", landing ? "opacity-100" : "opacity-30")}>
-        {event.title}
-      </span>
-      <span className={cn("truncate leading-snug text-(color:--event-muted) transition-opacity duration-200", landing ? "opacity-100" : "opacity-30")}>
-        {timeRange(event)}
-      </span>
+      <CardBody event={event} height={h} />
       {/* Where it lands, big enough to read at a glance while moving. */}
       <span
+        data-label
         className={cn(
-          "absolute inset-0 flex items-center justify-center px-2 text-center font-semibold tabular-nums transition-opacity duration-150",
+          "absolute inset-0 flex items-center justify-center px-2 text-center font-semibold tabular-nums transition-opacity",
           h >= 44 ? "text-base" : "text-sm",
-          landing ? "opacity-0" : "opacity-100",
+          landing ? "opacity-0 duration-100" : "opacity-100 duration-150",
         )}
       >
         {label}
@@ -1113,20 +1316,62 @@ function CalendarHeader({ title, children }: { title: React.ReactNode; children?
   );
 }
 
+/** A card this tall has room for the time under the title; this tall, the place under that too. */
+const ROOMY = 40;
+const ROOMY_PLACE = 62;
+
+/**
+ * What a timed event's card says: title, time and place stacked when there's room, else on one
+ * line. Shared by the grid's cards and the lifted copy, so a dropped card hands over to the real
+ * one without a flicker.
+ */
+function CardBody({ event: e, height }: { event: CalendarEvent; height: number }) {
+  if (height >= ROOMY) {
+    return (
+      <>
+        <span className="flex min-w-0 items-center gap-1">
+          <span className={cn("truncate text-meta leading-snug font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
+          {e.recurringEventId && <RepeatMark className="size-3.5" />}
+        </span>
+        <span className="truncate leading-snug text-(color:--event-muted)">{timeRange(e)}</span>
+        {height >= ROOMY_PLACE && !!e.location && (
+          <span className="flex min-w-0 items-center gap-1 leading-snug text-(color:--event-muted)">
+            <IconMapPin className="size-3 shrink-0" />
+            <span className="truncate">{e.location}</span>
+          </span>
+        )}
+      </>
+    );
+  }
+  // Title, repeat mark and time on one line; the time only gets the room left, so it gives way first.
+  return (
+    <span className="flex min-w-0 items-center gap-1 leading-snug">
+      <span className={cn("min-w-0 truncate text-meta font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
+      {e.recurringEventId && <RepeatMark className="size-3.5" />}
+      <span className="w-0 min-w-0 flex-1 truncate text-(color:--event-muted)">{timeRange(e, true)}</span>
+    </span>
+  );
+}
+
 /** One day's timed events, side by side where they overlap. Yours can be dragged and resized. */
-function DayEvents({ placed, hour, calendars, dark, selected, resizing, placeholder, hidden, onClick, onOpen, onDeleted, onPointerDown }: {
+const DayEvents = memo(function DayEvents({ placed, hour, calendars, dark, selected, picked, ghostEnters, resizing, placeholder, hidden, onClick, onOpen, onDeleted, onPointerDown }: {
   placed: Placed[];
   hour: number;
   calendars: Map<string, CalendarInfo>;
   dark: boolean;
   selected: string | null;
+  /** The events picked with Ctrl+click, drawn as selected. */
+  picked: CalendarEvent[];
+  /** The new event's ghost was just made with a click, so it unrolls into place. */
+  ghostEnters: boolean;
   /** The event being resized, drawn above the rest. */
   resizing: string | null;
   /** The event being moved: drawn here only as the slot it would land in. */
   placeholder: string | null;
   /** The event gliding into place after a drop (the lifted copy stands in for it). */
   hidden: string | null;
-  onClick: (id: string) => void;
+  /** `additive`: Ctrl/⌘ was held, to pick the event rather than open it. */
+  onClick: (id: string, additive: boolean) => void;
   /** From the right-click menu: open the event's panel / it was deleted. */
   onOpen: (id: string) => void;
   onDeleted: (id: string) => void;
@@ -1149,32 +1394,32 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
           );
         }
         const isDraft = e.id === DRAFT_ID;
-        // Room for the time under the title, and then the place under that.
-        const roomy = height >= 40;
-        const withPlace = height >= 62 && !!e.location;
-        const canDrag = editable(e);
+        const roomy = height >= ROOMY;
+        const canDrag = editable(e) || isDraft;
+        const isPicked = picked.some((p) => p.id === e.id);
         const cal = calendars.get(e.calendarId);
         const card = (
           <button
             type="button"
             data-draft={isDraft || undefined}
             data-event-id={e.id}
-            onClick={() => onClick(e.id)}
+            onClick={(ce) => onClick(e.id, ce.ctrlKey || ce.metaKey)}
             onPointerDown={(pe) => onPointerDown(pe, e, "move")}
             className={cn(
-              "group/event absolute flex flex-col overflow-hidden px-2 text-left text-xs outline-none focus-visible:z-10 focus-visible:ring-1 focus-visible:ring-ring",
+              "group/event absolute flex flex-col overflow-hidden px-2 text-left text-xs outline-none focus-visible:z-(--z-raised) focus-visible:ring-1 focus-visible:ring-ring",
               !isDraft && CARD_EDGE,
               roomy ? "gap-0.5 py-1.5" : "justify-center",
               p.clippedStart ? "rounded-t-none" : "rounded-t-lg",
               p.clippedEnd ? "rounded-b-none" : "rounded-b-lg",
-              resizing === e.id && "z-20 shadow-lg",
+              resizing === e.id && "z-(--z-sticky) shadow-lg",
+              isDraft && ghostEnters && "event-ghost-in",
             )}
             style={{
               top,
               height,
               left: resizing === e.id ? "2px" : `calc(${(p.col / p.cols) * 100}% + 2px)`,
               width: resizing === e.id ? "calc(100% - 5px)" : `calc(${100 / p.cols}% - 5px)`,
-              ...(isDraft ? draftStyle(cal, dark) : eventStyle(e, cal, dark, selected === e.id)),
+              ...(isDraft ? draftStyle(cal, dark) : eventStyle(e, cal, dark, selected === e.id || isPicked)),
               ...(e.id === hidden ? { opacity: 0 } : null),
             }}
           >
@@ -1185,43 +1430,27 @@ function DayEvents({ placed, hour, calendars, dark, selected, resizing, placehol
                 className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
               />
             )}
-            {roomy ? (
-              <>
-                <span className="flex min-w-0 items-center gap-1">
-                  <span className={cn("truncate text-meta leading-snug font-semibold", e.myResponse === "declined" && "line-through")}>
-                    {e.title}
-                  </span>
-                  {e.recurringEventId && <RepeatMark className="size-3.5" />}
-                </span>
-                <span className="truncate leading-snug text-(color:--event-muted)">{timeRange(e)}</span>
-                {withPlace && (
-                  <span className="flex min-w-0 items-center gap-1 leading-snug text-(color:--event-muted)">
-                    <IconMapPin className="size-3 shrink-0" />
-                    <span className="truncate">{e.location}</span>
-                  </span>
-                )}
-              </>
-            ) : (
-              // Title, repeat mark and time on one line; the time only gets the room left, so it gives way first.
-              <span className="flex min-w-0 items-center gap-1 leading-snug">
-                <span className={cn("min-w-0 truncate text-meta font-semibold", e.myResponse === "declined" && "line-through")}>{e.title}</span>
-                {e.recurringEventId && <RepeatMark className="size-3.5" />}
-                <span className="w-0 min-w-0 flex-1 truncate text-(color:--event-muted)">{timeRange(e, true)}</span>
-              </span>
-            )}
+            <CardBody event={e} height={height} />
           </button>
         );
         return isDraft ? (
           <Fragment key={e.id}>{card}</Fragment>
         ) : (
-          <EventMenu key={e.id} event={e} editable={canDrag} onOpen={() => onOpen(e.id)} onDeleted={() => onDeleted(e.id)}>
+          <EventMenu
+            key={e.id}
+            event={e}
+            editable={canDrag}
+            group={isPicked ? picked : undefined}
+            onOpen={() => onOpen(e.id)}
+            onDeleted={() => onDeleted(e.id)}
+          >
             {card}
           </EventMenu>
         );
       })}
     </>
   );
-}
+});
 
 /** `target`, eased towards over a short animation whenever it changes (straight there with reduced motion). */
 function useEased(target: number): number {
@@ -1263,8 +1492,8 @@ function NowLine({ now, hour, left, width, todayLeft, todayWidth }: {
   const top = minutesInto(now) * (hour / 60);
   return (
     <>
-      <div aria-hidden className="pointer-events-none absolute z-10 h-px bg-signal-red/60" style={{ top, left, width }} />
-      <div aria-hidden className="pointer-events-none absolute z-10 h-0.5 bg-signal-red" style={{ top: top - 0.5, left: todayLeft, width: todayWidth }}>
+      <div aria-hidden className="pointer-events-none absolute z-(--z-raised) h-px bg-signal-red/60" style={{ top, left, width }} />
+      <div aria-hidden className="pointer-events-none absolute z-(--z-raised) h-0.5 bg-signal-red" style={{ top: top - 0.5, left: todayLeft, width: todayWidth }}>
         <span className="absolute -top-[3px] -left-1 size-2 rounded-full bg-signal-red" />
       </div>
     </>

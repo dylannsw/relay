@@ -124,8 +124,8 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
   };
 
   return (
-    // Above Home's glow (z-30 over its z-20), so the light and the bend pass under it.
-    <ComposerTray ref={tray} className={cn("z-30", className)}>
+    // Floating over Home's glow (which sits at sticky), so the light and the bend pass under it.
+    <ComposerTray ref={tray} className={cn("z-(--z-floating)", className)}>
       {ready ? (
         <form
           onSubmit={(e) => {

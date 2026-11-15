@@ -111,13 +111,13 @@ export function VoiceMessage({ chatId, messageId, media, src }: { chatId: string
     <span className="flex items-center gap-2">
       <Button
         type="button"
-        size="icon-sm"
+        size="icon-xs"
         onClick={() => void toggle()}
         aria-label={state === "playing" ? "Pause" : "Play voice message"}
         // Round, and it shrinks a touch when pressed instead of the usual 1px nudge down.
         className="rounded-full transition-transform active:scale-95 active:not-aria-[haspopup]:translate-y-0"
       >
-        {state === "loading" ? <Spinner className="size-3.5" /> : state === "playing" ? <IconPlayerPauseFilled className="size-3.5" /> : <IconPlayerPlayFilled className="size-3.5" />}
+        {state === "loading" ? <Spinner className="size-3" /> : state === "playing" ? <IconPlayerPauseFilled className="size-3" /> : <IconPlayerPlayFilled className="size-3" />}
       </Button>
       <div role="slider" aria-label="Position" aria-valuemin={0} aria-valuemax={Math.round(length)} aria-valuenow={Math.round(pos)} tabIndex={-1} onPointerDown={(e) => void seek(e)} className="flex h-5 min-w-36 flex-1 cursor-pointer items-center gap-[1.5px]">
         {levels.map((v, i) => (

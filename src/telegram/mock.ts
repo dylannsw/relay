@@ -321,6 +321,31 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       setTimeout(() => listener?.({ reload: false, chat: null, message: null, edited: false, deleted: [], deletedChatId: null, reactions: { chatId, messageId: m.id, reactions: structuredClone(list), min: false } }), 400);
       return r(undefined, 250);
     }
+    case "telegram_forward": {
+      const from = String(args.fromChatId);
+      const to = String(args.toChatId);
+      const src = chats.find((x) => x.id === from);
+      const out = (args.ids as number[]).flatMap((mid) => {
+        const o = history[from]?.find((x) => x.id === mid);
+        if (!o) return [];
+        // Forwarded on, it keeps who first sent it.
+        const origin = o.forwardedFrom ?? (o.outgoing ? "You" : src?.kind === "user" ? (src.name ?? o.senderName) : o.senderName);
+        const { id: _, ...copy } = structuredClone(o);
+        return [msg({ ...copy, chatId: to, outgoing: true, senderName: "You", senderId: null, date: Date.now(), reply: null, reactions: [], edited: false, forwardedFrom: origin ?? "" })];
+      });
+      if (!out.length) return Promise.reject("That message is gone.");
+      (history[to] ??= []).push(...out);
+      const c = chats.find((x) => x.id === to);
+      const last = out.at(-1)!;
+      if (c) {
+        c.last = { id: last.id, text: last.text || last.media?.label || "", outgoing: true, sender: c.kind === "group" ? "You" : null, date: last.date };
+        c.unread = 0;
+        c.mentions = 0;
+        c.markedUnread = false;
+        listener?.({ reload: false, chat: structuredClone(c), message: null, edited: false, deleted: [], deletedChatId: null });
+      }
+      return r(structuredClone(out), 500);
+    }
     case "telegram_edit": {
       const chatId = String(args.chatId);
       const m = history[chatId]?.find((x) => x.id === args.messageId);

@@ -152,7 +152,7 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
 
   const box = { left: target.x, top: target.y, width: target.w, height: target.h };
   return (
-    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal aria-label={item.kind === "photo" ? "Photo" : "Video"} className={closing ? "pointer-events-none fixed inset-0 z-50 outline-none" : "fixed inset-0 z-50 outline-none"} onClick={close}>
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal aria-label={item.kind === "photo" ? "Photo" : "Video"} className={closing ? "pointer-events-none fixed inset-0 z-(--z-overlay) outline-none" : "fixed inset-0 z-(--z-overlay) outline-none"} onClick={close}>
       {/* The same dim as the command bar and dialogs. */}
       <motion.div style={{ opacity: dim }} className="fixed inset-0 bg-scrim supports-backdrop-filter:backdrop-blur-xs " />
       <motion.div

@@ -178,7 +178,10 @@ fn migrate_folders(conn: &Connection) -> Result<()> {
         )?;
     }
     conn.execute_batch(
-        "CREATE INDEX IF NOT EXISTS idx_messages_folder ON messages(account_id, folder, date DESC);",
+        "CREATE INDEX IF NOT EXISTS idx_messages_folder ON messages(account_id, folder, date DESC);
+         -- All Inboxes and every other cross-account list: one folder, newest first, without
+         -- walking the whole mailbox by date to find that folder's messages.
+         CREATE INDEX IF NOT EXISTS idx_messages_folder_date ON messages(folder, date DESC);",
     )?;
     Ok(())
 }
@@ -583,12 +586,23 @@ pub fn list_messages(c: &Connection, q: &ListQuery) -> Result<Vec<MessageSummary
         return Ok(Vec::new());
     };
     let sql = format!("SELECT {SUMMARY_COLS} FROM messages{filter} ORDER BY date DESC LIMIT ? OFFSET ?");
-    args.push(Value::Integer(q.limit.unwrap_or(200).min(2000) as i64));
+    // No upper bound: the list is virtualized and loads 200 at a time as it scrolls, and a
+    // refresh asks for exactly as many rows as are already loaded.
+    args.push(Value::Integer(q.limit.unwrap_or(200) as i64));
     args.push(Value::Integer(q.offset.unwrap_or(0) as i64));
 
     let mut stmt = c.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args), row_to_summary)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// How many synced messages the query matches in all (its limit and offset are ignored).
+pub fn count_messages(c: &Connection, q: &ListQuery) -> Result<u64> {
+    let Some((filter, args)) = message_filter(q) else {
+        return Ok(0);
+    };
+    let sql = format!("SELECT COUNT(*) FROM messages{filter}");
+    Ok(c.query_row(&sql, params_from_iter(args), |r| r.get::<_, i64>(0))? as u64)
 }
 
 /// What the Senders view groups: sender and subject of every synced message matching the
@@ -794,6 +808,11 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(in_folder(Folder::Inbox).len(), 2);
+        // The count ignores paging: it's the whole folder, however few rows are loaded.
+        let one_row = ListQuery { limit: Some(1), ..Default::default() };
+        assert_eq!(list_messages(&c, &one_row).unwrap().len(), 1);
+        assert_eq!(count_messages(&c, &one_row).unwrap(), 2);
+        assert_eq!(count_messages(&c, &ListQuery { folder: Folder::Spam, ..Default::default() }).unwrap(), 0);
 
         // Gmail-style move: same id, new folder. Unread counts only cover the inbox.
         set_folder(&c, "a1:m1", Folder::Archive, None).unwrap();

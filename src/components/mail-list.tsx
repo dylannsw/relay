@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
 import {
@@ -86,6 +87,8 @@ interface Props {
   checked: Set<string>;
   showAccount: boolean;
   canLoadMore: boolean;
+  /** How many emails the list holds in all (loaded or not); hidden while unknown. */
+  count?: number;
   onOpen: (m: MessageSummary) => void;
   onMove: (m: MessageSummary, to: Folder) => void;
   /** `range` extends the selection from the last checked row (Shift-click). */
@@ -220,6 +223,17 @@ export function MailList(p: Props) {
   const checkAll = sd ? sd.onCheckAll : p.onCheckAll;
   const bulkMove = sd ? sd.onBulkMove : p.onBulkMove;
 
+  // The header names the list that is showing, so the title, count and account change in one
+  // step when the new list arrives. Switching them as soon as the folder was clicked (before
+  // its count was known) slid the account chip left, then back right once the count came in.
+  const shownHead = useRef<{ title: string; account: Account | undefined; count: number | undefined } | null>(null);
+  if (p.count !== undefined) shownHead.current = { title: p.title, account: p.account, count: p.count };
+  // Clean up has no count: its header follows the view directly. Before the first list has
+  // loaded, the row keeps its place but stays hidden, so the count doesn't push it over.
+  const head = p.senders ? { title: p.title, account: p.account, count: undefined } : shownHead.current;
+  const headPending = !head;
+  const shown = head ?? { title: p.title, account: p.account, count: undefined };
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader className="gap-0">
@@ -247,7 +261,7 @@ export function MailList(p: Props) {
                 exit={{ opacity: 0, y: -6 }}
                 transition={quick}
               >
-                <span className="text-base font-semibold whitespace-nowrap tabular-nums">
+                <span className="text-base font-bold whitespace-nowrap tabular-nums">
                   {nChecked} {sd ? (nChecked === 1 ? "sender" : "senders") : ""} selected
                 </span>
                 <ButtonGroup>
@@ -274,14 +288,26 @@ export function MailList(p: Props) {
             ) : (
               <motion.div
                 key="title"
-                className="flex min-w-0 items-center gap-2.5"
+                className={cn("flex min-w-0 items-center gap-2.5", headPending && "invisible")}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={quick}
               >
-                <h1 className={cn("truncate text-lg font-semibold", p.senders && "shrink-0")}>{p.title}</h1>
-                {p.account && <AccountChip account={p.account} className="min-w-0" />}
+                {/* Folder names are short; when the header is tight the account chip truncates instead. */}
+                <h1 className="shrink-0 text-lg font-bold">{shown.title}</h1>
+                {/* The folder's size, beside its name: same size, lighter, so it reads as a figure
+                    about the title rather than a second title. Follows the filter and search;
+                    an empty list says so itself. */}
+                {!!shown.count && (
+                  <span
+                    className="-ml-1 shrink-0 text-lg font-medium text-muted-foreground"
+                    aria-label={`${shown.count.toLocaleString()} ${shown.count === 1 ? "email" : "emails"}`}
+                  >
+                    {shown.count.toLocaleString()}
+                  </span>
+                )}
+                {shown.account && <AccountChip account={shown.account} className="min-w-0" />}
                 {p.senders && <AccountPicker s={p.senders} accounts={p.accounts} />}
                 {/* Beside what it refreshes; muted grey like the window controls. */}
                 <Tooltip>
@@ -356,43 +382,86 @@ export function MailList(p: Props) {
   );
 }
 
-function MessageRows(p: Props & { selecting: boolean; groupMode?: boolean }) {
-  const listRef = useRef<HTMLDivElement>(null);
+/** A typical row's height (with its 8px gap) before it has been measured. */
+const ROW_ESTIMATE = 112;
+/** Fetch the next page once the user is this many rows from the end. */
+const LOAD_AHEAD = 20;
 
-  // Keep the highlighted row visible during keyboard navigation.
+/**
+ * Only the rows in view (plus a few either side) exist; the rest are empty space, so a folder
+ * shows just as fast with 20 emails as with 2,000. Rows sit at measured offsets and slide to
+ * their new place when mail arrives or leaves; a row scrolled out of view just goes, while one
+ * that left the list fades out.
+ */
+function MessageRows(p: Props & { selecting: boolean; groupMode?: boolean }) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const { messages } = p;
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => viewportRef.current,
+    estimateSize: () => ROW_ESTIMATE,
+    getItemKey: (i) => messages[i]!.id,
+    overscan: 6,
+    paddingStart: 12,
+    paddingEnd: 4,
+  });
+  const items = virtualizer.getVirtualItems();
+
+  // Which mail this list has already shown, to tell new mail (fades in) from rows that are
+  // only scrolling into view, and to slide rows only while the list itself is changing.
+  const ids = useMemo(() => new Set(messages.map((m) => m.id)), [messages]);
+  const seen = useRef<Set<string> | null>(null);
+  const slideUntil = useRef(0);
+  const prev = seen.current;
+  if (prev && (prev.size !== ids.size || messages.some((m) => !prev.has(m.id)))) {
+    slideUntil.current = performance.now() + 500;
+  }
+  const sliding = performance.now() < slideUntil.current;
   useEffect(() => {
-    if (!p.selectedId || !listRef.current) return;
-    listRef.current
-      .querySelector(`[data-id="${CSS.escape(p.selectedId)}"]`)
-      ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+    seen.current = ids;
+  }, [ids]);
+
+  // Keep the highlighted row in view during keyboard navigation.
+  useEffect(() => {
+    const i = p.selectedId ? messages.findIndex((m) => m.id === p.selectedId) : -1;
+    if (i >= 0) virtualizer.scrollToIndex(i, { align: "auto" });
+    // Only when the highlight moves, not whenever the list refreshes.
   }, [p.selectedId]);
 
+  // Scrolling near the end asks for the next page.
+  const last = items.at(-1)?.index ?? -1;
+  const { canLoadMore, onLoadMore } = p;
+  useEffect(() => {
+    if (canLoadMore && last >= messages.length - LOAD_AHEAD) onLoadMore();
+  }, [canLoadMore, onLoadMore, last, messages.length]);
+
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div ref={listRef} className="flex flex-col p-3 pb-1">
-        {/* initial={false}: rows already on screen when a list appears don't animate one by one;
-            the list fades in as a whole. New mail slides in, and moved mail collapses away. */}
-        <AnimatePresence initial={false}>
-          {p.messages.map((m) => (
-            <motion.div
-              key={m.id}
-              className="overflow-hidden"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0, transition: quick }}
-              transition={smooth}
-            >
-              <div className="pb-2">
+    <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
+      <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        {/* custom: the mail still in the list, so only rows that left it play their exit. */}
+        <AnimatePresence initial={false} custom={ids}>
+          {items.map((vi) => {
+            const m = messages[vi.index]!;
+            return (
+              <motion.div
+                key={m.id}
+                data-index={vi.index}
+                ref={virtualizer.measureElement}
+                className="absolute top-0 left-0 w-full px-3 pb-2"
+                initial={prev && !prev.has(m.id) ? { opacity: 0, y: vi.start } : false}
+                animate={{ opacity: 1, y: vi.start }}
+                exit="gone"
+                variants={{
+                  gone: (live: Set<string>) =>
+                    live.has(m.id) ? { opacity: 1, transition: { duration: 0 } } : { opacity: 0, transition: quick },
+                }}
+                transition={{ y: sliding ? smooth : { duration: 0 }, opacity: smooth }}
+              >
                 <MessageRow {...p} m={m} />
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
-        {p.canLoadMore && (
-          <Button variant="outline" size="sm" className="mb-2 self-center" onClick={p.onLoadMore}>
-            Load more
-          </Button>
-        )}
       </div>
     </ScrollArea>
   );
@@ -404,6 +473,10 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
   const checked = p.checked.has(m.id);
   const showAccount = p.showAccount && !!account;
   const hasChips = showAccount || m.hasAttachments;
+  // The hover buttons (each with its own tooltip) were most of the cost of showing a folder,
+  // so they mount the first time the pointer reaches the row. Their wrapper is always there,
+  // so they still fade in with it.
+  const [armed, setArmed] = useState(false);
 
   return (
     <ContextMenu>
@@ -413,10 +486,11 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
       data-highlighted={highlighted || undefined}
       role="button"
       tabIndex={-1}
+      onPointerEnter={armed ? undefined : () => setArmed(true)}
       onClick={(e) => {
         // Ctrl-click starts (or adds to) a selection, Shift-click selects a range, and once
         // anything is selected a plain click ticks rows too. Otherwise a click opens the email.
-        // (In a sender group everything starts ticked, so a plain click still opens the email.)
+        // (In a sender group the checkboxes always show, so a plain click still opens the email.)
         if (e.shiftKey || e.ctrlKey || e.metaKey || (p.selecting && !p.groupMode)) {
           e.preventDefault();
           p.onToggleCheck(m, e.shiftKey);
@@ -463,7 +537,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
             {/* The date gives way to the row's actions on hover, or when the row is highlighted. */}
             <span
               className={cn(
-                "text-meta whitespace-nowrap tabular-nums transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
+                "text-meta whitespace-nowrap transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
                 highlighted ? "-translate-x-1 opacity-0" : "text-muted-foreground",
               )}
             >
@@ -477,7 +551,7 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
                   : "pointer-events-none translate-x-2 opacity-0 group-hover/row:pointer-events-auto group-hover/row:translate-x-0 group-hover/row:opacity-100",
               )}
             >
-              {movesFrom(m.folder).map((a) => (
+              {(armed || highlighted) && movesFrom(m.folder).map((a) => (
                 <IconAction key={a.to} size="icon-xs" variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onMove(m, a.to)}>
                   {a.icon}
                 </IconAction>
@@ -530,8 +604,9 @@ function MoveToMenu({ current, onMove }: { current: Folder; onMove: (to: Folder)
 
 /** Right-click menu: actions for one email, or for the whole selection when it's part of one. */
 function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
-  const selection = p.messages.filter((x) => p.checked.has(x.id));
-  if (p.checked.has(m.id) && selection.length > 1) {
+  // Only a ticked row needs the selection; every row renders this menu, so skip the scan otherwise.
+  const selection = p.checked.has(m.id) ? p.messages.filter((x) => p.checked.has(x.id)) : [];
+  if (selection.length > 1) {
     return (
       <ContextMenuContent className="w-60">
         <ContextMenuLabel>{selection.length} selected</ContextMenuLabel>
@@ -634,8 +709,8 @@ function GroupTitle({ s }: { s: SendersProps & { group: SenderGroup } }) {
         <IconArrowLeft />
         <span className="sr-only">Back to senders</span>
       </Button>
-      <h1 className="truncate text-lg font-semibold">{s.group.name}</h1>
-      <Badge variant="secondary" className="tabular-nums">
+      <h1 className="truncate text-lg font-bold">{s.group.name}</h1>
+      <Badge variant="secondary">
         {s.group.count}
       </Badge>
     </div>

@@ -11,7 +11,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { api, errorText } from "@/api";
-import { deleteEvent, reply, type Rsvp } from "@/calendar/edit";
+import { deleteEvent, deleteMany, reply, type Rsvp } from "@/calendar/edit";
 import type { CalendarEvent } from "@/types";
 import { RESPONSE } from "./event-details";
 import { timeRange } from "./event-style";
@@ -26,10 +26,12 @@ const REPLIES: { value: Rsvp; label: string }[] = [
  * An event's right-click menu: open it, join its call, reply to an invitation, copy its details,
  * open it in Google Calendar, or delete it (when it's yours to change).
  */
-export function EventMenu({ event: e, editable, onOpen, onDeleted, children }: {
+export function EventMenu({ event: e, editable, group, onOpen, onDeleted, children }: {
   event: CalendarEvent;
   /** Yours to change (and synced), so it can be deleted. */
   editable: boolean;
+  /** The selected events this one is among (when several are): Delete removes them all. */
+  group?: CalendarEvent[];
   onOpen: () => void;
   onDeleted: () => void;
   children: React.ReactNode;
@@ -49,6 +51,8 @@ export function EventMenu({ event: e, editable, onOpen, onDeleted, children }: {
     );
   };
   const Going = e.myResponse ? RESPONSE[e.myResponse] : null;
+  /** Of the selected events, the ones yours to delete (invitations and shared calendars aren't). */
+  const deletable = group?.filter((g) => g.canEdit && !!g.remoteId) ?? [];
 
   return (
     <ContextMenu>
@@ -95,7 +99,15 @@ export function EventMenu({ event: e, editable, onOpen, onDeleted, children }: {
             Open in Google Calendar
           </ContextMenuItem>
         )}
-        {editable && (
+        {deletable.length > 1 ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem variant="destructive" onSelect={() => void deleteMany(deletable).then((ok) => ok && onDeleted())}>
+              <IconTrash />
+              Delete {deletable.length} Events
+            </ContextMenuItem>
+          </>
+        ) : editable && (
           <>
             <ContextMenuSeparator />
             <ContextMenuItem variant="destructive" onSelect={() => void deleteEvent(e).then((ok) => ok && onDeleted())}>

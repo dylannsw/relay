@@ -17,5 +17,5 @@ export function PageHeader({ className, ...props }: React.ComponentProps<"header
 
 /** A page's name in its header: one size and weight on every page. */
 export function PageTitle({ className, ...props }: React.ComponentProps<"h1">) {
-  return <h1 data-slot="page-title" className={cn("min-w-0 flex-1 truncate text-lg font-semibold", className)} {...props} />;
+  return <h1 data-slot="page-title" className={cn("min-w-0 flex-1 truncate text-lg font-bold", className)} {...props} />;
 }

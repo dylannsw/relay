@@ -49,8 +49,11 @@ export default function App() {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounced(search, 200);
-  const [limit, setLimit] = useState(PAGE);
+  /** How many rows "Load more" has asked for, and for which list (`wantedKey`). */
+  const [paged, setPaged] = useState({ key: "", limit: PAGE });
   const [messages, setMessages] = useState<MessageSummary[]>([]);
+  /** How many messages the shown list has in all, loaded or not. */
+  const [total, setTotal] = useState(0);
   /** Identifies which list `messages` holds; the list fades in as a whole when it changes. */
   const [listKey, setListKey] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -135,18 +138,55 @@ export default function App() {
   );
   /** Identifies the list the current query asks for; `listKey` equals it once that list has loaded. */
   const wantedKey = `${accountKey}|${folder}|${listFilter}|${debouncedSearch}|${fromEmails ? `${group?.key}|${narrow ?? ""}` : ""}`;
+  // A different list starts from the first page. Derived rather than reset in an effect, so
+  // switching folders fetches once instead of once with the old page size and again after.
+  const limit = paged.key === wantedKey ? paged.limit : PAGE;
+  // Read through refs so loading another page doesn't refetch the rows already loaded.
+  const limitRef = useRef(limit);
+  limitRef.current = limit;
+  const wantedRef = useRef(wantedKey);
+  wantedRef.current = wantedKey;
 
   const refreshMessages = useCallback(async () => {
     try {
-      const list = await api.listMessages({ ...scopeQuery(), fromEmails, limit });
+      const query = { ...scopeQuery(), fromEmails };
+      const [list, count] = await Promise.all([
+        api.listMessages({ ...query, limit: limitRef.current }),
+        api.countMessages(query),
+      ]);
+      if (wantedRef.current !== wantedKey) return; // a later list is on its way
       setMessages(list);
+      setTotal(count);
       // Set together with the data (not when the view changes), so a new folder's list
       // replaces the old one in one step instead of the old rows animating out first.
       setListKey(wantedKey);
     } catch (e) {
       toast.error(errorText(e));
     }
-  }, [scopeQuery, fromEmails, wantedKey, limit]);
+  }, [scopeQuery, fromEmails, wantedKey]);
+
+  /** The next page, appended as the list scrolls near its end. */
+  const loadingMore = useRef(false);
+  const loadMore = async () => {
+    if (loadingMore.current) return;
+    loadingMore.current = true;
+    const key = wantedKey;
+    const have = messages.length;
+    try {
+      const page = await api.listMessages({ ...scopeQuery(), fromEmails, limit: PAGE, offset: have });
+      if (wantedRef.current !== key) return;
+      // Mail that arrived since shifts the pages, so a row can come back twice.
+      setMessages((prev) => {
+        const known = new Set(prev.map((m) => m.id));
+        return [...prev, ...page.filter((m) => !known.has(m.id))];
+      });
+      setPaged({ key, limit: have + PAGE });
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      loadingMore.current = false;
+    }
+  };
 
   const refreshAll = useRef(() => {});
   refreshAll.current = () => {
@@ -165,9 +205,8 @@ export default function App() {
   }, []);
   useEffect(() => void refreshMessages(), [refreshMessages]);
   useEffect(() => void refreshGroups(), [refreshGroups]);
-  // A different list starts from the first page with nothing ticked.
+  // A different list starts with nothing ticked.
   useEffect(() => {
-    setLimit(PAGE);
     setChecked(new Set());
     setCheckedGroups(new Set());
     checkAnchor.current = null;
@@ -177,11 +216,6 @@ export default function App() {
     setGroup(null);
     setNarrow(null);
   }, [accountKey, folder, bySenders]);
-  // A group opens with all its mail ticked, ready to act on or trim down.
-  useEffect(() => {
-    if (bySenders && group && listKey === wantedKey && messages.length) checkAll(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey]);
   // Look for a new version of Relay on launch and every few hours; installing waits for the user.
   useEffect(
     () =>
@@ -300,6 +334,7 @@ export default function App() {
       setGroup(null);
     }
     setMessages((ms) => ms.filter((x) => !ids.has(x.id)));
+    setTotal((t) => Math.max(0, t - moving.length));
     setChecked((c) => new Set([...c].filter((id) => !ids.has(id))));
     for (const m of moving) {
       const delta = (to === "inbox" ? 1 : 0) - (m.folder === "inbox" ? 1 : 0);
@@ -737,6 +772,7 @@ export default function App() {
             checked={checked}
             showAccount={view.kind !== "account" && !(bySenders && cleanupId) && accounts.length > 1}
             canLoadMore={messages.length >= limit}
+            count={listKey === wantedKey && !bySenders ? total : undefined}
             onOpen={(m) => void openMessage(m)}
             onMove={(m, to) => void moveMessage(m, to)}
             onToggleCheck={toggleCheck}
@@ -746,7 +782,7 @@ export default function App() {
             onReplyTo={(m, mode) => void replyTo(m, mode)}
             onToggleRead={(m) => void setRead(m, !m.isRead)}
             onToggleStar={(m) => void toggleStar(m)}
-            onLoadMore={() => setLimit((l) => l + PAGE)}
+            onLoadMore={() => void loadMore()}
             onAddAccount={addAccount}
             senders={senders}
           />

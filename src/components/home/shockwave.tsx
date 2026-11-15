@@ -490,8 +490,8 @@ export function Shockwave({ ref, radii, scope }: {
           <feComposite in="redGreen" in2="blueOnly" operator="arithmetic" k2="1" k3="1" />
         </filter>
       </svg>
-      <div ref={bendLayer} aria-hidden className="pointer-events-none absolute inset-0 z-20 hidden" />
-      <div ref={layer} aria-hidden className="pointer-events-none absolute inset-0 z-20 hidden">
+      <div ref={bendLayer} aria-hidden className="pointer-events-none absolute inset-0 z-(--z-sticky) hidden" />
+      <div ref={layer} aria-hidden className="pointer-events-none absolute inset-0 z-(--z-sticky) hidden">
         {/* The line of light along the page's edge (same blend and fade as the band). */}
         <div ref={edge} className="absolute inset-0 hidden [mask-repeat:no-repeat] [mask-size:100%_100%]" />
       </div>

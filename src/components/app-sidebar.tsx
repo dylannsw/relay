@@ -109,7 +109,7 @@ function RowChevron({ open }: { open: boolean }) {
   return (
     <IconChevronRight
       aria-hidden
-      className={cn("pointer-events-none absolute top-1/2 left-[3px] size-4! -translate-y-1/2 text-muted-foreground transition-transform duration-200", open && "rotate-90")}
+      className={cn("pointer-events-none absolute top-1/2 left-[3px] size-4! -translate-y-1/2 text-muted-foreground/50 transition-transform duration-200", open && "rotate-90")}
     />
   );
 }
@@ -162,7 +162,7 @@ export function stepSidebarView(accounts: Account[], current: View, step: number
   return views[(i + step + views.length) % views.length]!;
 }
 
-/** An account that expands to its Inbox, Deleted, Archived and Spam folders. */
+/** An account that expands to its Inbox, Archived, Deleted and Spam folders. */
 function AccountItem({ account: a, view, onView, onReconnect }: {
   account: Account;
   view: View;
@@ -278,14 +278,22 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
         </SidebarMenuButton>
       </SidebarMenuItem>
       <SidebarMenuItem>
-        <SidebarMenuButton isActive={view.kind === "tasks"} onClick={() => onView({ kind: "tasks" })}>
+        <SidebarMenuButton
+          isActive={view.kind === "tasks"}
+          onClick={() => onView({ kind: "tasks" })}
+          className="[--sidebar-icon-active:var(--home)]"
+        >
           <IconChecklist />
           <span>Tasks</span>
         </SidebarMenuButton>
         {open > 0 && <SidebarMenuBadge>{open}</SidebarMenuBadge>}
       </SidebarMenuItem>
       <SidebarMenuItem>
-        <SidebarMenuButton isActive={view.kind === "calendar"} onClick={() => onView({ kind: "calendar" })}>
+        <SidebarMenuButton
+          isActive={view.kind === "calendar"}
+          onClick={() => onView({ kind: "calendar" })}
+          className="[--sidebar-icon-active:var(--home)]"
+        >
           <IconCalendar />
           <span>Calendar</span>
         </SidebarMenuButton>

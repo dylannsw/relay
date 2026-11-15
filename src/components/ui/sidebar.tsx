@@ -568,7 +568,7 @@ function SidebarMenuAction({
 }
 
 /** Counts in the sidebar sit in a small rounded square, like a keyboard key (see <Kbd>). */
-const SIDEBAR_COUNT = cn(keyChip, "shrink-0 border-sidebar-border bg-transparent leading-none tabular-nums dark:bg-background")
+const SIDEBAR_COUNT = cn(keyChip, "shrink-0 border-sidebar-border bg-transparent leading-none dark:bg-background")
 
 /** A count inside a row's own layout (rather than pinned to the right edge like SidebarMenuBadge). */
 function SidebarCount({ className, ...props }: React.ComponentProps<"span">) {

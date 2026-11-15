@@ -57,7 +57,7 @@ export function HomeOverview(p: OverviewProps) {
           <span className="[text-box:trim-both_cap_alphabetic]">Overview</span>
         </CardTitle>
         <CardAction className="flex">
-          <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-meta font-normal text-muted-foreground tabular-nums">
+          <Badge variant="outline" className="h-6 gap-1.5 rounded-md px-2 text-meta font-normal text-muted-foreground">
             <IconCalendarEvent />
             {/* Trim the line box to the cap height so the digits sit exactly level with the icon. */}
             <span className="[text-box:trim-both_cap_alphabetic]">{date(new Date())}</span>
@@ -117,7 +117,7 @@ function Stat({ icon, label, value, onClick, children }: {
         {icon}
         <span className="truncate">{label}</span>
       </span>
-      <span className="text-3xl leading-9 font-semibold tracking-tight tabular-nums">{value}</span>
+      <span className="text-3xl leading-9 font-semibold tracking-tight">{value}</span>
       {/* Full width so long lines (the next event's name) end in an ellipsis at the tile's padding. */}
       <span className="flex h-6 w-full min-w-0 items-center gap-2 text-sm text-muted-foreground">{children}</span>
     </>
@@ -150,7 +150,7 @@ function Delta({ change, versus }: { change: number; versus: string }) {
       </span>
       {/* One line of text: the number, a plain space, then what it's compared with. */}
       <span className="truncate">
-        <span className="font-medium tabular-nums text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
+        <span className="font-medium text-[oklch(from_var(--delta)_min(l,0.55)_c_h)] dark:text-[oklch(from_var(--delta)_max(l,0.72)_c_h)]">
           {change > 0 ? `+${change}` : change < 0 ? `−${-change}` : "0"}
         </span>{" "}
         {versus}
@@ -259,7 +259,7 @@ function Heatmap({ weeks: all, color, date }: { weeks: HeatmapDay[][]; color: st
         createPortal(
           <div
             role="tooltip"
-            className="pointer-events-none fixed z-50 rounded-md bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background transition-[left,top,opacity] duration-150 ease-(--ease-out-soft)"
+            className="pointer-events-none fixed z-(--z-overlay) rounded-md bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background transition-[left,top,opacity] duration-150 ease-(--ease-out-soft)"
             style={{ left: tip.x, top: tip.y - 6, transform: "translate(-50%, -100%)", opacity: tip.shown ? 1 : 0 }}
           >
             {tip.text}

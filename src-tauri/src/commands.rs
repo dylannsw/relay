@@ -219,18 +219,38 @@ pub fn update_account(state: St<'_>, id: String, label: String, color: String) -
 
 // ---------- reading ----------
 
+/// Runs a database read on a blocking thread. A plain (non-async) command runs on the main
+/// thread, so while it waited for the database (e.g. behind a sync's batch write) the
+/// whole window stopped responding.
+async fn db_read<T: Send + 'static>(
+    state: &St<'_>,
+    f: impl FnOnce(&rusqlite::Connection) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let state: Arc<AppState> = Arc::clone(state.inner());
+    tauri::async_runtime::spawn_blocking(move || state.db(f))
+        .await
+        .map_err(|e| msg(e.to_string()))?
+}
+
 #[tauri::command]
-pub fn list_messages(state: St<'_>, query: ListQuery) -> Result<Vec<MessageSummary>> {
-    state.db(|c| db::list_messages(c, &query))
+pub async fn list_messages(state: St<'_>, query: ListQuery) -> Result<Vec<MessageSummary>> {
+    db_read(&state, move |c| db::list_messages(c, &query)).await
+}
+
+/// How many messages the list's query matches in all, for the count beside the folder title.
+#[tauri::command]
+pub async fn count_messages(state: St<'_>, query: ListQuery) -> Result<u64> {
+    db_read(&state, move |c| db::count_messages(c, &query)).await
 }
 
 /// The Senders view: the query's synced messages grouped by sender (its limit is ignored).
 #[tauri::command]
-pub fn list_sender_groups(state: St<'_>, query: ListQuery) -> Result<Vec<SenderGroup>> {
-    state.db(|c| {
+pub async fn list_sender_groups(state: St<'_>, query: ListQuery) -> Result<Vec<SenderGroup>> {
+    db_read(&state, move |c| {
         let rows = db::sender_rows(c, &query)?;
         Ok(senders::group_senders(&rows, &db::account_emails(c)?))
     })
+    .await
 }
 
 struct Ctx {

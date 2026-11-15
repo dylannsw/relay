@@ -1267,7 +1267,7 @@ function UpdatesTab() {
           <img src={appIcon} alt="" className="size-11 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">Relay</div>
-            <div className="text-sm text-muted-foreground tabular-nums">
+            <div className="text-sm text-muted-foreground">
               {u.version ? `Version ${u.version}` : "Version …"}
               {!isTauri && " · preview"}
             </div>

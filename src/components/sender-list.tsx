@@ -154,13 +154,13 @@ function SenderRow({ g, s, selecting }: { g: SenderGroup; s: SendersProps; selec
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 items-center gap-2">
           <span className={cn("truncate text-title", unread ? "font-semibold" : "font-medium")}>{g.name}</span>
-          <Badge variant="secondary" className="tabular-nums">
+          <Badge variant="secondary">
             {g.count}
           </Badge>
           {unread && (
-            <span className="text-meta whitespace-nowrap text-primary tabular-nums">{g.unreadCount} unread</span>
+            <span className="text-meta whitespace-nowrap text-primary">{g.unreadCount} unread</span>
           )}
-          <span className="ml-auto shrink-0 text-meta whitespace-nowrap text-muted-foreground tabular-nums">
+          <span className="ml-auto shrink-0 text-meta whitespace-nowrap text-muted-foreground">
             {listDate(g.latestDate)}
           </span>
         </div>

@@ -823,6 +823,36 @@ pub async fn telegram_react(tg: Tg<'_>, chat_id: String, message_id: i32, emojis
     Ok(())
 }
 
+/// Forwards messages from one chat to another, showing who they came from (as Telegram's Forward
+/// does). Returns the new messages, oldest first, for when the destination is open.
+#[tauri::command]
+pub async fn telegram_forward(app: AppHandle, tg: Tg<'_>, from_chat_id: String, to_chat_id: String, ids: Vec<i32>) -> Result<Vec<TgMessage>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (_, from) = tg.entry(&from_chat_id)?;
+    let (to_id, to) = tg.entry(&to_chat_id)?;
+    let sent = tokio::time::timeout(Duration::from_secs(30), client.forward_messages(to, &ids, from))
+        .await
+        .map_err(|_| msg("Telegram didn't confirm the forward in time. It may still have gone through; check the chat before trying again."))?
+        .map_err(tg_error)?;
+    let sent: Vec<Message> = sent.into_iter().flatten().collect();
+    let Some(newest) = sent.last() else {
+        return Err(msg("Telegram didn't forward that message."));
+    };
+    let group = tg.chats.read().expect("chats lock").list.get(&to_id).is_some_and(|e| e.chat.kind == "group" || e.chat.kind == "channel");
+    let preview = convert::preview(newest, group);
+    let chat = tg.patch(to_id, |e| {
+        e.chat.last = Some(preview);
+        e.chat.unread = 0;
+        e.chat.mentions = 0;
+        e.chat.marked_unread = false;
+    });
+    let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
+    Ok(tg.with_replies(&client, sent).await)
+}
+
 /// Changes the text (or caption) of one of your messages; returns the message as it now is.
 #[tauri::command]
 pub async fn telegram_edit(app: AppHandle, tg: Tg<'_>, chat_id: String, message_id: i32, text: String) -> Result<TgMessage> {

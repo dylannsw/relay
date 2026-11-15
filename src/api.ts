@@ -49,6 +49,8 @@ export const api = {
     call<Account>("update_account", { id, label, color }),
 
   listMessages: (query: ListQuery) => call<MessageSummary[]>("list_messages", { query }),
+  /** How many messages the query matches in all (its limit and offset ignored). */
+  countMessages: (query: ListQuery) => call<number>("count_messages", { query }),
   /** The same query as `listMessages` (its limit ignored), grouped by sender. */
   listSenderGroups: (query: ListQuery) => call<SenderGroup[]>("list_sender_groups", { query }),
   getMessage: (id: string) => call<MessageDetail>("get_message", { id }),
@@ -147,6 +149,8 @@ export const api = {
     markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
     /** Sets your reactions on a message (an empty list takes yours off). */
     react: (chatId: string, messageId: number, emojis: string[]) => call<void>("telegram_react", { chatId, messageId, emojis }),
+    /** Forwards messages to another chat; resolves to the new messages there, oldest first. */
+    forward: (fromChatId: string, toChatId: string, ids: number[]) => call<TgMessage[]>("telegram_forward", { fromChatId, toChatId, ids }),
     /** Changes the text (or caption) of one of your messages; resolves to the message as it now is. */
     edit: (chatId: string, messageId: number, text: string) => call<TgMessage>("telegram_edit", { chatId, messageId, text }),
     /** Deletes messages; `revoke` also deletes them for the other person (one-to-one chats). */
@@ -179,6 +183,23 @@ export const api = {
       const picked = await openDialog({ multiple: true, title: "Attach files" });
       return Array.isArray(picked) ? picked : picked ? [picked] : [];
     },
+    /**
+     * Turns a paste into files to attach. Files copied in Explorer keep their own paths; pictures
+     * (a screenshot, "Copy image") are saved to a temp file first.
+     */
+    pastedFiles: async (blobs: File[]): Promise<string[]> => {
+      if (!isTauri) return blobs.map((b) => `C:\\Users\\you\\Pictures\\${b.name || "Pasted image.png"}`);
+      const copied = await invoke<string[]>("clipboard_file_paths");
+      if (copied.length) return copied;
+      return Promise.all(
+        blobs.map(async (b) => {
+          const ext = b.type.split("/")[1]?.replace("jpeg", "jpg").replace(/\+.*/, "") || "png";
+          // The browser calls every pasted picture "image.png".
+          const name = !b.name || /^image\.\w+$/i.test(b.name) ? `Pasted image ${pastedStamp()}.${ext}` : b.name;
+          return invoke<string>("stage_pasted_file", new Uint8Array(await b.arrayBuffer()), { headers: { "x-name": encodeURIComponent(name) } });
+        }),
+      );
+    },
     /** Your recent stickers, then each installed set. */
     stickerSets: () => call<TgStickerSet[]>("telegram_sticker_sets"),
     /** A sticker's file from the picker. */
@@ -193,6 +214,13 @@ export const api = {
       isTauri ? listen<TgEvent>("telegram-updated", (e) => cb(e.payload)) : mockTelegramEvents(cb),
   },
 };
+
+/** "2026-11-15 14.32.10", for naming a pasted picture. */
+function pastedStamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+}
 
 export function errorText(e: unknown): string {
   if (typeof e === "string") return e;

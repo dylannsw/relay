@@ -377,16 +377,18 @@ export function CommandBar(p: Props) {
     setBusy(true);
     // Measured while the bar is still up: the glow starts from its middle.
     const origin = barBox();
+    // The bar closes at once; saving (read, write, reload the note) carries on behind it.
+    p.onOpenChange(false);
+    const shut = performance.now();
     try {
       const added = await addTask(taskName, section, undefined, taskStatus);
       lastTask.section = added;
       lastTask.status = taskStatus;
       toast.success(`Added to ${added}`, { description: taskName });
-      p.onOpenChange(false);
       // Only a saved task gets the glow; it starts once the bar's dimmed overlay has faded.
-      window.setTimeout(() => p.onTaskAdded(origin), OVERLAY_GONE_MS);
+      window.setTimeout(() => p.onTaskAdded(origin), Math.max(0, OVERLAY_GONE_MS - (performance.now() - shut)));
     } catch (e) {
-      toast.error(errorText(e));
+      toast.error(errorText(e), { description: `Not added: ${taskName}` });
     } finally {
       setBusy(false);
     }
@@ -782,7 +784,7 @@ export function CommandBar(p: Props) {
                           </span>
                         </span>
                         {a && <Dot color={a.color} />}
-                        <span className="cb-muted shrink-0 text-xs tabular-nums">{listDate(m.date)}</span>
+                        <span className="cb-muted shrink-0 text-xs">{listDate(m.date)}</span>
                       </CommandItem>
                     );
                   })}

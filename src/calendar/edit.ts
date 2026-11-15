@@ -164,6 +164,74 @@ export async function deleteEvent(e: CalendarEvent): Promise<boolean> {
   }
 }
 
+/** For several events: which occurrences, asked once if any of them repeats. */
+async function chooseScopeMany(events: CalendarEvent[], verb: "Change" | "Delete"): Promise<EditScope | null> {
+  if (!events.some((e) => e.recurringEventId)) return "this";
+  const v = await ask(
+    `${verb} repeating events`,
+    `Some of these repeat. ${verb} just these events, or every event in their series?`,
+    [
+      { label: "These events", value: "this", variant: "outline" },
+      { label: "All events", value: "all" },
+    ],
+  );
+  return v as EditScope | null;
+}
+
+/** Saves to Google one by one (so the account isn't flooded), then reads the events again. */
+async function eachSaved(events: CalendarEvent[], save: (e: CalendarEvent) => Promise<unknown>): Promise<boolean> {
+  let failed = 0;
+  let lastError: unknown = null;
+  for (const e of events) {
+    try {
+      await save(e);
+    } catch (err) {
+      failed++;
+      lastError = err;
+    }
+  }
+  void loadEvents();
+  if (failed) toast.error(failed === events.length ? errorText(lastError) : `${failed} of ${events.length} couldn't be saved: ${errorText(lastError)}`);
+  return failed === 0;
+}
+
+/** Moves several events at once (a multi-select drag): the questions are asked once for them all. */
+export async function saveTimesMany(moves: { event: CalendarEvent; times: EventTimes }[]): Promise<boolean> {
+  if (moves.length === 0) return true;
+  if (moves.length === 1) return saveChanges(moves[0].event, { times: moves[0].times }, withTimes(moves[0].times));
+  for (const m of moves) patchEventLocal(m.event.id, withTimes(m.times));
+  const events = moves.map((m) => m.event);
+  const scope = await chooseScopeMany(events, "Change");
+  const notify = scope && events.some(hasGuests) ? await chooseNotify("change") : false;
+  if (!scope || notify === null) {
+    void loadEvents();
+    return false;
+  }
+  const times = new Map(moves.map((m) => [m.event.id, m.times]));
+  return eachSaved(events, (e) => api.updateCalendarEvent(e.id, { times: times.get(e.id)! }, scope, notify));
+}
+
+/** Deletes several events at once, after one confirmation. */
+export async function deleteMany(events: CalendarEvent[]): Promise<boolean> {
+  if (events.length === 0) return true;
+  if (events.length === 1) return deleteEvent(events[0]);
+  const scope = await chooseScopeMany(events, "Delete");
+  if (!scope) return false;
+  let notify = false;
+  if (events.some(hasGuests)) {
+    const n = await chooseNotify("delete");
+    if (n === null) return false;
+    notify = n;
+  } else if (scope === "this") {
+    const ok = await ask(`Delete ${events.length} events?`, "They're removed from your Google calendar.", [
+      { label: "Delete", value: "yes", variant: "destructive" },
+    ]);
+    if (!ok) return false;
+  }
+  for (const e of events) removeEventLocal(e.id);
+  return eachSaved(events, (e) => api.deleteCalendarEvent(e.id, scope, notify));
+}
+
 export async function reply(e: CalendarEvent, response: Rsvp): Promise<void> {
   const scope = await chooseScope(e, "Reply to");
   if (!scope) return;

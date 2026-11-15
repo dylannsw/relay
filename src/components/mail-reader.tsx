@@ -165,7 +165,7 @@ export function MailReader(p: Props) {
       >
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* Beside the subject, outside the paged content so it stays put while paging. */}
-          <CloseButton onClose={() => p.onClose()} className="absolute top-4.5 right-4 z-10" />
+          <CloseButton onClose={() => p.onClose()} className="absolute top-4.5 right-4 z-(--z-raised)" />
             <div key={p.messageId ?? "none"} className="flex min-h-0 flex-1 flex-col bg-background">
               {p.error ? (
                 <>

@@ -113,7 +113,7 @@ export function TimeField({ value, onChange, label: ariaLabel, from, className }
   return (
     <Popover open={open} onOpenChange={(o) => (setOpen(o), setQuery(""))}>
       <PopoverTrigger asChild>
-        <Button variant="outline" aria-label={ariaLabel} className={cn("min-w-0 justify-start font-normal tabular-nums", className)}>
+        <Button variant="outline" aria-label={ariaLabel} className={cn("min-w-0 justify-start font-normal", className)}>
           <IconClock className="text-muted-foreground" />
           <span className="truncate">{current === null ? "Pick a time" : label(current)}</span>
         </Button>

@@ -14,7 +14,22 @@ import {
   IconChecklist,
   IconCopy,
   IconCornerUpLeft,
+  IconArrowForwardUp,
   IconFile,
+  IconFileTypeBmp,
+  IconFileTypeCsv,
+  IconFileTypeDoc,
+  IconFileTypeDocx,
+  IconFileTypeHtml,
+  IconFileTypeJpg,
+  IconFileTypePdf,
+  IconFileTypePng,
+  IconFileTypePpt,
+  IconFileTypeSvg,
+  IconFileTypeTxt,
+  IconFileTypeXls,
+  IconFileTypeXml,
+  IconFileTypeZip,
   IconMapPin,
   IconMicrophone,
   IconMusic,
@@ -63,6 +78,7 @@ import { VoiceRecorder, type Recording, type VoiceRecorderHandle } from "./voice
 import { StickerArt, useInView, useObjectUrl } from "./sticker-view";
 import { StickerPicker } from "./sticker-picker";
 import { PageHeader } from "@/components/page-header";
+import { ForwardPicker } from "./forward-picker";
 
 const PAGE = 50;
 /** Messages from the same person this close together share one run (one name, one avatar, one tail). */
@@ -171,6 +187,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
   const [replyTo, setReplyTo] = useState<TgMessage | null>(null);
   const [editing, setEditing] = useState<TgMessage | null>(null);
   const [deleting, setDeleting] = useState<Shown | null>(null);
+  /** The message being forwarded and its bubble, which the picker card sits under. */
+  const [forwarding, setForwarding] = useState<{ m: Shown; bubble: HTMLElement } | null>(null);
   const [deleteBoth, setDeleteBoth] = useState(true);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -444,6 +462,11 @@ export function Conversation({ chat }: { chat: TgChat }) {
     });
   };
 
+  const startForward = (m: Shown) => {
+    const bubble = scroller.current?.querySelector<HTMLElement>(`[data-msg-id="${m.id}"] [data-bubble]`);
+    if (bubble) setForwarding({ m, bubble });
+  };
+
   const askDelete = (m: Shown) => {
     setDeleteBoth(true);
     setDeleting(m);
@@ -555,7 +578,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
         <ChatAvatar id={chat.id} name={chat.name} hasPhoto={chat.hasPhoto} saved={chat.kind === "saved"} size={32} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <h2 className="truncate text-base leading-tight font-semibold">{chat.name}</h2>
+            <h2 className="truncate text-base leading-tight font-bold">{chat.name}</h2>
             {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
           </div>
           {sub && <p className="truncate text-xs text-muted-foreground">{sub}</p>}
@@ -613,6 +636,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
                         onRetry={() => retry(m)}
                         onDiscard={() => discard(m)}
                         onEdit={canEdit(chat, m) ? () => startEdit(m) : undefined}
+                        onForward={m.pending ? undefined : () => startForward(m)}
                         onDelete={canDelete(chat, m) ? () => askDelete(m) : undefined}
                         onFocusComposer={() => composer.current?.focus()}
                       />
@@ -637,7 +661,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
                 <IconArrowDown />
                 <span className="sr-only">Jump to latest</span>
                 {unseen > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full bg-primary px-1.5 text-center text-xs leading-5 font-semibold text-primary-foreground tabular-nums">
+                  <span className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full bg-primary px-1.5 text-center text-xs leading-5 font-semibold text-primary-foreground">
                     {unseen}
                   </span>
                 )}
@@ -663,7 +687,20 @@ export function Conversation({ chat }: { chat: TgChat }) {
       />
       </div>
 
-      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && !deleteBusy && setDeleting(null)}>
+      <ForwardPicker
+        message={forwarding?.m ?? null}
+        anchor={forwarding?.bubble ?? null}
+        fromChat={chat}
+        onClose={() => setForwarding(null)}
+        onForwarded={(to, sent) => {
+          // Forwarded into this same chat: it shows at the end, as a sent message would.
+          if (to.id !== chat.id) return;
+          stickToBottom.current = true;
+          setMessages((list) => (list ? [...list, ...sent.filter((m) => !list.some((x) => x.id === m.id))] : list));
+        }}
+      />
+
+      <AlertDialog open={!!deleting}onOpenChange={(o) => !o && !deleteBusy && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete message?</AlertDialogTitle>
@@ -953,14 +990,35 @@ function fileSize(bytes: number | null | undefined): string | null {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
+/** Tabler's file-type icons by extension; anything else keeps the plain file icon. */
+const FILE_TYPE_ICONS: Record<string, typeof IconFile> = {
+  bmp: IconFileTypeBmp,
+  csv: IconFileTypeCsv,
+  doc: IconFileTypeDoc,
+  docx: IconFileTypeDocx,
+  htm: IconFileTypeHtml,
+  html: IconFileTypeHtml,
+  jpg: IconFileTypeJpg,
+  jpeg: IconFileTypeJpg,
+  pdf: IconFileTypePdf,
+  png: IconFileTypePng,
+  ppt: IconFileTypePpt,
+  pptx: IconFileTypePpt,
+  svg: IconFileTypeSvg,
+  txt: IconFileTypeTxt,
+  xls: IconFileTypeXls,
+  xlsx: IconFileTypeXls,
+  xml: IconFileTypeXml,
+  zip: IconFileTypeZip,
+};
+
 function MediaChip({ media, hint }: { media: TgMedia; hint?: string }) {
-  const Icon = MEDIA_ICONS[media.kind];
-  const ext = media.kind === "file" ? (media.label.match(/\.([a-z0-9]{1,4})$/i)?.[1] ?? "").toUpperCase() : "";
+  const ext = media.kind === "file" ? (media.label.match(/\.([a-z0-9]{1,4})$/i)?.[1] ?? "").toLowerCase() : "";
+  const Icon = FILE_TYPE_ICONS[ext] ?? MEDIA_ICONS[media.kind];
   return (
     <span className="flex items-center gap-3">
-      <span className="relative flex h-10 w-8 shrink-0 items-center justify-center rounded-md bg-current/10">
+      <span className="flex h-10 w-8 shrink-0 items-center justify-center rounded-md bg-current/10">
         <Icon className="size-5" />
-        {ext && <span className="absolute -bottom-1 -left-1 rounded-sm bg-primary px-1 py-px text-[9px] leading-none font-bold text-primary-foreground">{ext}</span>}
       </span>
       <span className="min-w-0">
         <span className="block truncate font-medium">{media.label}</span>
@@ -1001,7 +1059,7 @@ function Meta({ m, read }: { m: Shown; read: boolean }) {
       ) : m.pending === "failed" ? (
         <IconAlertCircle className="size-4 text-destructive" aria-label="Not sent" />
       ) : (
-        m.outgoing && (read ? <IconChecks className="size-4 text-primary" aria-label="Read" /> : <IconCheck className="size-4" aria-label="Sent" />)
+        m.outgoing && (read ? <IconChecks className="size-4 text-success" aria-label="Read" /> : <IconCheck className="size-4" aria-label="Sent" />)
       )}
       {clockTime(m.date)}
     </span>
@@ -1021,7 +1079,8 @@ function Bubble(props: {
   onJump: (id: number) => void;
   onRetry: () => void;
   onDiscard: () => void;
-  /** Left out where the message can't be edited / deleted. */
+  /** Left out where the message can't be forwarded / edited / deleted. */
+  onForward?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onFocusComposer: () => void;
@@ -1037,7 +1096,7 @@ function Bubble(props: {
   const sticker = media && ((media.kind === "sticker" && media.mime) || round) ? media : null;
   const otherMedia = media && !photo && !sticker ? media : null;
   const hasText = m.text.trim().length > 0;
-  const photoOnly = photo && !hasText && !m.reply && !m.forwardedFrom && !props.showName;
+  const photoOnly = photo && !hasText && !m.reply && m.forwardedFrom === null && !props.showName;
   // Every bubble is fully rounded; each run has its name above and its time and ticks below.
   const corners = "rounded-bubble";
   const showTime = last || !!m.pending || m.edited;
@@ -1048,6 +1107,7 @@ function Bubble(props: {
     void navigator.clipboard.writeText(m.text).then(() => toast.success("Copied"));
   };
   const toComposer = useRef(false);
+  const toPicker = useRef(false);
   // Text highlighted inside this bubble when the menu opened (empty: the whole message).
   const [picked, setPicked] = useState("");
   const pickSelection = (e: React.MouseEvent<HTMLElement>) => {
@@ -1118,7 +1178,7 @@ function Bubble(props: {
             )}
           >
             {m.forwardedFrom !== null && (
-              <div className="mb-0.5 truncate text-xs opacity-75">
+              <div className={cn("truncate text-xs opacity-75", !(photo && !m.reply) && "mb-0.5")}>
                 Forwarded{m.forwardedFrom ? <> from <span className="font-medium">{m.forwardedFrom}</span></> : null}
               </div>
             )}
@@ -1133,7 +1193,7 @@ function Bubble(props: {
               </button>
             )}
             {photo && (
-              <div className={cn(!photoOnly && "-mx-2.5 mt-1", !photoOnly && !hasText && "-mb-[7px]", hasText && "mb-[7px]", !photoOnly && !m.reply && !m.forwardedFrom && "-mt-[7px]")}>
+              <div className={cn(!photoOnly && "-mx-2.5", !photoOnly && (m.forwardedFrom !== null && !m.reply ? "mt-[7px]" : "mt-1"),!photoOnly && !hasText && "-mb-[7px]", hasText && "mb-[7px]", !photoOnly && !m.reply && m.forwardedFrom === null && "-mt-[7px]")}>
                 {photo.kind === "gif" ? (
                   <Gif chatId={chat.id} m={m} media={photo} />
                 ) : photo.kind === "video" ? (
@@ -1163,6 +1223,14 @@ function Bubble(props: {
           // Reply and Edit put the cursor in the message box once the menu has let go of focus,
           // rather than it going back to the bubble.
           onCloseAutoFocus={(e) => {
+            // Forward's card opens once the menu has let go of focus (while it's open it traps
+            // focus, and handing focus back to the bubble would close the card).
+            if (toPicker.current) {
+              toPicker.current = false;
+              e.preventDefault();
+              props.onForward?.();
+              return;
+            }
             if (!toComposer.current) return;
             toComposer.current = false;
             e.preventDefault();
@@ -1210,6 +1278,16 @@ function Bubble(props: {
             >
               <IconCornerUpLeft />
               Reply
+            </ContextMenuItem>
+          )}
+          {props.onForward && (
+            <ContextMenuItem
+              onSelect={() => {
+                toPicker.current = true;
+              }}
+            >
+              <IconArrowForwardUp />
+              Forward
             </ContextMenuItem>
           )}
           {props.onEdit && (
@@ -1279,6 +1357,8 @@ function Composer(props: {
   const { chat, replyTo, editing } = props;
   const [recording, setRecording] = useState(false);
   const recorder = useRef<VoiceRecorderHandle>(null);
+  // Where the recorder draws its live levels: the right end of the Attach/Stickers row.
+  const [waveSlot, setWaveSlot] = useState<HTMLDivElement | null>(null);
   const [text, setText] = useState(() => drafts.get(chat.id) ?? "");
   // What you'd typed before editing, put back afterwards.
   const stash = useRef<string | null>(null);
@@ -1343,14 +1423,28 @@ function Composer(props: {
     area.current?.focus();
   };
 
+  const addFiles = (paths: string[]) => {
+    if (paths.length) setFiles((list) => [...list, ...paths.filter((p) => !list.includes(p))]);
+  };
+
   const attach = () => {
     api.telegram
       .pickFiles()
-      .then((picked) => {
-        if (picked.length) setFiles((list) => [...list, ...picked.filter((p) => !list.includes(p))]);
-      })
+      .then(addFiles)
       .catch((e) => toast.error(errorText(e)))
       .finally(() => area.current?.focus());
+  };
+
+  // Files and pictures on the clipboard are attached. Text still pastes as text, even when the
+  // source also put a picture of it there (a spreadsheet's cells, say).
+  const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const data = e.clipboardData;
+    if (editing || !data.types.includes("Files") || data.types.includes("text/plain")) return;
+    e.preventDefault();
+    api.telegram
+      .pastedFiles(Array.from(data.files))
+      .then(addFiles)
+      .catch((err) => toast.error(errorText(err)));
   };
 
   const canSend = editing ? text.trim().length > 0 || !!editing.media : text.trim().length > 0 || files.length > 0;
@@ -1421,6 +1515,7 @@ function Composer(props: {
           {recording ? (
             <VoiceRecorder
               ref={recorder}
+              waveTarget={waveSlot}
               onDone={(r) => {
                 setRecording(false);
                 props.onVoice(r);
@@ -1441,6 +1536,7 @@ function Composer(props: {
             rows={1}
             value={text}
             onChange={(e) => update(e.target.value)}
+            onPaste={paste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
@@ -1486,6 +1582,8 @@ function Composer(props: {
             Attach
           </Button>
           <StickerPicker onPick={props.onSticker} onClosed={() => area.current?.focus()} disabled={!!editing || recording} />
+          {/* pr-1.5 matches the send button's inset, so the waveform ends where the button does. */}
+          <div ref={setWaveSlot} className="flex min-w-0 flex-1 justify-end pr-1.5" />
         </ComposerOptions>
       </ComposerTray>
     </div>

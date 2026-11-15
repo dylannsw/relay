@@ -491,11 +491,16 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       return delay(undefined) as Promise<T>;
     }
     case "list_messages": {
-      const list = matching(args.query as ListQuery).map(
+      // Pages like the real list (default 200), so scrolling to the end loads more here too.
+      const q = args.query as ListQuery;
+      const from = q.offset ?? 0;
+      const list = matching(q).slice(from, from + (q.limit ?? 200)).map(
         ({ bodyHtml: _b, bodyText: _t, attachments: _a, ...summary }) => summary,
       );
       return delay(list, 60) as Promise<T>;
     }
+    case "count_messages":
+      return delay(matching(args.query as ListQuery).length, 60) as Promise<T>;
     case "list_sender_groups":
       return delay(mockSenderGroups(matching(args.query as ListQuery)), 60) as Promise<T>;
     case "get_message":

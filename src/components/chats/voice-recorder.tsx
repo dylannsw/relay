@@ -1,4 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { IconTrash } from "@tabler/icons-react";
 import { errorText } from "@/api";
@@ -46,11 +47,22 @@ function telegramWaveform(levels: number[]): number[] {
 }
 
 /**
- * Records from the microphone as soon as it appears, in place of the message box: a red dot,
- * the time and the live levels, with a bin to throw it away. The composer's send button calls
- * `finish`; Escape cancels.
+ * Records from the microphone as soon as it appears, in place of the message box: a red dot
+ * and the time, with a bin to throw it away. The live levels are drawn into `waveTarget` (the
+ * composer's options row), so they update without redrawing the whole composer. The composer's
+ * send button calls `finish`; Escape cancels.
  */
-export function VoiceRecorder({ ref, onDone, onCancel }: { ref: Ref<VoiceRecorderHandle>; onDone: (r: Recording) => void; onCancel: () => void }) {
+export function VoiceRecorder({
+  ref,
+  onDone,
+  onCancel,
+  waveTarget,
+}: {
+  ref: Ref<VoiceRecorderHandle>;
+  onDone: (r: Recording) => void;
+  onCancel: () => void;
+  waveTarget: HTMLElement | null;
+}) {
   const [elapsed, setElapsed] = useState(0);
   const [live, setLive] = useState<number[]>([]);
   const [ready, setReady] = useState(false);
@@ -184,11 +196,15 @@ export function VoiceRecorder({ ref, onDone, onCancel }: { ref: Ref<VoiceRecorde
         <span className="size-2.5 animate-pulse rounded-full bg-destructive" />
         {clock(ready ? elapsed : 0)}
       </span>
-      <div aria-hidden className="flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden text-muted-foreground">
-        {bars.map((v, i) => (
-          <span key={i} style={{ height: `${Math.max(12, Math.round(v * 100))}%` }} className="w-[2px] shrink-0 rounded-full bg-current" />
-        ))}
-      </div>
+      {waveTarget &&
+        createPortal(
+          <div aria-hidden className="flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden text-muted-foreground">
+            {bars.map((v, i) => (
+              <span key={i} style={{ height: `${Math.max(12, Math.round(v * 100))}%` }} className="w-[2px] shrink-0 rounded-full bg-current" />
+            ))}
+          </div>,
+          waveTarget,
+        )}
     </div>
   );
 }

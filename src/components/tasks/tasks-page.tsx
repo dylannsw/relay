@@ -543,7 +543,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
               <h2 className="flex h-11 shrink-0 items-center gap-2 px-3.5 text-sm font-semibold">
                 <StatusIcon status={status} className="size-4" />
                 {STATUS_META[status].label}
-                <span className="font-normal text-muted-foreground tabular-nums">{cards.length}</span>
+                <span className="font-normal text-muted-foreground">{cards.length}</span>
               </h2>
               {/* Radix wraps the content in a display:table box that grows to fit it; block keeps cards at the
                   column's width so lines truncate. The scrollbar is hidden: the column still scrolls.
@@ -973,7 +973,7 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
           <motion.div
             key={c.key}
             aria-hidden
-            className="pointer-events-none absolute top-0 left-0 z-50"
+            className="pointer-events-none absolute top-0 left-0 z-(--z-overlay)"
             style={{
               x: held ? followers[i]![0] : gliders[i]![0],
               y: held ? followers[i]![1] : gliders[i]![1],
@@ -999,14 +999,14 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
         .reverse()}
       <motion.div
         aria-hidden
-        className="pointer-events-none absolute top-0 left-0 z-50"
+        className="pointer-events-none absolute top-0 left-0 z-(--z-overlay)"
         style={{ x: held ? tx : mx, y: held ? ty : my, width, scale, rotate, opacity, originX: grab.x, originY: grab.y }}
       >
         <div className={cn("relative rounded-lg transition-shadow duration-200", held ? "shadow-2xl" : "shadow-md")}>
           <TaskCard task={cards[0]!.task} chip={chip(cards[0]!.task.section)} label={label(cards[0]!.task.section)} done={false} />
           {cards.length > 1 && (
             <motion.span
-              className="absolute -top-2 -right-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground tabular-nums shadow-md"
+              className="absolute -top-2 -right-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground shadow-md"
               animate={{ opacity: held ? 1 : 0 }}
               transition={quick}
             >
@@ -1024,15 +1024,19 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
  * the Zia Zen theme): a frosted grey tray with a dashed line inside, that springs bigger and turns
  * green when a card is over it. Dropping completes the tasks.
  */
+/** How much the Done zone grows while a card is over it (its old 264px → 320px width step). */
+const DONE_ZONE_GROW = 320 / 264;
+
 function DoneZone({ zoneRef, active, count }: { zoneRef: React.RefObject<HTMLDivElement | null>; active: boolean; count: number }) {
   return (
     <motion.div
       ref={zoneRef}
       data-active={active ? "" : undefined}
-      className="done-zone absolute bottom-6 left-1/2 z-10 rounded-[18px]"
-      style={{ x: "-50%" }}
-      initial={{ opacity: 0, scale: 0.94, y: 16, width: 264, height: 76 }}
-      animate={{ opacity: 1, scale: 1, y: 0, width: active ? 320 : 264, height: active ? 92 : 76 }}
+      className="done-zone absolute bottom-6 left-1/2 z-(--z-raised) h-[76px] w-[264px] rounded-[18px]"
+      // Grows by scale, not width/height, so it never re-lays out: 264×76 → about 320×92 when active.
+      style={{ x: "-50%", originY: 1 }}
+      initial={{ opacity: 0, scale: 0.94, y: 16 }}
+      animate={{ opacity: 1, scale: active ? DONE_ZONE_GROW : 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.94, y: 16, transition: quick }}
       transition={{
         default: { type: "spring", stiffness: 420, damping: 24 },

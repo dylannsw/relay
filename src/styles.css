@@ -15,8 +15,19 @@
     /* Star (starred mail, the Star button) and the selected Clean up icon. */
     --star: #f0ae22;
     /* The selected Home icon. */
-    --home: #e4583b;
-    /* Layers above the dialogs' z-50: the window-wide shockwave, then the command bar over it. */
+    --home: #ff552d;
+    /* The stacking scale. Feature code uses these via z-(--z-…) instead of picking numbers.
+       raised:   lifted over its siblings (a focused or dragged event, the now line, a close button).
+       sticky:   pinned headers, and layers that must pass over raised content (an event being
+                 resized, Home's glow).
+       floating: panels and trays over the page and its sticky parts (the event panel, the composer).
+       overlay:  over the whole window: drag ghosts, viewers, tooltips. The ui/ primitives
+                 (dialogs, menus, popovers) sit here too, as their stock z-50.
+       Above the dialogs: the window-wide shockwave, then the command bar over it. */
+    --z-raised: 10;
+    --z-sticky: 20;
+    --z-floating: 30;
+    --z-overlay: 50;
     --z-shockwave: 60;
     --z-command-bar: 61;
 }
@@ -26,6 +37,8 @@
     --color-star: var(--star);
     --color-home: var(--home);
     --font-heading: var(--font-sans);
+    /* Regular text is a touch heavier than 400 so it doesn't read thin (needs a variable font; others stay at 400). */
+    --font-weight-normal: 450;
     /* Settings > Appearance > Font style sets --app-font. */
     --font-sans: var(--app-font, 'Geist Variable', sans-serif);
     /* The type scale, a step up from Tailwind's (12/14/16/18px) so text reads comfortably on a desktop. */
@@ -236,9 +249,10 @@
     --warning: oklch(0.828 0.189 84.4);
     --info: oklch(0.707 0.165 254.6);
     --link: oklch(0.746 0.16 232.661);
-    --selected-border: oklch(0.746 0.16 232.661);
-    --selected: color-mix(in srgb, var(--card) 86%, var(--selected-border));
-    --selected-hover: color-mix(in srgb, var(--card) 82%, var(--selected-border));
+    --selected-border: #295971;
+    /* The fill still mixes in the original sky blue, so only the border changes. */
+    --selected: color-mix(in srgb, var(--card) 86%, oklch(0.746 0.16 232.661));
+    --selected-hover: color-mix(in srgb, var(--card) 82%, oklch(0.746 0.16 232.661));
     --tint-hover: color-mix(in oklab, var(--foreground) 10%, transparent);
     --tint-pressed: color-mix(in oklab, var(--foreground) 13%, transparent);
     --tint-active: color-mix(in oklab, var(--foreground) 16%, transparent);
@@ -246,11 +260,10 @@
     --field-focus: rgb(255 255 255 / 20%);
     --bubble: color-mix(in srgb, var(--foreground) 6%, var(--background));
     --bubble-border: var(--border);
-    /* The same sky blue as light mode's, mixed down into the dark background. */
-    --bubble-out: color-mix(in srgb, #96dcff 20%, var(--background));
-    --bubble-out-border: color-mix(in srgb, #96dcff 42%, var(--background));
-    /* Light mode's pair swapped: navy ground, sky-blue text (the same 5.7:1), so it isn't a light patch in a dark bubble. */
-    --quote-out: #2d5882;
+    --bubble-out: #314b58;
+    --bubble-out-border: #356882;
+    /* A deep slate-blue ground with sky-blue text (9.4:1), so it isn't a light patch in a dark bubble. */
+    --quote-out: #233842;
     --quote-out-foreground: #c6e7f7;
     --scrim: rgb(0 0 0 / 60%);
     --scrim-media: rgb(0 0 0 / 55%);
@@ -282,7 +295,7 @@
     @apply text-foreground;
     }
   html {
-    @apply font-sans;
+    @apply font-sans font-normal;
     }
   /* Tooltips are labels only and never take the pointer. They're portalled outside their
      trigger, so catching it would end hover on whatever opened them (an email row's
@@ -473,20 +486,15 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  /* The same 1.5px dash at rest and when a card is over it; only its colour changes. */
+  /* A 1.5px dash; a card over it changes only its colour. The label grows with the whole zone
+     (DoneZone scales it), so it needs no scale of its own. */
   border: 1.5px dashed color-mix(in srgb, var(--foreground) 20%, transparent);
   border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
   transition: border-color 0.15s ease;
-  & > * {
-    transition: scale 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
   .done-zone[data-active] & {
     border-color: color-mix(in srgb, var(--done-ink) 90%, transparent);
-    & > * {
-      scale: 1.15;
-    }
   }
 }
 /* A light sweeping across the label now and then. */
@@ -551,7 +559,7 @@
   max-width: none;
   padding: 0;
   background-color: var(--cb-bg);
-  /* above the window-wide shockwave (z-60, App.tsx), which stays above the dimmed overlay (z-50), so the
+  /* above the window-wide shockwave (--z-shockwave, App.tsx), which stays above the dimmed overlay (--z-overlay), so the
      wave runs under the bar */
   z-index: var(--z-command-bar);
   border: 1px solid var(--cb-edge);
@@ -742,7 +750,28 @@
   transition-timing-function: ease-out;
 }
 
+/* A new event made with a click unrolls down from the slot you clicked, as if drawn there, and
+   fades in. Clip-path and opacity only, on mount via @starting-style. (One drawn with a drag
+   already grows under the pointer, so it doesn't get this.) */
+.event-ghost-in {
+  clip-path: inset(0);
+  transition:
+    clip-path 0.2s var(--ease-out-soft),
+    opacity 0.2s var(--ease-out-soft);
+}
+@starting-style {
+  .event-ghost-in {
+    clip-path: inset(0 0 75% 0);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  /* Just the fade. */
+  .event-ghost-in {
+    clip-path: none;
+    transition: opacity 0.2s var(--ease-out-soft);
+  }
   .cmdbar[data-state],
   .cb-swap,
   .cb-icon-back,

@@ -4,8 +4,8 @@ import type { Folder } from "@/types";
 /** The folders Relay mirrors for every account, in sidebar order. */
 export const FOLDERS: { id: Folder; label: string; icon: TablerIcon }[] = [
   { id: "inbox", label: "Inbox", icon: IconInbox },
-  { id: "trash", label: "Deleted", icon: IconTrash },
   { id: "archive", label: "Archived", icon: IconArchive },
+  { id: "trash", label: "Deleted", icon: IconTrash },
   { id: "spam", label: "Spam", icon: IconAlertOctagon },
 ];
 
