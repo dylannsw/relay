@@ -15,7 +15,9 @@ import type {
   NewEvent,
   Place,
   Config,
+  FileInfo,
   Folder,
+  SavedDraft,
   ListQuery,
   MessageDetail,
   MessageSummary,
@@ -64,6 +66,18 @@ export const api = {
   /** Moves many at once; returns each message's id afterwards, in the same order. */
   moveMessages: (ids: string[], folder: Folder) => call<string[]>("move_messages", { ids, folder }),
   send: (message: OutgoingMessage) => call<void>("send_message", { message }),
+  /** Name and size of each file (unreadable ones are left out). */
+  fileInfo: (paths: string[]) => call<FileInfo[]>("file_info", { paths }),
+  /** Files chosen in Windows' file picker to attach to an email; empty if cancelled. */
+  pickAttachments: async (): Promise<string[]> => {
+    if (!isTauri) return ["C:\\Users\\you\\Documents\\Design draft.pdf", "C:\\Users\\you\\Documents\\User data.xlsx"];
+    const picked = await openDialog({ multiple: true, title: "Attach files" });
+    return Array.isArray(picked) ? picked : picked ? [picked] : [];
+  },
+  listDrafts: () => call<SavedDraft[]>("list_drafts"),
+  /** Saves (or first creates) a draft; resolves to it as saved, with its id. */
+  saveDraft: (draft: SavedDraft) => call<SavedDraft>("save_draft", { draft }),
+  deleteDraft: (id: string) => call<void>("delete_draft", { id }),
 
   syncNow: () => call<SyncReport[]>("sync_now"),
 

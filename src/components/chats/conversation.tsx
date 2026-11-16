@@ -1200,7 +1200,7 @@ function Bubble(props: {
             <div data-bubble onDoubleClick={m.pending ? undefined : props.onReply} className={cn("relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]", out ? "origin-right" : "origin-left")}>
               {nameLine}
               {(m.forwardedFrom !== null || m.reply) && (
-                <div className={cn("min-w-0 self-start rounded-2xl bg-bubble px-3 py-1.5", out && "self-end")}>
+                <div className={cn("max-w-full min-w-0 self-start rounded-2xl bg-bubble px-3 py-1.5", out && "self-end")}>
                   {m.forwardedFrom !== null && (
                     <div className="truncate text-xs opacity-75">
                       Forwarded{m.forwardedFrom ? <> from <span className="font-medium">{m.forwardedFrom}</span></> : null}
@@ -1231,7 +1231,8 @@ function Bubble(props: {
           {nameLine}
           <div
             className={cn(
-              "relative min-w-0 overflow-hidden border text-sm leading-[1.4] break-words text-foreground",
+              // max-w-full: a long quoted line would otherwise size the bubble past the column's cap.
+              "relative max-w-full min-w-0 overflow-hidden border text-sm leading-[1.4] break-words text-foreground",
               corners,
               out ? "border-bubble-out-border bg-bubble-out" : "border-bubble-border bg-bubble",
               !photoOnly && "px-2.5 py-[7px]",

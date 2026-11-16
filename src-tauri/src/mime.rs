@@ -131,9 +131,71 @@ pub struct OutgoingMime<'a> {
     pub text: &'a str,
     pub in_reply_to: Option<&'a str>,
     pub references: Option<&'a str>,
+    pub attachments: &'a [OutAttachment],
 }
 
-/// Builds a plain-text RFC 5322 message suitable for Gmail's `messages.send`.
+/// A file going out with a message.
+pub struct OutAttachment {
+    pub name: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
+/// The MIME type for a file name, by extension; unknown kinds go as plain bytes.
+pub fn content_type_for(name: &str) -> &'static str {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    match ext.as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "txt" | "log" => "text/plain",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    }
+}
+
+/// `filename` parameter for a Content-Disposition: plain when it's simple ASCII,
+/// RFC 2231 percent-encoded UTF-8 otherwise.
+fn filename_param(name: &str) -> String {
+    let name = strip_crlf(name);
+    if name.chars().all(|c| c.is_ascii_graphic() || c == ' ') && !name.contains('"') && !name.contains('\\') {
+        return format!("filename=\"{name}\"");
+    }
+    let mut enc = String::new();
+    for b in name.as_bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(b) {
+            enc.push(*b as char);
+        } else {
+            enc.push_str(&format!("%{b:02X}"));
+        }
+    }
+    format!("filename*=UTF-8''{enc}")
+}
+
+fn push_base64(lines: &mut Vec<String>, data: &[u8]) {
+    let encoded = STANDARD.encode(data);
+    for chunk in encoded.as_bytes().chunks(76) {
+        lines.push(String::from_utf8_lossy(chunk).into_owned());
+    }
+}
+
+/// Builds an RFC 5322 message suitable for Gmail's `messages.send`: plain text,
+/// or multipart/mixed when there are attachments.
 pub fn build_message(m: &OutgoingMime) -> String {
     let join = |list: &[Address]| {
         list.iter()
@@ -157,15 +219,32 @@ pub fn build_message(m: &OutgoingMime) -> String {
         lines.push(format!("References: {refs}"));
     }
     lines.push("MIME-Version: 1.0".into());
+    let normalized = m.text.replace("\r\n", "\n").replace('\n', "\r\n");
+    if m.attachments.is_empty() {
+        lines.push("Content-Type: text/plain; charset=UTF-8".into());
+        lines.push("Content-Transfer-Encoding: base64".into());
+        lines.push(String::new());
+        push_base64(&mut lines, normalized.as_bytes());
+        return lines.join("\r\n");
+    }
+
+    let boundary = format!("relay-{}", uuid::Uuid::new_v4().simple());
+    lines.push(format!("Content-Type: multipart/mixed; boundary=\"{boundary}\""));
+    lines.push(String::new());
+    lines.push(format!("--{boundary}"));
     lines.push("Content-Type: text/plain; charset=UTF-8".into());
     lines.push("Content-Transfer-Encoding: base64".into());
     lines.push(String::new());
-
-    let normalized = m.text.replace("\r\n", "\n").replace('\n', "\r\n");
-    let encoded = STANDARD.encode(normalized.as_bytes());
-    for chunk in encoded.as_bytes().chunks(76) {
-        lines.push(String::from_utf8_lossy(chunk).into_owned());
+    push_base64(&mut lines, normalized.as_bytes());
+    for a in m.attachments {
+        lines.push(format!("--{boundary}"));
+        lines.push(format!("Content-Type: {}; name=\"{}\"", strip_crlf(&a.content_type), encode_header(&a.name).replace('"', "")));
+        lines.push(format!("Content-Disposition: attachment; {}", filename_param(&a.name)));
+        lines.push("Content-Transfer-Encoding: base64".into());
+        lines.push(String::new());
+        push_base64(&mut lines, &a.data);
     }
+    lines.push(format!("--{boundary}--"));
     lines.join("\r\n")
 }
 
@@ -346,6 +425,7 @@ mod tests {
             text: "Hello\nthere",
             in_reply_to: Some("<abc@mail>"),
             references: Some("<root@mail> <abc@mail>"),
+            attachments: &[],
         });
         assert!(raw.contains("From: =?UTF-8?B?"));
         assert!(raw.contains("To: you@x.com\r\n"));
@@ -354,6 +434,32 @@ mod tests {
         assert!(raw.contains("In-Reply-To: <abc@mail>"));
         let body = raw.split("\r\n\r\n").nth(1).unwrap().replace("\r\n", "");
         assert_eq!(STANDARD.decode(body).unwrap(), b"Hello\r\nthere");
+    }
+
+    #[test]
+    fn builds_multipart_with_attachments() {
+        let from = Address { name: "".into(), email: "me@gmail.com".into() };
+        let to = vec![Address { name: "".into(), email: "you@x.com".into() }];
+        let files = [
+            OutAttachment { name: "notes.txt".into(), content_type: "text/plain".into(), data: b"hi".to_vec() },
+            OutAttachment { name: "Résumé.pdf".into(), content_type: "application/pdf".into(), data: vec![1, 2, 3] },
+        ];
+        let raw = build_message(&OutgoingMime {
+            from: &from,
+            to: &to,
+            cc: &[],
+            subject: "Files",
+            text: "See attached",
+            in_reply_to: None,
+            references: None,
+            attachments: &files,
+        });
+        assert!(raw.contains("Content-Type: multipart/mixed; boundary=\"relay-"));
+        assert!(raw.contains("Content-Disposition: attachment; filename=\"notes.txt\""));
+        assert!(raw.contains("filename*=UTF-8''R%C3%A9sum%C3%A9.pdf"));
+        assert!(raw.contains(&STANDARD.encode(b"hi")));
+        assert!(raw.trim_end().ends_with("--"));
+        assert_eq!(content_type_for("Deck.PPTX"), "application/vnd.openxmlformats-officedocument.presentationml.presentation");
     }
 
     #[test]

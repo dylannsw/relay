@@ -245,7 +245,7 @@ export function EventEditor(props: {
         <FieldRow icon={<IconRepeat />}>
           <div className="flex flex-col gap-1.5">
             <Select value={repeat ?? ""} onValueChange={(v) => setRepeat(v as Preset)} disabled={repeat === undefined}>
-              <SelectTrigger className="w-full" aria-label="Repeat">
+              <SelectTrigger aria-label="Repeat">
                 <SelectValue placeholder={series === undefined ? "Loading…" : "Repeats"} />
               </SelectTrigger>
               <SelectContent>
@@ -330,7 +330,7 @@ export function EventEditor(props: {
 
         <FieldRow icon={<CalendarIcon />}>
           <Select value={f.calendarId} onValueChange={(id) => set({ calendarId: id })} disabled={choices.length < 2}>
-            <SelectTrigger className="w-full">
+            <SelectTrigger>
               <SelectValue placeholder="Choose a calendar" />
             </SelectTrigger>
             <SelectContent>

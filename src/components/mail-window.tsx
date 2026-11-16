@@ -86,16 +86,18 @@ export function CloseButton({ onClose, className }: { onClose: () => void; class
 }
 
 /** One labelled line in a message's details list (From, To, Subject…). */
-export function DetailRow({ label, children, end, className }: {
+export function DetailRow({ label, children, end, className, labelClassName }: {
   label: string;
   children: ReactNode;
   /** Right-aligned extras, like the Cc toggle. */
   end?: ReactNode;
   className?: string;
+  /** Narrower labels (Compose's From/To/Cc) sit closer to their values. */
+  labelClassName?: string;
 }) {
   return (
     <div className={cn("flex min-h-10 items-center gap-3 px-5 py-1.5", className)}>
-      <span className="w-16 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className={cn("w-16 shrink-0 text-sm text-muted-foreground", labelClassName)}>{label}</span>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">{children}</div>
       {end && <div className="flex shrink-0 items-center gap-1">{end}</div>}
     </div>

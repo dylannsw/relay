@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
@@ -19,7 +19,7 @@ import {
   IconUser,
   type TablerIcon,
 } from "@tabler/icons-react";
-import { CalendarIcon } from "@/components/icons";
+import { CalendarIcon, DraftIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -58,13 +58,16 @@ export type View =
   | { kind: "all" }
   | { kind: "label"; label: string }
   | { kind: "account"; id: string; folder: Folder }
+  /** One account's drafts: messages being written, saved on this PC. */
+  | { kind: "drafts"; id: string }
   /** Sender groups of one account's (or every account's) inbox or archive, for bulk tidying. */
   | { kind: "cleanup" }
   /** Telegram: All chats (folder null) or one of your Telegram folders. */
   | { kind: "chats"; folder: number | null };
 
-/** Home, Tasks, Calendar and Chats: pages without the mail list. */
-export const isPageView = (v: View) => v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "chats";
+/** Home, Tasks, Calendar, Chats and Drafts: pages without the mail list. */
+export const isPageView = (v: View) =>
+  v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "chats" || v.kind === "drafts";
 
 /** An icon for a Telegram folder, guessed from its name. */
 export function chatFolderIcon(title: string): TablerIcon {
@@ -94,6 +97,8 @@ interface Props {
   /** Signs an account in again after its sign-in expires. Adding accounts lives in Settings. */
   onReconnect: (p: Provider) => void;
   onOpenSettings: () => void;
+  /** Saved drafts per account id. */
+  draftCounts?: Record<string, number>;
   /** The search bar (the command bar's trigger), above Home. */
   search?: ReactNode;
   className?: string;
@@ -150,7 +155,7 @@ export function stepSidebarView(accounts: Account[], current: View, step: number
   const views = sidebarViews(accounts);
   // A filtered Tasks list, another of an account's folders or a Telegram folder counts as that item.
   const at = views.findIndex((v) =>
-    v.kind === "account" && current.kind === "account"
+    v.kind === "account" && (current.kind === "account" || current.kind === "drafts")
       ? v.id === current.id
       : v.kind === "label" && current.kind === "label"
         ? v.label === current.label
@@ -160,14 +165,16 @@ export function stepSidebarView(accounts: Account[], current: View, step: number
   return views[(i + step + views.length) % views.length]!;
 }
 
-/** An account that expands to its Inbox, Archived, Deleted and Spam folders. */
-function AccountItem({ account: a, view, onView, onReconnect }: {
+/** An account that expands to its Inbox, Drafts, Archived, Deleted and Spam folders. */
+function AccountItem({ account: a, view, onView, onReconnect, drafts }: {
   account: Account;
   view: View;
   onView: (v: View) => void;
   onReconnect: () => void;
+  drafts: number;
 }) {
-  const viewing = view.kind === "account" && view.id === a.id;
+  const viewing = (view.kind === "account" || view.kind === "drafts") && view.id === a.id;
+  const draftsView: View = { kind: "drafts", id: a.id };
   const [open, setOpen] = useState(viewing);
   /** Expanded by going to it (Ctrl+Tab, the command bar…), not by you: it closes again when you move on. */
   const autoOpened = useRef(viewing);
@@ -238,15 +245,29 @@ function AccountItem({ account: a, view, onView, onReconnect }: {
             {FOLDERS.map((f) => {
               const v: View = { kind: "account", id: a.id, folder: f.id };
               return (
-                <SidebarMenuSubItem key={f.id}>
-                  <SidebarMenuSubButton asChild isActive={sameView(view, v)}>
-                    <button type="button" className="w-full" onClick={() => onView(v)}>
-                      <f.icon />
-                      <span className="min-w-0 flex-1 truncate">{f.label}</span>
-                      {f.id === "inbox" && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
-                    </button>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
+                <Fragment key={f.id}>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild isActive={sameView(view, v)}>
+                      <button type="button" className="w-full" onClick={() => onView(v)}>
+                        <f.icon />
+                        <span className="min-w-0 flex-1 truncate">{f.label}</span>
+                        {f.id === "inbox" && a.unreadCount > 0 && <SidebarCount>{a.unreadCount}</SidebarCount>}
+                      </button>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  {/* Drafts sits under Inbox, as in Gmail and Outlook. */}
+                  {f.id === "inbox" && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton asChild isActive={sameView(view, draftsView)}>
+                        <button type="button" className="w-full" onClick={() => onView(draftsView)}>
+                          <DraftIcon />
+                          <span className="min-w-0 flex-1 truncate">Drafts</span>
+                          {drafts > 0 && <SidebarCount>{drafts}</SidebarCount>}
+                        </button>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                </Fragment>
               );
             })}
           </SidebarMenuSub>
@@ -350,7 +371,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 
   return (
     <SidebarGroup className={GUTTER}>
-      <SidebarGroupLabel>Chats</SidebarGroupLabel>
+      <SidebarGroupLabel>Telegram</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {folders.length === 0 ? (
@@ -396,7 +417,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   );
 }
 
-export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, search, className }: Props) {
+export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, draftCounts, search, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = sortedLabels(accounts);
 
@@ -405,12 +426,15 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
       <SidebarContent>
         {search && <SidebarGroup className={cn(GUTTER, "pb-0")}>{search}</SidebarGroup>}
         <SidebarGroup className={GUTTER}>
+          <SidebarGroupLabel>Overview</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <PageItems view={view} onView={onView} />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <ChatItems view={view} onView={onView} />
 
         <SidebarGroup className={GUTTER}>
           <SidebarGroupLabel>Mail</SidebarGroupLabel>
@@ -437,8 +461,6 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        <ChatItems view={view} onView={onView} />
 
         {/* Personal, Work, School: a group of their own, set apart from All inboxes and Clean up. */}
         {labels.length > 0 && (
@@ -476,6 +498,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                     view={view}
                     onView={onView}
                     onReconnect={() => onReconnect(a.provider)}
+                    drafts={draftCounts?.[a.id] ?? 0}
                   />
                 ))}
               </SidebarMenu>

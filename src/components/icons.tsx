@@ -1,4 +1,4 @@
-import { CalendarDot, CalendarSlash, type IconProps } from "@phosphor-icons/react"
+import { CalendarDot, CalendarSlash, FileDashed, type IconProps } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 
 /*
@@ -10,6 +10,11 @@ import { cn } from "@/lib/utils"
 
 export function CalendarIcon({ className, ...props }: IconProps) {
   return <CalendarDot weight="bold" className={cn("ph-icon", className)} {...props} />
+}
+
+/** Drafts: a page with a dashed line, as if still being written. */
+export function DraftIcon({ className, ...props }: IconProps) {
+  return <FileDashed weight="bold" className={cn("ph-icon", className)} {...props} />
 }
 
 /** No calendar (access not granted). */

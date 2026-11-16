@@ -16,8 +16,8 @@ use crate::tasks::{self, Note, TasksSnapshot};
 use crate::error::{msg, Result};
 use crate::mime::{self, OutgoingMime};
 use crate::models::{
-    local_id, Account, Address, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, OutgoingMessage,
-    Provider, SyncReport,
+    local_id, Account, Address, ComposeMode, FileInfo, Folder, ListQuery, MessageDetail, MessageSummary,
+    OutgoingMessage, Provider, SavedDraft, SyncReport,
 };
 use crate::state::AppState;
 use crate::senders::{self, SenderGroup};
@@ -490,6 +490,21 @@ pub async fn send_message(state: St<'_>, message: OutgoingMessage) -> Result<()>
             return Err(msg("Replies must be sent from the account that received the message."));
         }
     }
+    let paths = m.attachments.clone();
+    let files = tauri::async_runtime::spawn_blocking(move || read_attachments(&paths))
+        .await
+        .map_err(|e| msg(e.to_string()))??;
+    // Outlook takes attachments inside one request of at most 4 MB (3 MB before base64);
+    // Gmail allows 25 MB per message.
+    let total: usize = files.iter().map(|f| f.data.len()).sum();
+    let limit_mb = if account.provider == Provider::Microsoft { 3 } else { 25 };
+    if total > limit_mb * 1024 * 1024 {
+        return Err(msg(format!(
+            "Attachments come to {:.1} MB; {} accounts can send up to {limit_mb} MB from Relay.",
+            total as f64 / 1_048_576.0,
+            if account.provider == Provider::Microsoft { "Microsoft" } else { "Gmail" },
+        )));
+    }
     let token = state.access_token(&account).await?;
 
     match account.provider {
@@ -543,6 +558,7 @@ pub async fn send_message(state: St<'_>, message: OutgoingMessage) -> Result<()>
                 text: &text,
                 in_reply_to: in_reply_to.as_deref(),
                 references: references.as_deref(),
+                attachments: &files,
             });
             gmail::send(&state.http, &token, &raw, thread_id.as_deref()).await
         }
@@ -550,18 +566,65 @@ pub async fn send_message(state: St<'_>, message: OutgoingMessage) -> Result<()>
             let html = mime::text_to_html(&m.body);
             match (&original, m.mode) {
                 (Some(o), ComposeMode::Reply) => {
-                    graph::respond(&state.http, &token, &o.summary.remote_id, "reply", &html, &to, &cc).await
+                    graph::respond(&state.http, &token, &o.summary.remote_id, "reply", &html, &to, &cc, &files).await
                 }
                 (Some(o), ComposeMode::ReplyAll) => {
-                    graph::respond(&state.http, &token, &o.summary.remote_id, "replyAll", &html, &to, &cc).await
+                    graph::respond(&state.http, &token, &o.summary.remote_id, "replyAll", &html, &to, &cc, &files).await
                 }
                 (Some(o), ComposeMode::Forward) => {
-                    graph::respond(&state.http, &token, &o.summary.remote_id, "forward", &html, &to, &cc).await
+                    graph::respond(&state.http, &token, &o.summary.remote_id, "forward", &html, &to, &cc, &files).await
                 }
-                _ => graph::send_mail(&state.http, &token, &m.subject, &html, &to, &cc).await,
+                _ => graph::send_mail(&state.http, &token, &m.subject, &html, &to, &cc, &files).await,
             }
         }
     }
+}
+
+fn file_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string())
+}
+
+fn read_attachments(paths: &[String]) -> Result<Vec<mime::OutAttachment>> {
+    paths
+        .iter()
+        .map(|p| {
+            let name = file_name(p);
+            let data = std::fs::read(p).map_err(|e| msg(format!("Couldn't read {name}: {e}")))?;
+            Ok(mime::OutAttachment { content_type: mime::content_type_for(&name).to_string(), name, data })
+        })
+        .collect()
+}
+
+/// Name and size of each file picked to attach (files that can't be read are left out).
+#[tauri::command]
+pub fn file_info(paths: Vec<String>) -> Vec<FileInfo> {
+    paths
+        .into_iter()
+        .filter_map(|path| {
+            let meta = std::fs::metadata(&path).ok().filter(|m| m.is_file())?;
+            Some(FileInfo { name: file_name(&path), size: meta.len(), path })
+        })
+        .collect()
+}
+
+// ---------- drafts ----------
+
+#[tauri::command]
+pub fn list_drafts(state: St<'_>) -> Result<Vec<SavedDraft>> {
+    state.db(db::list_drafts)
+}
+
+#[tauri::command]
+pub fn save_draft(state: St<'_>, draft: SavedDraft) -> Result<SavedDraft> {
+    state.db(|c| db::save_draft(c, draft))
+}
+
+#[tauri::command]
+pub fn delete_draft(state: St<'_>, id: String) -> Result<()> {
+    state.db(|c| db::delete_draft(c, &id))
 }
 
 // ---------- sync ----------

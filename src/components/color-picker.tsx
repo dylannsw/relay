@@ -181,7 +181,7 @@ export function ColorPicker({ value, onChange, label, presets, className, trigge
               setFields(fieldsOf(hex, f as Format));
             }}
           >
-            <SelectTrigger size="sm" className="w-[4.5rem] shrink-0" aria-label="Colour format">
+            <SelectTrigger size="sm" className="shrink-0" aria-label="Colour format">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

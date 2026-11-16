@@ -165,7 +165,7 @@ pub struct ListQuery {
     pub offset: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ComposeMode {
     New,
@@ -186,6 +186,40 @@ pub struct OutgoingMessage {
     pub mode: ComposeMode,
     /// Local id of the message being replied to / forwarded.
     pub reply_to_id: Option<String>,
+    /// Paths of files to attach.
+    #[serde(default)]
+    pub attachments: Vec<String>,
+}
+
+/// A message being written, kept on this PC only (not synced to the mail provider).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedDraft {
+    /// Empty when saving a draft for the first time; the save fills it in.
+    #[serde(default)]
+    pub id: String,
+    pub account_id: String,
+    pub mode: ComposeMode,
+    pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    pub subject: String,
+    pub body: String,
+    pub reply_to_id: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<String>,
+    /// When it was last saved (ms).
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
+/// A file picked to attach: its path, name and size in bytes.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileInfo {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]

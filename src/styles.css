@@ -94,6 +94,7 @@
     --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
     --color-sidebar-primary: var(--sidebar-primary);
     --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-label: var(--sidebar-label);
     --color-sidebar: var(--sidebar);
     --color-ring: var(--ring);
     --color-input: var(--input);
@@ -202,6 +203,8 @@
     --sidebar-ring: var(--focus);
     /* The selected sidebar item's icon: the accent, kept readable on the sidebar grey. */
     --sidebar-icon-active: var(--brand);
+    /* Sidebar section headers (Overview, Telegram, Mail, Accounts): a quieter grey than the rows. */
+    --sidebar-label: oklch(0.52 0 0);
     /* Chip palette (Badge variant="tint"). Account defaults come from the same list in
        src-tauri/src/commands.rs, and Settings offers them in ACCOUNT_COLORS (settings-dialog.tsx);
        change all three together. Dark mode derives its colors from these. */
@@ -284,6 +287,7 @@
     --smooth-ring-color: rgba(255, 255, 255, 0.1);
     /* Lifted so the accent reads clearly on the near-black sidebar. */
     --sidebar-icon-active: oklch(from var(--brand) max(l, 0.7) c h);
+    --sidebar-label: oklch(0.58 0 0);
 }
 
 @layer base {
@@ -353,6 +357,10 @@
   /* Badges force a small size on direct-child icons, overriding the icon's own class. */
   [data-slot="badge"] > .tabler-icon {
     stroke-width: 1.35px;
+  }
+  /* Sidebar rows (and their sub-rows): a finer 1.4px line, so the larger icons don't read heavy. */
+  :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]) .tabler-icon {
+    stroke-width: 1.4px;
   }
   /* Light mode: icons are never darker than mid-grey, so ones that inherit near-black
      text colour don't read as solid black. Lighter colours (muted grey, chip colours,
@@ -866,3 +874,77 @@
     scale: none;
   }
 }
+
+/* Isometric illustrations (empty states). The anatomy kit's tokens, taken from the page's own
+   background and foreground so they follow light, dark and mixed. Shades darken the paper, tops
+   lighten it, and lines are the foreground at falling strengths. */
+.iso {
+  --anatomy-paper: var(--background);
+  --anatomy-face: color-mix(in oklab, var(--background), white 70%);
+  --anatomy-top: color-mix(in oklab, var(--background), white 70%);
+  --anatomy-shade-0: color-mix(in oklab, var(--background), black 8%);
+  --anatomy-shade-1: color-mix(in oklab, var(--background), black 5.5%);
+  --anatomy-shade-2: color-mix(in oklab, var(--background), black 3.5%);
+  --anatomy-shade-3: color-mix(in oklab, var(--background), black 1.5%);
+  --anatomy-lit-top: var(--anatomy-top);
+  --anatomy-lit-shade: color-mix(in oklab, var(--background), black 4%);
+  --anatomy-hi: color-mix(in oklab, var(--foreground) 92%, var(--background));
+  --anatomy-mid: color-mix(in oklab, var(--foreground) 52%, var(--background));
+  --anatomy-lo: color-mix(in oklab, var(--foreground) 32%, var(--background));
+  --anatomy-faint: color-mix(in oklab, var(--foreground) 17%, var(--background));
+  --anatomy-lit: var(--foreground);
+  --anatomy-dot: var(--foreground);
+  --anatomy-halo: black;
+  --anatomy-halo-opacity: 0.09;
+  --anatomy-cavity-0: color-mix(in oklab, var(--background), black 13%);
+  --anatomy-cavity-1: color-mix(in oklab, var(--background), black 9%);
+  --anatomy-cavity-2: color-mix(in oklab, var(--background), black 6%);
+  --anatomy-weight: 0.8px;
+  @variant dark {
+    --anatomy-face: color-mix(in oklab, var(--background), white 4%);
+    --anatomy-top: color-mix(in oklab, var(--background), white 6%);
+    --anatomy-shade-0: color-mix(in oklab, var(--background), black 12%);
+    --anatomy-shade-1: color-mix(in oklab, var(--background), black 7%);
+    --anatomy-shade-2: color-mix(in oklab, var(--background), black 3%);
+    --anatomy-shade-3: color-mix(in oklab, var(--background), white 2%);
+    --anatomy-lit-top: color-mix(in oklab, var(--background), white 9%);
+    --anatomy-lit-shade: color-mix(in oklab, var(--background), white 3%);
+    --anatomy-hi: color-mix(in oklab, var(--foreground) 80%, var(--background));
+    --anatomy-mid: color-mix(in oklab, var(--foreground) 40%, var(--background));
+    --anatomy-lo: color-mix(in oklab, var(--foreground) 22%, var(--background));
+    --anatomy-faint: color-mix(in oklab, var(--foreground) 12%, var(--background));
+    --anatomy-halo-opacity: 0.45;
+    --anatomy-cavity-0: color-mix(in oklab, var(--background), black 30%);
+    --anatomy-cavity-1: color-mix(in oklab, var(--background), black 22%);
+    --anatomy-cavity-2: color-mix(in oklab, var(--background), black 16%);
+  }
+}
+.iso-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.iso-svg path, .iso-svg circle { vector-effect: non-scaling-stroke; }
+.iso-fill { fill: var(--anatomy-paper); stroke: none; }
+.iso-solid[data-lit] > .iso-fill { fill: var(--anatomy-face); }
+.iso-shade, .iso-top { stroke: none; }
+.iso-shade[data-shade="0"] { fill: var(--anatomy-shade-0); }
+.iso-shade[data-shade="1"] { fill: var(--anatomy-shade-1); }
+.iso-shade[data-shade="2"] { fill: var(--anatomy-shade-2); }
+.iso-shade[data-shade="3"] { fill: var(--anatomy-shade-3); }
+.iso-top { fill: var(--anatomy-top); }
+.iso-solid[data-lit] > .iso-top { fill: var(--anatomy-lit-top); }
+.iso-solid[data-lit] > .iso-shade { fill: var(--anatomy-lit-shade); }
+.iso-solid[data-lit] > .iso-edge { stroke: var(--anatomy-lit); }
+.iso-halo { fill: var(--anatomy-halo); stroke: none; filter: blur(7px); opacity: var(--anatomy-halo-opacity); transform: translateY(3px); }
+.iso-line { fill: none; stroke: var(--anatomy-lo); stroke-width: var(--anatomy-weight); stroke-linecap: round; stroke-linejoin: round; }
+.iso-line[data-tone="hi"] { stroke: var(--anatomy-hi); }
+.iso-line[data-tone="mid"] { stroke: var(--anatomy-mid); }
+.iso-line[data-tone="lo"] { stroke: var(--anatomy-lo); }
+.iso-line[data-tone="faint"] { stroke: var(--anatomy-faint); }
+.iso-line[data-tone="lit"] { stroke: var(--anatomy-lit); }
+.iso-dots circle { fill: var(--anatomy-dot); stroke: none; opacity: 0.32; }
+.iso-dots[data-tone="hi"] circle { opacity: 0.85; }
+.iso-dots[data-tone="mid"] circle { opacity: 0.45; }
+.iso-dots[data-tone="lo"] circle { opacity: 0.22; }
+.iso-dots[data-tone="faint"] circle { opacity: 0.12; }
+.fc-cavity { stroke: none; }
+.fc-cavity[data-depth="0"] { fill: var(--anatomy-cavity-0); }
+.fc-cavity[data-depth="1"] { fill: var(--anatomy-cavity-1); }
+.fc-cavity[data-depth="2"] { fill: var(--anatomy-cavity-2); }

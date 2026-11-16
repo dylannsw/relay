@@ -9,7 +9,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 use crate::error::Result;
 use crate::models::{
     local_id, Account, Address, Attachment, FetchedBody, Folder, ListQuery, MessageDetail, MessageSummary,
-    Provider,
+    Provider, SavedDraft,
 };
 use crate::senders::SenderRow;
 
@@ -136,6 +136,14 @@ CREATE TABLE IF NOT EXISTS feed_events (
 
 CREATE INDEX IF NOT EXISTS idx_feed_events_time ON feed_events(start_ms, end_ms);
 CREATE INDEX IF NOT EXISTS idx_feed_events_calendar ON feed_events(calendar_id);
+
+-- Messages being written, kept on this PC only. `data` is the SavedDraft as JSON.
+CREATE TABLE IF NOT EXISTS drafts (
+    id         TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    updated_at INTEGER NOT NULL,
+    data       TEXT NOT NULL
+);
 "#;
 
 pub fn open(path: &Path) -> Result<Connection> {
@@ -676,6 +684,42 @@ pub fn set_body(c: &Connection, id: &str, body: &FetchedBody) -> Result<()> {
             serde_json::to_string(&body.attachments)?
         ],
     )?;
+    Ok(())
+}
+
+// ---------- drafts ----------
+
+/// Every saved draft, most recently edited first.
+pub fn list_drafts(c: &Connection) -> Result<Vec<SavedDraft>> {
+    let mut stmt = c.prepare("SELECT data FROM drafts ORDER BY updated_at DESC")?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for data in rows {
+        // A row that no longer parses (an older shape) is skipped rather than failing the list.
+        if let Ok(d) = serde_json::from_str::<SavedDraft>(&data?) {
+            out.push(d);
+        }
+    }
+    Ok(out)
+}
+
+/// Inserts or replaces a draft; a new one (empty id) gets an id. Returns it as saved.
+pub fn save_draft(c: &Connection, mut d: SavedDraft) -> Result<SavedDraft> {
+    if d.id.is_empty() {
+        d.id = uuid::Uuid::new_v4().to_string();
+    }
+    d.updated_at = now_ms();
+    c.execute(
+        "INSERT INTO drafts (id, account_id, updated_at, data) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
+             updated_at = excluded.updated_at, data = excluded.data",
+        params![d.id, d.account_id, d.updated_at, serde_json::to_string(&d)?],
+    )?;
+    Ok(d)
+}
+
+pub fn delete_draft(c: &Connection, id: &str) -> Result<()> {
+    c.execute("DELETE FROM drafts WHERE id = ?1", params![id])?;
     Ok(())
 }
 

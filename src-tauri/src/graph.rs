@@ -5,8 +5,12 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+
 use crate::error::Result;
 use crate::http;
+use crate::mime::OutAttachment;
 use crate::models::{local_id, Address, Attachment, FetchedBody, Folder, MessageSummary};
 
 const BASE: &str = "https://graph.microsoft.com/v1.0";
@@ -312,6 +316,22 @@ fn recipients(list: &[Address]) -> Value {
     )
 }
 
+fn file_attachments(files: &[OutAttachment]) -> Value {
+    Value::Array(
+        files
+            .iter()
+            .map(|f| {
+                json!({
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": f.name,
+                    "contentType": f.content_type,
+                    "contentBytes": STANDARD.encode(&f.data),
+                })
+            })
+            .collect(),
+    )
+}
+
 pub async fn send_mail(
     http: &Client,
     token: &str,
@@ -319,6 +339,7 @@ pub async fn send_mail(
     html: &str,
     to: &[Address],
     cc: &[Address],
+    files: &[OutAttachment],
 ) -> Result<()> {
     let body = json!({
         "message": {
@@ -326,6 +347,7 @@ pub async fn send_mail(
             "body": { "contentType": "HTML", "content": html },
             "toRecipients": recipients(to),
             "ccRecipients": recipients(cc),
+            "attachments": file_attachments(files),
         },
         "saveToSentItems": true
     });
@@ -339,6 +361,7 @@ pub async fn send_mail(
 
 /// `action` is "reply", "replyAll" or "forward". Graph quotes the original
 /// message (and keeps attachments when forwarding) for us.
+#[allow(clippy::too_many_arguments)]
 pub async fn respond(
     http: &Client,
     token: &str,
@@ -347,14 +370,16 @@ pub async fn respond(
     comment_html: &str,
     to: &[Address],
     cc: &[Address],
+    files: &[OutAttachment],
 ) -> Result<()> {
-    let body = json!({
-        "comment": comment_html,
-        "message": {
-            "toRecipients": recipients(to),
-            "ccRecipients": recipients(cc),
-        }
+    let mut message = json!({
+        "toRecipients": recipients(to),
+        "ccRecipients": recipients(cc),
     });
+    if !files.is_empty() {
+        message["attachments"] = file_attachments(files);
+    }
+    let body = json!({ "comment": comment_html, "message": message });
     http::send(
         http.post(format!("{BASE}/me/messages/{id}/{action}"))
             .bearer_auth(token)

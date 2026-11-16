@@ -155,6 +155,31 @@ export interface OutgoingMessage {
   body: string;
   mode: ComposeMode;
   replyToId?: string;
+  /** Paths of files to attach. */
+  attachments?: string[];
+}
+
+/** A file picked to attach. */
+export interface FileInfo {
+  path: string;
+  name: string;
+  size: number;
+}
+
+/** A message being written, saved on this PC only. */
+export interface SavedDraft {
+  /** Empty for a draft not saved yet. */
+  id: string;
+  accountId: string;
+  mode: ComposeMode;
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+  replyToId?: string;
+  attachments: string[];
+  /** Last saved (ms). */
+  updatedAt: number;
 }
 
 export interface SyncReport {

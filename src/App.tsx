@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, errorText, isTauri } from "@/api";
-import type { Account, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, Provider, SenderGroup } from "@/types";
+import type { Account, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, Provider, SavedDraft, SenderGroup } from "@/types";
 import { addressList, dedupeAddresses, prefixSubject } from "@/format";
 import { folderLabel } from "@/folders";
 import { loadShortcuts, matchShortcut, type ShortcutId } from "@/shortcuts";
@@ -17,6 +17,7 @@ import type { SendersProps } from "@/components/sender-list";
 import { MailReader } from "@/components/mail-reader";
 import { CommandBar } from "@/components/command-bar";
 import { ComposeDialog, type Draft } from "@/components/compose-dialog";
+import { DraftsList } from "@/components/drafts-list";
 import { SettingsDialog, type SettingsSection } from "@/components/settings-dialog";
 import { startAutoCheck } from "@/updater";
 import { SignInDialog } from "@/components/sign-in-dialog";
@@ -64,6 +65,8 @@ export default function App() {
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** Saved drafts on this PC, every account, newest first. */
+  const [drafts, setDrafts] = useState<SavedDraft[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Section Settings opens on next time (cleared when it closes). */
   const [settingsSection, setSettingsSection] = useState<SettingsSection>();
@@ -466,7 +469,9 @@ export default function App() {
 
   const startCompose = (mode: ComposeMode, original?: MessageDetail, to = "") => {
     const accountId =
-      original?.accountId ?? (view.kind === "account" ? view.id : accountIds?.[0]) ?? accounts[0]?.id;
+      original?.accountId ??
+      (view.kind === "account" || view.kind === "drafts" ? view.id : accountIds?.[0]) ??
+      accounts[0]?.id;
     if (!accountId) {
       toast.error("Add an account first.");
       return;
@@ -484,15 +489,70 @@ export default function App() {
       }
       subject = prefixSubject(mode === "forward" ? "Fwd:" : "Re:", original.subject);
     }
-    setDraft({ mode, accountId, to, cc, subject, body: "", replyToId: original?.id });
+    setDraft({ mode, accountId, to, cc, subject, body: "", replyToId: original?.id, attachments: [] });
   };
 
-  const sendDraft = async () => {
+  const refreshDrafts = useCallback(async () => {
+    try {
+      setDrafts(await api.listDrafts());
+    } catch (e) {
+      console.error("Couldn't load drafts", e);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshDrafts();
+  }, [refreshDrafts, accounts.length]);
+  const draftCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const d of drafts) counts[d.accountId] = (counts[d.accountId] ?? 0) + 1;
+    return counts;
+  }, [drafts]);
+
+  /** Carries on writing a saved draft (attachments that have since gone missing are dropped). */
+  const openDraft = async (d: SavedDraft) => {
+    try {
+      const attachments = d.attachments.length ? await api.fileInfo(d.attachments) : [];
+      setDraft({
+        id: d.id,
+        mode: d.mode,
+        accountId: d.accountId,
+        to: d.to,
+        cc: d.cc,
+        subject: d.subject,
+        body: d.body,
+        replyToId: d.replyToId,
+        attachments,
+      });
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  };
+
+  const deleteDraft = async (d: SavedDraft) => {
+    try {
+      await api.deleteDraft(d.id);
+      setDrafts((list) => list.filter((x) => x.id !== d.id));
+      toast("Draft deleted", {
+        action: {
+          label: "Undo",
+          onClick: () => void api.saveDraft(d).then(refreshDrafts, (e) => toast.error(errorText(e))),
+        },
+      });
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  };
+
+  const sendDraft = async (savedId: string | undefined) => {
     if (!draft) return;
     try {
-      await api.send(draft);
+      await api.send({ ...draft, attachments: draft.attachments.map((a) => a.path) });
       setDraft(null);
       toast.success("Message sent");
+      if (savedId) {
+        await api.deleteDraft(savedId).catch((e) => console.error("Couldn't remove sent draft", e));
+        void refreshDrafts();
+      }
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -661,7 +721,9 @@ export default function App() {
       ? "All Inboxes"
       : view.kind === "label"
         ? view.label
-        : folderLabel(view.folder);
+        : view.kind === "account"
+          ? folderLabel(view.folder)
+          : "Drafts";
   const openSettings = (section?: SettingsSection) => {
     closeReader();
     setSettingsSection(section ?? (view.kind === "home" ? "home" : view.kind === "tasks" ? "tasks" : view.kind === "calendar" ? "calendar" : undefined));
@@ -712,6 +774,7 @@ export default function App() {
           }}
           onReconnect={addAccount}
           onOpenSettings={() => openSettings()}
+          draftCounts={draftCounts}
           search={
             <CommandBar
               open={commandOpen}
@@ -753,6 +816,14 @@ export default function App() {
             <CalendarPage onOpenSettings={() => openSettings("calendar")} />
           ) : view.kind === "chats" ? (
             <ChatsPage folder={view.folder} />
+          ) : view.kind === "drafts" ? (
+            <DraftsList
+              account={accountById.get(view.id)}
+              drafts={drafts.filter((d) => d.accountId === view.id)}
+              onOpen={(d) => void openDraft(d)}
+              onDelete={(d) => void deleteDraft(d)}
+              onCompose={() => startCompose("new")}
+            />
           ) : (
           <MailList
             title={viewTitle}
@@ -764,6 +835,7 @@ export default function App() {
             onSync={syncNow}
             onCompose={() => startCompose("new")}
             search={search}
+            onClearSearch={() => setSearch("")}
             filter={listFilter}
             onFilter={setFilter}
             messages={messages}
@@ -828,6 +900,10 @@ export default function App() {
           draft={draft}
           accounts={accounts}
           onChange={setDraft}
+          onSaved={(id) => {
+            setDraft((d) => d && { ...d, id });
+            void refreshDrafts();
+          }}
           onSend={sendDraft}
           onClose={() => setDraft(null)}
         />

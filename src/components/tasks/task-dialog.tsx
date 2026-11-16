@@ -76,7 +76,7 @@ export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
               <Field>
                 <FieldLabel htmlFor="task-section">Section</FieldLabel>
                 <Select value={section} onValueChange={setSection}>
-                  <SelectTrigger id="task-section" className="w-full">
+                  <SelectTrigger id="task-section">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -102,7 +102,7 @@ export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
               <Field>
                 <FieldLabel htmlFor="task-status">Status</FieldLabel>
                 <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-                  <SelectTrigger id="task-status" className="w-36">
+                  <SelectTrigger id="task-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -18,7 +18,6 @@ import {
   IconMailOpened,
   IconPaperclip,
   IconRefresh,
-  IconSearch,
   IconStar,
   IconTrash,
   IconX,
@@ -42,6 +41,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { FilingCabinetArt } from "@/components/iso/filing-cabinet-art";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
@@ -79,6 +79,8 @@ interface Props {
   onSync: () => void;
   onCompose: () => void;
   search: string;
+  /** Empties the sidebar search (the empty "No results" state offers it). */
+  onClearSearch?: () => void;
   filter: Filter;
   onFilter: (f: Filter) => void;
   messages: MessageSummary[];
@@ -766,10 +768,10 @@ function ListEmpty(p: Props) {
     return (
       <Empty>
         <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <IconInbox />
+          <EmptyMedia variant="illustration">
+            <FilingCabinetArt />
           </EmptyMedia>
-          <EmptyTitle>No accounts yet</EmptyTitle>
+          <EmptyTitle>No Accounts Yet</EmptyTitle>
           <EmptyDescription>
             Add your Gmail and Microsoft accounts to bring all your mail into one inbox.
           </EmptyDescription>
@@ -784,23 +786,34 @@ function ListEmpty(p: Props) {
     );
   }
   const [title, description] = p.search
-    ? ["No results", "Nothing in your loaded mail matches that search."]
+    ? ["No Results", "Nothing in your loaded mail matches that search."]
     : p.filter === "unread"
-      ? ["All caught up", "You have no unread messages here."]
+      ? ["All Caught Up", "You have no unread messages here."]
       : p.filter === "starred"
-        ? ["Nothing starred", "Starred Gmail and flagged Outlook messages show up here."]
+        ? ["Nothing Starred", "Starred Gmail and flagged Outlook messages show up here."]
         : p.folder === "inbox"
-          ? ["Inbox is empty", "New mail appears here after the next sync."]
+          ? ["Inbox Is Empty", "New mail appears here after the next sync."]
           : [`Nothing in ${folderLabel(p.folder)}`, "Messages in this folder will show up here."];
+  // A filtered list that's empty can step back out to everything in the folder.
+  const exit = p.search
+    ? p.onClearSearch && { label: "Clear search", run: p.onClearSearch }
+    : p.filter !== "all" && { label: "Show all mail", run: () => p.onFilter("all") };
   return (
     <Empty>
       <EmptyHeader>
-        <EmptyMedia variant="icon">
-          {p.search ? <IconSearch /> : p.filter === "starred" ? <IconStar /> : <IconInbox />}
+        <EmptyMedia variant="illustration">
+          <FilingCabinetArt />
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
+      {exit && (
+        <EmptyContent>
+          <Button variant="outline" onClick={exit.run}>
+            {exit.label}
+          </Button>
+        </EmptyContent>
+      )}
     </Empty>
   );
 }

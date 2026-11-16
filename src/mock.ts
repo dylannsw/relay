@@ -4,7 +4,7 @@
 
 import type {
   Account, Attendee, SenderGroup, CalendarConfig, CalendarEvent, CalendarInfo, Config, EditScope, EventChanges, EventColors, NewEvent, Folder, ListQuery, MessageDetail,
-  OutgoingMessage, SeriesInfo, TasksConfig,
+  OutgoingMessage, SavedDraft, SeriesInfo, TasksConfig,
 } from "./types";
 import { formatDate } from "./tasks/tick/date";
 import { mockTelegram } from "./telegram/mock";
@@ -433,6 +433,8 @@ const mockSeries: Record<string, SeriesInfo> = (() => {
   return { yoga: { rules: [`RRULE:FREQ=WEEKLY;BYDAY=${code}`], startDate: isoDay(first.start) } };
 })();
 
+let mockDrafts: SavedDraft[] = [];
+
 const delay =<T,>(v: T, ms = 120) => new Promise<T>((r) => setTimeout(() => r(structuredClone(v)), ms));
 
 export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -522,6 +524,22 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       console.info("[mock] would send", out);
       return delay(undefined, 400) as Promise<T>;
     }
+    case "file_info":
+      return delay(
+        (args.paths as string[]).map((path) => ({ path, name: path.split(/[\\/]/).pop() ?? path, size: 1_800_000 + path.length * 9_000 })),
+        20,
+      ) as Promise<T>;
+    case "list_drafts":
+      return delay([...mockDrafts].sort((a, b) => b.updatedAt - a.updatedAt), 30) as Promise<T>;
+    case "save_draft": {
+      const d = { ...(args.draft as SavedDraft), updatedAt: Date.now() };
+      if (!d.id) d.id = `draft-${Date.now()}`;
+      mockDrafts = [...mockDrafts.filter((x) => x.id !== d.id), d];
+      return delay(d, 120) as Promise<T>;
+    }
+    case "delete_draft":
+      mockDrafts = mockDrafts.filter((x) => x.id !== args.id);
+      return delay(undefined, 30) as Promise<T>;
     case "download_attachment":
       return delay("C:\\Users\\you\\Downloads\\invoice-1042.pdf") as Promise<T>;
     case "sync_now":

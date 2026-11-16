@@ -184,7 +184,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
         title={<DialogTitle data-label className="truncate text-base font-semibold">Settings</DialogTitle>}
         footer={
           <>
-            <span className="truncate px-1.5 text-xs text-muted-foreground">
+            <span className="truncate px-1.5 text-sm text-muted-foreground">
               {SECTIONS.find((x) => x.id === section)?.note}
             </span>
             <Button className="ml-auto" onClick={onClose}>
@@ -450,7 +450,7 @@ function TasksTab() {
         >
           <div className="flex items-center gap-2">
             <Select value={quick.section || NO_SECTION} onValueChange={(v) => setQuickAdd({ section: v === NO_SECTION ? "" : v })}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -465,7 +465,7 @@ function TasksTab() {
               </SelectContent>
             </Select>
             <Select value={quick.status} onValueChange={(v) => setQuickAdd({ status: v as TaskStatus })}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -514,7 +514,7 @@ function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onA
             onValueChange={(id) => void setDefaultCalendar(id).catch((e) => toast.error(errorText(e)))}
             disabled={writable.length === 0}
           >
-            <SelectTrigger className={FIELD_WIDTH}>
+            <SelectTrigger>
               <SelectValue placeholder="No calendar yet" />
             </SelectTrigger>
             <SelectContent>
@@ -1211,7 +1211,7 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
         </div>
       </div>
       <Select value={a.label} onValueChange={(label) => update(label, color)}>
-        <SelectTrigger size="sm" className="w-28">
+        <SelectTrigger size="sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -1372,7 +1372,7 @@ function SettingRow({ title, description, children, stacked }: {
 }) {
   return (
     // Every row shares one control column, so the text wraps at the same width and controls line up
-    // on the right edge. Text boxes and dropdowns use FIELD_WIDTH so they match each other.
+    // on the right edge. Text boxes use FIELD_WIDTH; dropdowns fit their selected option.
     <div className={cn("py-5 first:pt-0", stacked ? "flex flex-col gap-4" : "grid grid-cols-[minmax(0,1fr)_16rem] items-center gap-12")}>
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="text-sm font-semibold">{title}</div>
@@ -1383,7 +1383,7 @@ function SettingRow({ title, description, children, stacked }: {
   );
 }
 
-/** The one width for text boxes and dropdowns in setting rows, so they match across Settings. */
+/** The one width for text boxes in setting rows, so they match across Settings. */
 const FIELD_WIDTH = "w-48";
 
 const THEMES = [
@@ -1619,7 +1619,7 @@ function AppearanceTab() {
       <SettingRow title="Notification position" description="Where Relay's pop-up notifications appear.">
         <div className="flex items-center gap-2">
           <Select value={prefs.toastPosition} onValueChange={(v) => setAppearance({ toastPosition: v as ToastPosition })}>
-            <SelectTrigger className={FIELD_WIDTH}>
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1637,10 +1637,10 @@ function AppearanceTab() {
       </SettingRow>
       <SettingRow title="Sound effects" description="Play a sound with the glow when you add a task or complete one on the board.">
         <div className="flex shrink-0 items-center gap-2">
+          <Switch checked={prefs.sounds} onCheckedChange={(on) => setAppearance({ sounds: on })} aria-label="Sound effects" />
           <Button variant="outline" onClick={() => playShockwave(true)}>
             Test
           </Button>
-          <Switch checked={prefs.sounds} onCheckedChange={(on) => setAppearance({ sounds: on })} aria-label="Sound effects" />
         </div>
       </SettingRow>
     </div>
@@ -1780,7 +1780,7 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
       {isCustomized(def.id) && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-xs" onClick={() => void resetBinding(def.id)}>
+            <Button variant="outline" size="icon-sm" onClick={() => void resetBinding(def.id)}>
               <IconArrowBackUp />
               <span className="sr-only">Reset</span>
             </Button>
@@ -1797,7 +1797,7 @@ function ShortcutRow({ def }: { def: ShortcutDef }) {
         onBlur={() => setRecording(false)}
         onKeyDown={onKeyDown}
         className={cn(
-          "min-w-28 justify-end font-normal",
+          "font-normal",
           recording && "border-ring ring-1 ring-ring hover:border-ring",
         )}
       >
