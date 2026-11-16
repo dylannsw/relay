@@ -6,6 +6,8 @@ import {
   IconArrowBackUp,
   IconCheck,
   IconChecklist,
+  IconChevronDown,
+  IconChevronUp,
   IconFolderOpen,
   IconKey,
   IconMail,
@@ -98,7 +100,7 @@ import { playShockwave } from "@/lib/sfx";
 import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/updater";
 import { appIconSrc, useAppIcon } from "@/app-icon";
 import { api, errorText, isTauri } from "@/api";
-import { clockTime, relativeTime } from "@/format";
+import { relativeTime } from "@/format";
 import {
   FIXED_SHORTCUTS,
   SHORTCUTS,
@@ -910,14 +912,13 @@ function CalendarRow({ calendar: c, actions }: { calendar: CalendarInfo; actions
           {c.lastError && <span className="text-destructive"> · {c.lastError}</span>}
         </div>
       </div>
-      <EventPreview calendar={c} />
       {/* Everything you can do to the calendar, together at the row's end. */}
       {(c.customColor || actions) && (
         <div className="flex shrink-0 items-center gap-1.5">
           {c.customColor && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={() => void setCalendarColor(c.id, null).catch(fail)}>
+                <Button variant="outline" size="icon-sm" onClick={() => void setCalendarColor(c.id, null).catch(fail)}>
                   <IconArrowBackUp />
                   <span className="sr-only">{c.isFeed ? "Use the original color" : "Use Google's color"}</span>
                 </Button>
@@ -928,33 +929,6 @@ function CalendarRow({ calendar: c, actions }: { calendar: CalendarInfo; actions
           {actions}
         </div>
       )}
-    </div>
-  );
-}
-
-/** A sample event in the calendar's colors, as the Calendar page will draw it in this theme. */
-function EventPreview({ calendar: c }: { calendar: CalendarInfo }) {
-  const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === "dark";
-  return (
-    <div
-      aria-hidden
-      className={cn(
-        "relative flex w-40 shrink-0 flex-col gap-0.5 rounded-lg px-2 py-1.5 text-xs leading-snug shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--event-bar)_22%,transparent)] transition-opacity",
-        c.hidden && "opacity-40",
-      )}
-      style={
-        {
-          "--event-bar": c.colors.base,
-          backgroundColor: dark ? c.colors.darkBg : c.colors.lightBg,
-          color: dark ? c.colors.darkText : c.colors.lightText,
-        } as React.CSSProperties
-      }
-    >
-      <span className="truncate text-meta font-semibold">{c.isPrimary ? "Coffee with Sam" : calendarName(c)}</span>
-      <span style={{ color: dark ? c.colors.darkMuted : c.colors.lightMuted }}>
-        {clockTime(new Date(2000, 0, 1, 9))} – {clockTime(new Date(2000, 0, 1, 10))}
-      </span>
     </div>
   );
 }
@@ -1074,7 +1048,7 @@ function MailTab() {
   );
 }
 
-/** A short number box; saves (clamped to its range) on Enter or leaving it. */
+/** A short number box; saves (clamped to its range) on Enter, leaving it, or a step arrow. The number is centred; the arrows (Tabler chevrons) show on hover or focus. */
 function NumberField({ label, value, min, max, onCommit }: {
   label: string;
   value: number;
@@ -1084,25 +1058,51 @@ function NumberField({ label, value, min, max, onCommit }: {
 }) {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
-  const commit = () => {
-    const n = Math.round(Number(text));
-    const next = Number.isFinite(n) && text.trim() ? Math.min(max, Math.max(min, n)) : value;
+  const save = (n: number) => {
+    const next = Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : value;
     setText(String(next));
     if (next !== value) onCommit(next);
   };
+  const commit = () => save(text.trim() ? Number(text) : value);
+  const step = (by: number) => save((text.trim() ? Number(text) : value) + by);
+  const arrow = (by: number, name: string, Icon: typeof IconChevronUp) => (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={`${name} ${label.toLowerCase()}`}
+      // Keep focus in the field, so typing carries on after a click.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => step(by)}
+      className="flex h-4 w-5 items-center justify-center rounded-[3px] text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground"
+    >
+      <Icon className="size-3.5" />
+    </button>
+  );
   return (
-    <Input
-      aria-label={label}
-      type="number"
-      inputMode="numeric"
-      min={min}
-      max={max}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-      className="w-24 text-right tabular-nums"
-    />
+    <div className="group/number relative w-24">
+      <Input
+        aria-label={label}
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            step(e.key === "ArrowUp" ? 1 : -1);
+          }
+        }}
+        className="text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      <div className="absolute inset-y-0 right-1 flex flex-col items-center justify-center opacity-0 transition-opacity group-focus-within/number:opacity-100 group-hover/number:opacity-100">
+        {arrow(1, "Increase", IconChevronUp)}
+        {arrow(-1, "Decrease", IconChevronDown)}
+      </div>
+    </div>
   );
 }
 
@@ -1649,32 +1649,36 @@ function AppearanceTab() {
 
 const RAINBOW = "conic-gradient(#f44 0deg, #fb3 60deg, #4d6 120deg, #3cf 180deg, #46f 240deg, #c4f 300deg, #f44 360deg)";
 
-/** The third accent swatch: a rainbow ring around the picked colour that opens the system
- *  colour picker. Clicking it also switches back to the last picked colour. */
+/** The third accent swatch: a rainbow ring around the picked colour that opens Relay's colour
+ *  picker. Clicking it also switches back to the last picked colour. */
 function CustomAccentSwatch({ value, selected, dark }: { value: string; selected: boolean; dark: boolean }) {
   const color = value ? (dark ? customAccent(value).dark : value) : "";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <label
-          aria-label="Custom color"
-          className="relative flex size-6 cursor-pointer items-center justify-center rounded-full transition-[box-shadow,scale] duration-200 ease-(--ease-out-soft) hover:scale-110 has-focus-visible:scale-110"
-          style={{
-            background: RAINBOW,
-            boxShadow: selected && color ? `0 0 0 2px var(--background), 0 0 0 3.5px ${color}` : undefined,
-          }}
-          onClick={() => {
-            if (value && !selected) setAppearance({ accent: CUSTOM_ACCENT });
-          }}
-        >
-          {color && <span className="size-3.5 rounded-full ring-2 ring-background" style={{ backgroundColor: color }} />}
-          <input
-            type="color"
+        <span className="flex">
+          <ColorPicker
+            label="Custom color"
             value={value || ACCENTS[0].light}
-            onChange={(e) => setAppearance({ accent: CUSTOM_ACCENT, customAccent: e.target.value })}
-            className="sr-only"
+            onChange={(hex) => setAppearance({ accent: CUSTOM_ACCENT, customAccent: hex })}
+            trigger={
+              <button
+                type="button"
+                aria-label="Custom color"
+                className="relative flex size-6 items-center justify-center rounded-full transition-[box-shadow,scale] duration-200 ease-(--ease-out-soft) outline-none hover:scale-110 focus-visible:scale-110"
+                style={{
+                  background: RAINBOW,
+                  boxShadow: selected && color ? `0 0 0 2px var(--background), 0 0 0 3.5px ${color}` : undefined,
+                }}
+                onClick={() => {
+                  if (value && !selected) setAppearance({ accent: CUSTOM_ACCENT });
+                }}
+              >
+                {color && <span className="size-3.5 rounded-full ring-2 ring-background" style={{ backgroundColor: color }} />}
+              </button>
+            }
           />
-        </label>
+        </span>
       </TooltipTrigger>
       <TooltipContent>Custom</TooltipContent>
     </Tooltip>

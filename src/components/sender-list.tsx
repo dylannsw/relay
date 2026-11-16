@@ -57,9 +57,9 @@ const PEEK = 6;
 export function SenderRows({ s }: { s: SendersProps }) {
   const selecting = s.checked.size > 0;
   return (
-    <ScrollArea className="min-h-0 flex-1">
+    <ScrollArea className="min-h-0 flex-1" hideScrollbar>
       {/* While the selection bar floats over the bottom, the last group can still scroll clear of it. */}
-      <div className="flex flex-col p-3 pb-1" style={selecting ? { paddingBottom: SELECTION_BAR_ROOM } : undefined}>
+      <div className="flex flex-col p-4 pb-1" style={selecting ? { paddingBottom: SELECTION_BAR_ROOM } : undefined}>
         <AnimatePresence initial={false}>
           {s.groups.map((g) => (
             <motion.div

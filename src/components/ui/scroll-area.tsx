@@ -8,10 +8,13 @@ function ScrollArea({
   className,
   children,
   viewportRef,
+  hideScrollbar,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   /** The element that actually scrolls (e.g. for a virtualized list). */
   viewportRef?: React.Ref<HTMLDivElement>
+  /** Still scrolls (wheel, touch, keys); just draws no bar. */
+  hideScrollbar?: boolean
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -26,7 +29,7 @@ function ScrollArea({
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      {!hideScrollbar && <ScrollBar />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

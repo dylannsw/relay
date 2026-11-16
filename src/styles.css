@@ -7,8 +7,8 @@
 
 /* Dark covers the whole app in Dark, and everything outside the frames in Mixed (the framed
    content, marked .frame, stays light there, and so do dialogs, menus and popovers: keep the
-   popup list here in step with the three .mixed rules below). */
-@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *, .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]), .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) *));
+   popup list here in step with the three .mixed rules below). The command bar (.cmdbar) is the exception: always dark. */
+@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *, .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar), .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) *));
 
 /* The one red for "down" and "now": Home's falling-delta badge and the calendar's current-time line. */
 :root {
@@ -133,7 +133,7 @@
 /* Mixed theme: the framed content (main panel, email/compose/settings cards) keeps the light
    colours, and so do the popups (dialogs, sheets, popovers, menus, selects), wherever they open. */
 .mixed .frame,
-.mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) {
+.mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) {
     color-scheme: light;
     --smooth-ring-color: rgba(0, 0, 0, 0.05);
     /* Relay's accent: the logo blue. Filled buttons, checked boxes, links and unread dots.
@@ -296,7 +296,7 @@
   /* Mixed theme: text inherits body's colour already resolved to the dark theme's near-white,
      so the light frames restate it from their own (light) variables. */
   .mixed .frame,
-  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) {
+  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) {
     @apply text-foreground;
     }
   html {
@@ -359,7 +359,7 @@
      white icons on filled buttons) are already above the floor and stay as they are. */
   :root:not(.dark, .mixed) :is(.tabler-icon, .ph-icon),
   .mixed .frame :is(.tabler-icon, .ph-icon),
-  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]) :is(.tabler-icon, .ph-icon) {
+  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) :is(.tabler-icon, .ph-icon) {
     color: oklch(from currentColor max(l, 0.5) c h);
   }
   /* Native scrollbars match the thin ScrollArea ones. */

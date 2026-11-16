@@ -440,7 +440,7 @@ function MessageRows(p: Props & { selecting: boolean; groupMode?: boolean }) {
   }, [canLoadMore, onLoadMore, last, messages.length]);
 
   return (
-    <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
+    <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef} hideScrollbar>
       <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
         {/* custom: the mail still in the list, so only rows that left it play their exit. */}
         <AnimatePresence initial={false} custom={ids}>
@@ -451,7 +451,7 @@ function MessageRows(p: Props & { selecting: boolean; groupMode?: boolean }) {
                 key={m.id}
                 data-index={vi.index}
                 ref={virtualizer.measureElement}
-                className="absolute top-0 left-0 w-full px-3 pb-2"
+                className="absolute top-0 left-0 w-full px-4 pb-2"
                 initial={prev && !prev.has(m.id) ? { opacity: 0, y: vi.start } : false}
                 animate={{ opacity: 1, y: vi.start }}
                 exit="gone"

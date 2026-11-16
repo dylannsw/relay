@@ -93,12 +93,14 @@ const eyeDropper = (): (new () => { open: () => Promise<EyeDropperResult> }) | u
  * a hue slider, an eyedropper, HEX/RGB/HSL fields, and optional preset swatches. `onChange`
  * fires as the colour changes (also while dragging), so callers that save should debounce.
  */
-export function ColorPicker({ value, onChange, label, presets, className }: {
+export function ColorPicker({ value, onChange, label, presets, className, trigger }: {
   value: string;
   onChange: (hex: string) => void;
   label: string;
   presets?: string[];
   className?: string;
+  /** Opens the picker in place of the default swatch (a button, which gets the popover's ref and props). */
+  trigger?: React.ReactElement;
 }) {
   // Hue and saturation are kept apart from the hex, so they don't jump when the colour turns grey or black.
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
@@ -134,16 +136,18 @@ export function ColorPicker({ value, onChange, label, presets, className }: {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-full border bg-background p-[3px] transition-[border-color,box-shadow] duration-150 outline-none hover:border-border-strong focus-visible:ring-1 focus-visible:ring-ring aria-expanded:border-border-strong",
-            className,
-          )}
-        >
-          <span className="size-full rounded-full shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)]" style={{ backgroundColor: value }} />
-        </button>
+        {trigger ?? (
+          <button
+            type="button"
+            aria-label={label}
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center rounded-full border bg-background p-[3px] transition-[border-color,box-shadow] duration-150 outline-none hover:border-border-strong focus-visible:ring-1 focus-visible:ring-ring aria-expanded:border-border-strong",
+              className,
+            )}
+          >
+            <span className="size-full rounded-full shadow-[inset_0_0_0_1px_rgb(0_0_0/0.08)]" style={{ backgroundColor: value }} />
+          </button>
+        )}
       </PopoverTrigger>
       <PopoverContent className="flex w-64 flex-col gap-3 p-3" align="start">
         <SaturationArea hsv={hsv} onChange={(s, v) => emit({ ...hsv, s, v })} />
@@ -200,7 +204,7 @@ export function ColorPicker({ value, onChange, label, presets, className }: {
                   if (c) setHex(c, true);
                 }}
                 onBlur={() => setFields(fieldsOf(hex, format))}
-                className="h-8 min-w-0 px-1.5 text-center text-xs tabular-nums"
+                className="min-w-0 px-1.5 text-center text-xs tabular-nums"
               />
             ))}
           </div>

@@ -37,7 +37,6 @@ const buttonVariants = cva(
           "h-9.5 gap-1.5 rounded-[10px] corner-smooth px-3.5 data-icon-end:pr-[15px] data-icon-start:pl-[15px]",
         xs: "h-7.5 gap-1 rounded-[min(var(--radius-md),10px)] px-2.5 text-xs in-data-[slot=button-group]:rounded-lg data-icon-end:pr-[11px] data-icon-start:pl-[11px] [&_svg:not([class*='size-'])]:size-3.5",
         sm: "h-9.5 gap-1 rounded-[10px] corner-smooth px-3 text-meta in-data-[slot=button-group]:rounded-lg data-icon-end:pr-[13px] data-icon-start:pl-[13px] [&_svg:not([class*='size-'])]:size-4",
-        lg: "h-10.5 gap-1.5 px-4 data-icon-end:pr-[17px] data-icon-start:pl-[17px]",
         icon: "size-9.5",
         // 24px, for a clear or remove button tucked inside a field or chip.
         "icon-2xs":
@@ -46,7 +45,6 @@ const buttonVariants = cva(
           "size-7.5 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
         "icon-sm":
           "size-9.5 rounded-[10px] corner-smooth in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-10.5",
       },
     },
     defaultVariants: {
