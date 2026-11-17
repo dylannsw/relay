@@ -625,15 +625,18 @@
    Dark in every theme (the panel carries .dark, so these tokens are Relay's dark ones). Unlayered, so these
    win over the Dialog's and cmdk's utility classes. */
 .cmdbar {
-  /* Relay's popover colour, solid (as the bar was before the Zen port) */
-  --cb-bg: var(--popover);
+  /* Frosted, as Zen's open URL bar (zzz-my-arc urlbar.css: arc-urlbar-bg / -blur / -saturation) */
+  --cb-bg: rgb(14 14 14 / 75%);
+  --cb-frost: blur(20px) saturate(1.5);
   --cb-edge: var(--border);
   --cb-outline: rgb(0 0 0 / 45%);
   --cb-text: var(--foreground);
   --cb-text-muted: var(--muted-foreground);
-  --cb-row-selected: var(--accent);
+  /* Translucent, not Relay's solid accent / muted: over the frosted panel a solid fill blocks the frost and stays
+     dark while the panel fades over a light page. 10% / 9% white give the same lift on the open bar. */
+  --cb-row-selected: color-mix(in srgb, var(--foreground) 10%, transparent);
   --cb-row-ring: var(--border);
-  --cb-tile: var(--muted);
+  --cb-tile: color-mix(in srgb, var(--foreground) 9%, transparent);
   --cb-tile-selected: color-mix(in srgb, var(--foreground) 10%, transparent);
   --cb-key-ring: var(--border);
   --cb-key-pressed-ring: color-mix(in srgb, var(--foreground) 25%, transparent);
@@ -651,6 +654,7 @@
   max-width: none;
   padding: 0;
   background-color: var(--cb-bg);
+  backdrop-filter: var(--cb-frost);
   /* above the window-wide shockwave (--z-shockwave, App.tsx), which stays above the dimmed overlay (--z-overlay), so the
      wave runs under the bar */
   z-index: var(--z-command-bar);
@@ -664,12 +668,17 @@
   letter-spacing: 0.3px;
 }
 
-/* Opening: it rises 70px (0.7s ease-out quint), transform only. Closing: a quick fade and drop. */
+/* Opening: it rises 70px (0.7s ease-out quint), transform only. Closing: a quick drop while the frost thaws (blur,
+   tint, edges and shadow go to nothing) and the contents fade. Not opacity on the panel: that fades the blurred
+   backdrop too, crossfading it with the sharp page behind, so the blur looks like it drops out. */
 .cmdbar[data-state="open"] {
   animation: cb-rise 0.7s var(--ease-out-soft) both;
 }
 .cmdbar[data-state="closed"] {
   animation: cb-out 0.18s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+.cmdbar[data-state="closed"] > * {
+  animation: cb-content-out 0.18s cubic-bezier(0.7, 0, 0.84, 0) forwards;
 }
 .cmdbar[data-state="closed"] .cb-body {
   transition: opacity 0.18s cubic-bezier(0.7, 0, 0.84, 0), transform 0.18s cubic-bezier(0.7, 0, 0.84, 0);
@@ -681,7 +690,17 @@
   to { transform: none; }
 }
 @keyframes cb-out {
-  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to {
+    transform: translateY(8px) scale(0.98);
+    backdrop-filter: blur(0px) saturate(1);
+    background-color: transparent;
+    border-color: transparent;
+    outline-color: transparent;
+    box-shadow: 0 20px 40px transparent;
+  }
+}
+@keyframes cb-content-out {
+  to { opacity: 0; }
 }
 
 /* Switching mode: the new body comes in from above, alongside the height glide. */
@@ -806,6 +825,18 @@
       rgb(0 0 0 / 0.1) 100%
     );
   mask-composite: intersect;
+}
+/* Arrowing past the edge glides the list, as Zen's URL bar (Firefox's UrlbarView scrolls the selected row in with
+   behavior "smooth"); cmdk's scrollIntoView passes none, so it takes this. The wheel is unaffected. */
+@media (prefers-reduced-motion: no-preference) {
+  .cb-list {
+    scroll-behavior: smooth;
+  }
+}
+/* A group's first row brings its 30px heading into view with it. cmdk scrolls to the heading and then the row; smooth,
+   the second call cancels the first, so without this the list stopped short of the top (heading hidden, top fade on). */
+.cb-list [cmdk-group-items] > :first-child {
+  scroll-margin-top: 30px;
 }
 
 /* Key hints: no fill of their own, a hairline across the top; keys are ringed 24px squircles that sink while held. */
