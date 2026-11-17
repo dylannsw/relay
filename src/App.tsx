@@ -809,6 +809,7 @@ export default function App() {
                 setFilter("unread");
                 clearSelection();
               }}
+              onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
             />
           ) : view.kind === "tasks" ? (
             <TasksPage onOpenSettings={() => openSettings("tasks")} />

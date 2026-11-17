@@ -9,7 +9,6 @@ import type { Account } from "@/types";
 import { HomeBanner } from "./home-banner";
 import { HomeOverview } from "./home-overview";
 import { greetingName, HomeWelcome } from "./home-welcome";
-import { Shockwave, type ShockwaveHandle } from "./shockwave";
 import { TaskComposer } from "./task-composer";
 
 /** Width of Home's centred column (the greeting, the overview and the add-task box). */
@@ -21,11 +20,13 @@ const COLUMN = "mx-auto w-[min(100%-3rem,56rem)]";
  * faded out by the time it reaches the greeting. On a short window the page scrolls and the
  * banner keeps a minimum height.
  */
-export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: {
+export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail, onTaskAdded }: {
   accounts: Account[];
   onOpenTasks: () => void;
   onOpenCalendar: () => void;
   onOpenMail: () => void;
+  /** A task was added from the box (at this rect): the window-wide glow starts there. */
+  onTaskAdded: (origin: DOMRect) => void;
 }) {
   const t = useTasks();
   const today = useTodayEvents();
@@ -37,7 +38,6 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
   const ready = t.status === "ready";
   const unread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const scroller = useRef<HTMLDivElement>(null);
-  const halo = useRef<ShockwaveHandle>(null);
   const [height, setHeight] = useState(0);
 
   // The scroll area's own height, so its content can fill it (the banner takes the rest).
@@ -104,11 +104,9 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
           sections={t.addSections}
           ready={ready}
           vaultPath={t.vaultPath}
-          onAdded={(box) => halo.current?.fire(box)}
+          onAdded={onTaskAdded}
         />
       </div>
-      {/* The glow that sweeps up the page when a task is added. */}
-      <Shockwave ref={halo} warp={false} />
     </div>
   );
 }
