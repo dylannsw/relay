@@ -1099,11 +1099,15 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 className="sticky left-0 z-(--z-raised) h-full bg-background before:absolute before:inset-x-0 before:-top-(--day-edge) before:-bottom-(--day-edge) before:bg-background"
                 style={{ width: GUTTER }}
               >
-                {range(1, 23).map((h) => (
+                {range(0, 24).map((h) => (
                   <span
                     key={h}
                     data-label
-                    className="absolute right-2.5 -translate-y-1/2 text-[12px] font-semibold whitespace-nowrap text-muted-foreground"
+                    // Midnight sits at the grid's two ends, so it's pulled inside them instead of centred on the line.
+                    className={cn(
+                      "absolute right-2.5 text-[12px] font-semibold whitespace-nowrap text-muted-foreground",
+                      h === 0 ? "translate-y-1" : h === 24 ? "-translate-y-[calc(100%+4px)]" : "-translate-y-1/2",
+                    )}
                     style={{ top: h * hour }}
                   >
                     {hourLabel(h)}

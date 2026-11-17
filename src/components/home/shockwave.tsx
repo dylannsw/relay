@@ -250,8 +250,10 @@ function fieldImages(w: number, h: number, cx: number, cy: number, dMax: number,
  * see styles.css. With reduced motion there's no bend and no glints: the halo fades in and out in
  * place at half strength.
  */
-export function Shockwave({ ref, radii, scope }: {
+export function Shockwave({ ref, radii, scope, warp = true }: {
   ref?: Ref<ShockwaveHandle>;
+  /** Bend the page as the wave passes. Off, only the light shows (rings, edge line, glints). */
+  warp?: boolean;
   /**
    * The edge line's corner radii in px (top-left, top-right, bottom-right, bottom-left), read each
    * run. Without it they're the parent's parent's (the framed content's); a window-wide wave passes the window's.
@@ -264,8 +266,8 @@ export function Shockwave({ ref, radii, scope }: {
   scope?: () => HTMLElement | null;
 }) {
   const filterId = `${FILTER_ID}-${useId().replace(/W/g, "")}`;
-  const props = useRef({ radii, scope });
-  props.current = { radii, scope };
+  const props = useRef({ radii, scope, warp });
+  props.current = { radii, scope, warp };
   const layer = useRef<HTMLDivElement>(null);
   const bendLayer = useRef<HTMLDivElement>(null);
   const edge = useRef<HTMLDivElement>(null);
@@ -356,7 +358,7 @@ export function Shockwave({ ref, radii, scope }: {
 
         // The bend: the field covers every distance the lens reaches during the run.
         const dMax = px.startR + growth + px.bendReach;
-        const images = reduce ? null : fieldImages(box.width, box.height, cx, cy, dMax, px);
+        const images = reduce || !props.current.warp ? null : fieldImages(box.width, box.height, cx, cy, dMax, px);
         let live = true;
         // Per frame, distance → how far: the lens's push (signed), and the bevel's share where the band is.
         const tables = (radius: number, strength: number) => {

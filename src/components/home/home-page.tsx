@@ -108,7 +108,7 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail }: 
         />
       </div>
       {/* The glow that sweeps up the page when a task is added. */}
-      <Shockwave ref={halo} />
+      <Shockwave ref={halo} warp={false} />
     </div>
   );
 }

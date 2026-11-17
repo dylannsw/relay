@@ -374,6 +374,12 @@ export function MailList(p: Props) {
           <>
             <SelectionBarSeparator />
             <SelectionBarAction
+              label={allChecked ? "Clear Selection" : "Select All"}
+              text={allChecked ? "Clear" : "Select All"}
+              shortcut={allChecked ? undefined : "selectAll"}
+              onClick={() => checkAll(!allChecked)}
+            />
+            <SelectionBarAction
               label="Keep Latest"
               text="Keep Latest"
               hint="Tick everything except the newest message"
