@@ -39,7 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { matchShortcut } from "@/shortcuts";
 import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { errorText } from "@/api";
-import { completeTask, deleteTask, editTask, reloadTasks, useTasks, type UndoComplete } from "@/tasks/store";
+import { completeTask, deleteTask, deleteTaskList, editTask, reloadTasks, useTasks, type UndoComplete } from "@/tasks/store";
 import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
 import { sectionChip } from "@/tasks/chips";
 import { tasksToMarkdown } from "@/tasks/copy";
@@ -48,7 +48,7 @@ import { loadBoardOrder, saveBoardOrder, sortByOrder, type BoardOrder } from "@/
 import { TaskDialog } from "./task-dialog";
 import { TasksSetup } from "./tasks-setup";
 import { PageHeader, PageTitle } from "@/components/page-header";
-import { SelectionBar, SelectionBarAction } from "@/components/selection-bar";
+import { SelectionBar, SelectionBarAction, SelectionBarSeparator } from "@/components/selection-bar";
 import { listCard, listCardSelected } from "@/components/list-card";
 
 /** A pause after ticking before the task is archived, so a misclick can be unticked (as in Tick). */
@@ -136,6 +136,8 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useTasks();
   const [editing, setEditing] = useState<ParsedTask | null>(null);
   const [deleting, setDeleting] = useState<ParsedTask | null>(null);
+  /** The selection, while its delete is being confirmed. */
+  const [deletingMany, setDeletingMany] = useState<ParsedTask[] | null>(null);
   /** Ticked cards waiting out the pause, by card key, with their timers. */
   const [ticked, setTicked] = useState<Map<string, number>>(() => new Map());
   const pending = useRef(new Map<string, ParsedTask>());
@@ -312,12 +314,25 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     }
   };
 
+  const removeMany = async (tasks: ParsedTask[]) => {
+    try {
+      await deleteTaskList(tasks);
+      setSelected(new Set());
+      toast.success(tasks.length === 1 ? "Task deleted" : `${tasks.length} tasks deleted`);
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  };
+
   /** Puts the selected cards on the clipboard as a prompt for Claude, in board order. */
   const copyForClaude = (cards = picked) => {
     if (!cards.length) return;
     const n = cards.length;
     void navigator.clipboard.writeText(tasksToMarkdown(cards.map((c) => c.task))).then(
-      () => toast.success(n === 1 ? "Copied 1 task as a prompt" : `Copied ${n} tasks as a prompt`),
+      () => {
+        toast.success(n === 1 ? "Copied 1 task as a prompt" : `Copied ${n} tasks as a prompt`);
+        setSelected(new Set());
+      },
       (e) => toast.error(errorText(e)),
     );
   };
@@ -484,6 +499,14 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           shortcut="copyTasks"
           onClick={() => copyForClaude()}
         />
+        <SelectionBarSeparator />
+        <SelectionBarAction
+          label="Delete"
+          hint="Delete selected tasks"
+          icon={<IconTrash />}
+          destructive
+          onClick={() => setDeletingMany(picked.map((c) => c.task))}
+        />
       </SelectionBar>
 
       <div
@@ -549,7 +572,11 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                             sections={t.addSections}
                             onToggle={() => toggle(task, key)}
                             onEdit={() => setEditing(task)}
-                            onDelete={() => setDeleting(task)}
+                            onDelete={() => {
+                              const group = menuGroup(key);
+                              if (group.length > 1) setDeletingMany(group.map((c) => c.task));
+                              else setDeleting(task);
+                            }}
                             onStatus={(s) => drop([{ task, key }], s)}
                             onSection={(s) => void moveSection(task, s)}
                             copyCount={menuGroup(key).length}
@@ -623,25 +650,37 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           }}
         />
       )}
-      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
+      <AlertDialog
+        open={!!deleting || !!deletingMany}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDeleting(null);
+          setDeletingMany(null);
+        }}
+      >
         <AlertDialogContent
           size="sm"
           onKeyDown={(e) => {
-            if (e.key !== "Enter" || !deleting) return;
+            if (e.key !== "Enter") return;
+            if (deletingMany) void removeMany(deletingMany);
+            else if (deleting) void remove(deleting);
+            else return;
             e.preventDefault();
-            void remove(deleting);
             setDeleting(null);
+            setDeletingMany(null);
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+            <AlertDialogTitle>{deletingMany && deletingMany.length > 1 ? `Delete ${deletingMany.length} tasks?` : "Delete this task?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              “{deleting?.text}” and its note are removed from your to-do note. It isn't archived as completed.
+              {deletingMany && deletingMany.length > 1
+                ? "These tasks and their notes are removed from your to-do note. They aren't archived as completed."
+                : `“${(deletingMany?.[0] ?? deleting)?.text}” and its note are removed from your to-do note. It isn't archived as completed.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => deleting && void remove(deleting)}>
+            <AlertDialogAction variant="destructive" onClick={() => (deletingMany ? void removeMany(deletingMany) : deleting && void remove(deleting))}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -811,7 +850,7 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onSelect={onDelete}>
           <IconTrash />
-          Delete
+          {copyCount > 1 ? `Delete ${copyCount}` : "Delete"}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

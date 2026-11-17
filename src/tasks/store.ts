@@ -247,6 +247,17 @@ export function deleteTask(task: ParsedTask): Promise<void> {
   );
 }
 
+/** Deletes several tasks in one write (line numbers stay valid), and says how many were gone already. */
+export function deleteTaskList(tasks: ParsedTask[]): Promise<number> {
+  return afterEdit(
+    updateNote("todo", (content, s) => {
+      const r = deleteTasks(content, s.defaultSection, tasks.map((t) => ({ text: t.text, line: t.line })));
+      if (!r.deleted) throw new Error("Those tasks changed or were removed. Look at the list again.");
+      return { content: r.content, result: r.missing };
+    }),
+  );
+}
+
 /** The task, with its note, as the Tick plugin archives it (only this one, not other ticked tasks). */
 function takeTask(content: string, defaultSection: string, task: ParsedTask) {
   const marked = completeTasks(content, defaultSection, [{ text: task.text, line: task.line }]);
