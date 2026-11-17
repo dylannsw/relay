@@ -327,11 +327,52 @@ impl Telegram {
             }
         }
         let mut chats = self.chats.write().expect("chats lock");
+        // Paging through every dialog takes a while; a message that arrived meanwhile was patched
+        // into the old list and may be newer than what the fetch saw. Keep it, so a reload never
+        // drops a chat's latest message (and its place at the top).
+        for (id, e) in list.iter_mut() {
+            let Some(old) = chats.list.get(id) else { continue };
+            let newer = match (&old.chat.last, &e.chat.last) {
+                (Some(o), Some(n)) => (o.date, o.id) > (n.date, n.id),
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if newer {
+                e.chat.last = old.chat.last.clone();
+                e.chat.unread = old.chat.unread;
+                e.chat.mentions = old.chat.mentions;
+                e.chat.marked_unread = old.chat.marked_unread;
+            }
+        }
         chats.me = Some(me);
         chats.folders = folder_rules(filters, Some(me));
         chats.list = list;
         chats.loaded = true;
         Ok(())
+    }
+
+    /// Re-reads people's online status (one request per 100 people), which goes stale while
+    /// Relay is offline, since Telegram only sends status changes to online clients. Returns
+    /// whether anything was updated.
+    async fn refresh_presence(&self, client: &Client) -> bool {
+        let refs: Vec<PeerRef> = {
+            let chats = self.chats.read().expect("chats lock");
+            chats.list.values().filter(|e| e.chat.kind == "user").filter_map(|e| e.peer.to_ref_cached()).collect()
+        };
+        let mut changed = false;
+        for batch in refs.chunks(100) {
+            let request = tl::functions::users::GetUsers { id: batch.iter().map(tl::enums::InputUser::from).collect() };
+            let Ok(users) = client.invoke(&request).await else { continue };
+            let mut chats = self.chats.write().expect("chats lock");
+            for u in users {
+                let tl::enums::User::User(u) = u else { continue };
+                let Some(id) = PeerId::user(u.id) else { continue };
+                let Some(e) = chats.list.get_mut(&id) else { continue };
+                e.chat.presence = u.status.as_ref().and_then(convert::presence);
+                changed = true;
+            }
+        }
+        changed
     }
 
     async fn reload_folders(&self, client: &Client) {
@@ -970,13 +1011,14 @@ pub async fn telegram_delete_messages(app: AppHandle, tg: Tg<'_>, chat_id: Strin
 
 /// Shows you online (or not) to others. Telegram only sends other people's online status to clients
 /// that are online, so Relay goes online while its window is focused, like Telegram's own apps.
-/// Coming online also re-reads the chat list, whose statuses went stale while offline.
+/// Coming online also re-reads people's statuses, which went stale while offline (just the
+/// statuses: re-reading the whole chat list on every focus made the list visibly reload).
 #[tauri::command]
 pub async fn telegram_set_online(app: AppHandle, tg: Tg<'_>, online: bool) -> Result<()> {
     let client = Telegram::client(&*tg.inner.lock().await)?;
     client.invoke(&tl::functions::account::UpdateStatus { offline: !online }).await.map_err(tg_error)?;
     let was = tg.online.swap(online, std::sync::atomic::Ordering::Relaxed);
-    if online && !was && tg.load_chats(&client).await.is_ok() {
+    if online && !was && tg.refresh_presence(&client).await {
         let _ = app.emit(TELEGRAM_UPDATED, TgEvent { reload: true, ..Default::default() });
     }
     Ok(())

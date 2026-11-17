@@ -29,9 +29,18 @@ function set(patch: Partial<TelegramState>) {
 
 const byDate = (a: TgChat, b: TgChat) => (b.last?.date ?? 0) - (a.last?.date ?? 0);
 
-export async function refreshChats() {
+/** Counts refreshes, so only the latest one's answer is used. */
+let refreshes = 0;
+/** Counts live chat changes, so a list fetched before one of them never overwrites it. */
+let changes = 0;
+
+export async function refreshChats(): Promise<void> {
+  const mine = ++refreshes;
+  const seen = changes;
   try {
     const list = await api.telegram.chats();
+    if (mine !== refreshes) return; // a newer refresh is on its way
+    if (seen !== changes) return refreshChats(); // a chat changed meanwhile: this copy may predate it
     set({ folders: list.folders, chats: list.chats, loaded: list.loaded, error: null });
   } catch (e) {
     set({ error: errorText(e) });
@@ -57,6 +66,7 @@ export function setStatus(status: TgStatus) {
 
 /** Changes a chat right away (marking it read), before the backend confirms. */
 export function patchChat(id: string, patch: Partial<TgChat>) {
+  changes++;
   set({ chats: state.chats.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
 }
 
@@ -67,13 +77,17 @@ export function requestOpenChat(id: string | null) {
 
 /** Drops a deleted chat from the list. */
 export function removeChat(id: string) {
+  changes++;
   set({ chats: state.chats.filter((c) => c.id !== id) });
 }
 
 function onEvent(e: TgEvent) {
   if (e.reload) {
-    void refreshStatus();
+    // The list changed in the backend: re-read it (local, no trip to Telegram). Status only
+    // when not signed in yet (the first load right after connecting).
+    void (state.status?.stage === "ready" ? refreshChats() : refreshStatus());
   } else if (e.chat) {
+    changes++;
     const chat = e.chat;
     const others = state.chats.filter((c) => c.id !== chat.id);
     set({ chats: [...others, chat].sort(byDate) });
