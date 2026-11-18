@@ -193,7 +193,7 @@ export function HomeBanner({ className }: { className?: string }) {
       <div className={cn("relative flex items-center justify-center", className)}>
         {/* A faint dot grid where the picture would be. */}
         <div className="absolute inset-0 bg-[radial-gradient(var(--border)_1.2px,transparent_1.2px)] bg-size-[7px_7px]" />
-        <div className="pointer-events-none absolute inset-0 bg-linear-to-b from-transparent from-30% to-background to-90%" />
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-b from-transparent from-30% to-canvas to-90%" />
         <Button variant="outline" size="sm" className="relative -mt-10" onClick={() => void chooseBanner(vaultPath)}>
           <IconPhoto />
           Choose a banner picture

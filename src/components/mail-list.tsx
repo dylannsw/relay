@@ -246,7 +246,7 @@ export function MailList(p: Props) {
 
   return (
     <div className="relative flex h-full flex-col">
-      <PageHeader className="gap-0">
+      <PageHeader etched className="gap-0">
         {gv ? (
           <GroupTitle s={gv} />
         ) : (

@@ -486,7 +486,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   return (
     <div ref={page} className="relative flex h-full flex-col overflow-hidden">
-      <PageHeader>
+      <PageHeader etched>
         <PageTitle>Tasks</PageTitle>
       </PageHeader>
       {/* Out of the way while cards are held, so it never covers the Done zone. */}

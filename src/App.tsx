@@ -20,6 +20,7 @@ import { ComposeDialog, type Draft } from "@/components/compose-dialog";
 import { DraftsList } from "@/components/drafts-list";
 import { SettingsDialog, type SettingsSection } from "@/components/settings-dialog";
 import { startAutoCheck } from "@/updater";
+import { cn } from "@/lib/utils";
 import { SignInDialog } from "@/components/sign-in-dialog";
 import { ChatsPage } from "@/components/chats/chats-page";
 
@@ -798,7 +799,14 @@ export default function App() {
             />
           }
         />
-        <SidebarInset className="frame min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0">
+        <SidebarInset
+          className={cn(
+            "frame min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0",
+            // Views made of cards sit on the canvas grey, a step below the cards. Tasks has its own
+            // grey columns; Calendar and Chats stay white.
+            !["tasks", "calendar", "chats"].includes(view.kind) && "bg-canvas",
+          )}
+        >
           {view.kind === "home" ? (
             <HomePage
               accounts={accounts}

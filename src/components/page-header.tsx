@@ -5,11 +5,19 @@ import { cn } from "@/lib/utils";
  * The bottom line is an inset shadow, not border-b, so the content box stays 56px: with a 1px
  * border a 36px control sits at 9.5px and snaps half a pixel when a scale animation on it ends.
  */
-export function PageHeader({ className, ...props }: React.ComponentProps<"header">) {
+export function PageHeader({ className, etched, ...props }: React.ComponentProps<"header"> & {
+  /** An etched line: the grey line with a white one under it, like a groove lit from above
+   * (light mode, over the canvas). Both stay inside the 56px. Dark mode keeps the single line. */
+  etched?: boolean;
+}) {
   return (
     <header
       data-slot="page-header"
-      className={cn("flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)]", className)}
+      className={cn(
+        "flex h-14 shrink-0 items-center gap-3 px-4 shadow-[inset_0_-1px_0_var(--border)]",
+        etched && "shadow-[inset_0_-1px_0_var(--card-highlight),inset_0_-2px_0_var(--border)] dark:shadow-[inset_0_-1px_0_var(--border)]",
+        className,
+      )}
       {...props}
     />
   );

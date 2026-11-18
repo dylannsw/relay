@@ -125,7 +125,9 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
 
   return (
     // Floating over Home's glow (which sits at sticky), so the light and the bend pass under it.
-    <ComposerTray ref={tray} className={cn("z-(--z-floating)", className)}>
+    // On Home's canvas the tray takes the card look (off-white fill, white rim inside the border);
+    // the chat composer keeps the plain grey tray.
+    <ComposerTray ref={tray} className={cn("z-(--z-floating) bg-card inset-shadow-[0_0_0_1px_var(--card-highlight)]", className)}>
       {ready ? (
         <form
           onSubmit={(e) => {

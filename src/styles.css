@@ -112,6 +112,9 @@
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
     --color-card: var(--card);
+    --color-card-highlight: var(--card-highlight);
+    --color-canvas: var(--canvas);
+    --color-track: var(--track);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
     --radius-sm: calc(var(--radius) * 0.6);
@@ -144,8 +147,16 @@
     --brand-foreground: var(--accent-light-fg, oklch(0.985 0 0));
     --background: oklch(1 0 0);
     --foreground: oklch(0.34 0 0);
-    --card: oklch(1 0 0);
+    /* Cards are a step off white, so the white rim just inside their edge (--card-highlight)
+       reads as light catching it. They sit on --canvas, a step darker again, where a view is a
+       list of cards (mail, drafts, Home); text-heavy views keep the white --background. */
+    --card: oklch(0.985 0 0);
     --card-foreground: oklch(0.34 0 0);
+    --card-highlight: oklch(1 0 0);
+    --canvas: oklch(0.965 0 0);
+    /* The track behind a segmented control (TabsList): the sidebar grey, so it stays visible on
+       the canvas. */
+    --track: var(--sidebar);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.34 0 0);
     --primary: var(--brand);
@@ -193,13 +204,15 @@
     --scrim: rgb(0 0 0 / 40%);
     --scrim-media: rgb(0 0 0 / 55%);
     --radius: 0.5rem;
-    --sidebar: oklch(0.955 0 0);
+    /* A step below --canvas (0.965) so the framed panel still stands off the sidebar. The selected
+       item and the border keep the same step below the sidebar as before. */
+    --sidebar: oklch(0.935 0 0);
     --sidebar-foreground: oklch(0.34 0 0);
     --sidebar-primary: var(--brand);
     --sidebar-primary-foreground: var(--brand-foreground);
-    --sidebar-accent: oklch(0.915 0 0);
+    --sidebar-accent: oklch(0.895 0 0);
     --sidebar-accent-foreground: oklch(0.34 0 0);
-    --sidebar-border: oklch(0.895 0 0);
+    --sidebar-border: oklch(0.875 0 0);
     --sidebar-ring: var(--focus);
     /* The selected sidebar item's icon: the accent, kept readable on the sidebar grey. */
     --sidebar-icon-active: var(--brand);
@@ -237,6 +250,10 @@
     --foreground: oklch(0.96 0 0);
     --card: #1c1c1c;
     --card-foreground: oklch(0.96 0 0);
+    /* No rim and no separate canvas in dark mode (yet). */
+    --card-highlight: transparent;
+    --canvas: var(--background);
+    --track: var(--muted);
     --popover: #1f1f1f;
     --popover-foreground: oklch(0.96 0 0);
     --primary: var(--brand);
@@ -418,6 +435,23 @@
    by the shadow ring's hairline alone. Unlayered so it beats their smooth-shadow-ring-* utility. */
 :root:not(.dark, .mixed) .frame {
   box-shadow: 0 0 0 var(--smooth-ring-width, 1px) var(--smooth-ring-color);
+}
+
+/* A card's white rim, 1px inside its edge. Drawn over the card's children (an inset shadow on the
+   card itself would sit under their backgrounds, e.g. Home's stat tiles). ::before because
+   .halo-glint-inset uses ::after. Transparent in dark mode. List cards, whose children have no
+   fill, use the cheaper inset shadow in listCard instead. */
+@utility card-rim {
+  position: relative;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--card-highlight);
+    pointer-events: none;
+  }
 }
 
 /* Mixed theme: tooltips are the dark ones (Light's dark grey box with white text) everywhere,
