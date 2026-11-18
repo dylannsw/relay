@@ -29,7 +29,7 @@ export function DateField({ value, onChange, label, className }: {
           </span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent className="w-auto p-0" align="end">
         <Calendar
           mode="single"
           selected={date}
@@ -119,7 +119,7 @@ export function TimeField({ value, onChange, label: ariaLabel, from, className }
           <span className="truncate">{current === null ? "Pick a time" : label(current)}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
+      <PopoverContent className="w-56 p-0" align="end">
         <Command shouldFilter={false}>
           <CommandInput placeholder="Type a time" value={query} onValueChange={setQuery} />
           <CommandList ref={list} className="max-h-64">

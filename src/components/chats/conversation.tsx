@@ -1073,7 +1073,7 @@ function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media:
           <IconPlayerPlayFilled className="size-5" />
         </span>
       </span>
-      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-scrim-media px-1.5 py-1 text-2xs leading-none text-white tabular-nums">{length}</span>}
+      {length && !round && <span className="absolute top-1.5 left-1.5 rounded-full bg-scrim-media px-1.5 py-1 text-2xs leading-none text-white">{length}</span>}
     </button>
   );
 }
@@ -1160,7 +1160,7 @@ function QuoteLines({ chat, reply, out }: { chat: TgChat; reply: NonNullable<TgM
 /** Read ticks, "edited" and the time, drawn under the last bubble of a run. */
 function Meta({ m, read }: { m: Shown; read: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs leading-none whitespace-nowrap text-muted-foreground tabular-nums">
+    <span className="inline-flex items-center gap-1 text-xs leading-none whitespace-nowrap text-muted-foreground">
       {m.edited && <span>edited</span>}
       {m.pending === "sending" ? (
         <IconClock className="size-4" aria-label="Sending" />

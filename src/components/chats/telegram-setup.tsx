@@ -46,7 +46,7 @@ export function TelegramSetup({ status }: { status: TgStatus }) {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold">Connect Telegram</h1>
             {stepIndex >= 0 && (
-              <p className="text-sm text-muted-foreground tabular-nums">
+              <p className="text-sm text-muted-foreground">
                 Step {stepIndex + 1} of {STEPS.length}
               </p>
             )}
@@ -226,7 +226,7 @@ function CodeStep(props: { phone: string | null; busy: boolean; error: string | 
             className="w-40 font-mono text-lg tracking-[0.3em] tabular-nums"
           />
           <FieldDescription>
-            Telegram sent it {props.phone ? <>for <span className="font-medium text-foreground tabular-nums">{props.phone}</span> </> : null}
+            Telegram sent it {props.phone ? <>for <span className="font-medium text-foreground">{props.phone}</span> </> : null}
             to your Telegram app, as a message from “Telegram”. It's not an SMS unless the app isn't installed.
           </FieldDescription>
         </Field>
