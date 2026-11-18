@@ -69,7 +69,7 @@ export const FIXED_SHORTCUTS: { label: string; key: string }[] = [
   { label: "Send message", key: "ctrl+Enter" },
   { label: "Toggle sidebar", key: "alt+d" },
   { label: "Next sidebar item", key: "ctrl+Tab" },
-  { label: "Previous sidebar item", key: "ctrl+shift+Tab" },
+  { label: "Previous sidebar item", key: "shift+Tab" },
   { label: "Add to selection", key: "ctrl+Click" },
   { label: "Select a range", key: "shift+Click" },
   { label: "Calendar: go to today", key: "t" },

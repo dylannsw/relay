@@ -637,6 +637,17 @@ export default function App() {
       clearSelection();
       return;
     }
+    // Shift+Tab on its own: the previous sidebar item too, unless a text field has focus
+    // (there it keeps moving focus back a field).
+    if (
+      e.key === "Tab" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey &&
+      !t.closest("input, textarea, select, [contenteditable]")
+    ) {
+      e.preventDefault();
+      setView(stepSidebarView(accounts, view, -1));
+      clearSelection();
+      return;
+    }
     const action = matchShortcut(e, readerOpen ? "reader" : "list");
     // Home and Tasks have no message list, and neither does the sender list: only the
     // app-wide shortcuts apply there.

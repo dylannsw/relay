@@ -134,18 +134,24 @@ export function sortedLabels(accounts: Account[]): string[] {
 }
 
 /**
- * The sidebar's top-level items, top to bottom, for Ctrl+Tab: each account counts once, as its
- * inbox (its other folders aren't stops of their own), and Chats counts once, as All chats.
+ * Marks a sidebar button as a Ctrl+Tab stop for `v`. Only top-level items get one: each account
+ * counts once, as its inbox (its other folders aren't stops of their own), and Chats counts once,
+ * as All chats.
  */
-export function sidebarViews(accounts: Account[]): View[] {
+const stop = (v: View) => ({ "data-sidebar-stop": JSON.stringify(v) });
+
+/**
+ * The sidebar's stops, top to bottom, read from the rendered sidebar so Ctrl+Tab always follows
+ * its order. Before the sidebar has rendered, falls back to the pages and accounts.
+ */
+function sidebarViews(accounts: Account[]): View[] {
+  const marked = [...document.querySelectorAll<HTMLElement>("[data-sidebar-stop]")]
+    .map((el) => JSON.parse(el.dataset.sidebarStop!) as View);
+  if (marked.length) return marked;
   return [
     { kind: "home" },
     { kind: "tasks" },
     { kind: "calendar" },
-    { kind: "all" },
-    { kind: "cleanup" },
-    { kind: "chats", folder: null },
-    ...sortedLabels(accounts).map((label): View => ({ kind: "label", label })),
     ...accounts.map((a): View => ({ kind: "account", id: a.id, folder: "inbox" })),
   ];
 }
@@ -206,6 +212,7 @@ function AccountItem({ account: a, view, onView, onReconnect, drafts }: {
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
             isActive={viewing && !open}
+            {...stop({ kind: "account", id: a.id, folder: "inbox" })}
             className="relative"
             title={`${a.provider === "google" ? "Gmail" : "Microsoft"} · ${a.label} · synced ${relativeTime(a.lastSync)}`}
           >
@@ -287,6 +294,7 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={view.kind === "home"}
+          {...stop({ kind: "home" })}
           onClick={() => onView({ kind: "home" })}
           // Selected, its icon is Home's own orange-red instead of the accent colour.
           className="[--sidebar-icon-active:var(--home)]"
@@ -298,6 +306,7 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={view.kind === "tasks"}
+          {...stop({ kind: "tasks" })}
           onClick={() => onView({ kind: "tasks" })}
           className="[--sidebar-icon-active:var(--home)]"
         >
@@ -309,6 +318,7 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={view.kind === "calendar"}
+          {...stop({ kind: "calendar" })}
           onClick={() => onView({ kind: "calendar" })}
           className="[--sidebar-icon-active:var(--home)]"
         >
@@ -352,6 +362,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   const allButton = (
     <SidebarMenuButton
       isActive={allSelected}
+      {...stop({ kind: "chats", folder: null })}
       // The first click opens All chats; clicking it again once it's open shows or hides the folders.
       onClick={() => {
         if (allSelected && folders.length > 0) {
@@ -441,7 +452,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={sameView(view, { kind: "all" })} onClick={() => onView({ kind: "all" })}>
+                <SidebarMenuButton isActive={sameView(view, { kind: "all" })} {...stop({ kind: "all" })} onClick={() => onView({ kind: "all" })}>
                   <IconInbox />
                   <span>All Inboxes</span>
                 </SidebarMenuButton>
@@ -450,6 +461,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={view.kind === "cleanup"}
+                  {...stop({ kind: "cleanup" })}
                   onClick={() => onView({ kind: "cleanup" })}
                   // Selected, its icon is the star colour instead of the accent colour.
                   className="[--sidebar-icon-active:var(--star)]"
@@ -473,7 +485,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
                   const v: View = { kind: "label", label };
                   return (
                     <SidebarMenuItem key={label}>
-                      <SidebarMenuButton isActive={sameView(view, v)} onClick={() => onView(v)}>
+                      <SidebarMenuButton isActive={sameView(view, v)} onClick={() => onView(v)} {...stop(v)}>
                         <Icon />
                         <span>{label}</span>
                       </SidebarMenuButton>
