@@ -7,6 +7,7 @@ import {
   useSpring,
   useVelocity,
   type MotionValue,
+  type Transition,
 } from "motion/react";
 import { toast } from "sonner";
 import { IconArrowBackUp, IconCheck, IconCircleCheck, IconCopy, IconFolder, IconPencil, IconBrandOpenai, IconTrash } from "@tabler/icons-react";
@@ -22,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { TaskMetrics } from "@/components/tasks/task-metrics";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -60,6 +62,22 @@ const DRAG_THRESHOLD = 5;
  * card's trail, so they string out behind it while moving and settle into a stack when it stops.
  */
 const FOLLOW = { stiffness: 460, damping: 36, mass: 0.8 };
+/**
+ * The column a dragged card is over swells slightly and stays that way until the card leaves.
+ * Columns are tall, so the swell is small.
+ */
+const COLUMN_GROWN = 1.005;
+/**
+ * Arriving (~0.55s) is a touch quicker than leaving (~0.65s), each with a little give at the end.
+ * Long and soft on purpose: the swell is so small that a quick spring reads as a snap.
+ */
+const COLUMN_ENTER: Transition = { type: "spring", visualDuration: 0.55, bounce: 0.15 };
+const COLUMN_LEAVE: Transition = { type: "spring", visualDuration: 0.65, bounce: 0.1 };
+/**
+ * Dropping into a column: one spring back to rest, kicked outward as the card lets go, so it rises,
+ * dips just under rest and settles in one unbroken motion.
+ */
+const COLUMN_LAND: Transition = { type: "spring", visualDuration: 0.7, bounce: 0.45, velocity: 0.1 };
 
 /** Where dragged cards can land: a column, or the Done zone. */
 type Target = TaskStatus | "done";
@@ -214,6 +232,24 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   // however many are dragged.
   const keys = cardKeys(t.tasks);
   const held = lift?.mode === "held" ? lift : null;
+
+  // The column under a dragged card swells and holds; leaving lets it ease back. The column a drop
+  // lands in (set by the drop just before the card lets go) pops and settles from the swell instead.
+  const grownColumn = held && held.over !== "done" ? held.over : null;
+  const landedColumn = useRef<TaskStatus | null>(null);
+  useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const [status, el] of columns.current) {
+      if (status === landedColumn.current && !reduced) {
+        animate(el, { scale: 1 }, COLUMN_LAND);
+      } else {
+        const grow = status === grownColumn;
+        animate(el, { scale: grow ? COLUMN_GROWN : 1 }, reduced ? { duration: 0 } : grow ? COLUMN_ENTER : COLUMN_LEAVE);
+      }
+    }
+    landedColumn.current = null;
+  }, [grownColumn]);
+
   const dragging = new Set(held?.cards.map((c) => c.key) ?? []);
   const columnCards = new Map<TaskStatus, Card[]>(STATUSES.map((s) => [s, []]));
   t.tasks.forEach((task, i) => {
@@ -457,6 +493,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
         next[target] = [...stay.slice(0, index), ...group.map((c) => c.key), ...stay.slice(index)];
         setOrder(next);
         saveBoardOrder(next);
+        landedColumn.current = target;
         setLift((l) => l && { ...l, mode: "land", gap: true });
         setSelected(new Set());
         drop(group, target);
@@ -510,12 +547,13 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       </SelectionBar>
 
       <div
-        className="relative grid min-h-0 flex-1 grid-cols-3 gap-3 p-3"
+        className="relative grid min-h-0 flex-1 grid-cols-3 grid-rows-[auto_minmax(0,1fr)] gap-3 p-3"
         // A click on the board's empty space clears the selection.
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest("[data-card-key]")) setSelected(new Set());
         }}
       >
+        <TaskMetrics stats={t.status === "ready" ? t.stats : null} heatColor={t.settings.heatmapColor} />
         {STATUSES.map((status) => {
           const cards = board.get(status)!;
           const target = held && held.over === status;
@@ -534,8 +572,8 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
               aria-label={STATUS_META[status].label}
               className={cn(
                 // The overview card's corner (rounded-xl); the cards inside, 6px in, are 6px less.
-                // The sidebar grey: a well a step below the canvas, so the off-white cards stand out in it.
-                "flex min-h-0 flex-col rounded-xl border bg-sidebar transition-[background-color,border-color,box-shadow] duration-150",
+                // The sidebar grey (0.935), a step below the canvas, with the cards' outer outline and an inner rim.
+                "flex min-h-0 flex-col rounded-2xl border bg-sidebar inset-shadow-[0_0_0_1px_oklch(0.985_0_0)] dark:inset-shadow-none transition-[background-color,border-color,box-shadow] duration-400 ease-(--ease-out-soft)",
                 // Under the pointer: the column's colour pushed 5% toward the text colour (darker in light mode, lighter in dark).
                 target && "border-border-strong bg-[color-mix(in_srgb,var(--sidebar)_94%,var(--foreground))] dark:bg-[color-mix(in_srgb,var(--sidebar)_93%,var(--foreground))]",
               )}
@@ -549,7 +587,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                   column's width so lines truncate. The scrollbar is hidden: the column still scrolls.
                   The scroll box sits 6px inside the column with the cards' own corners, so a card scrolled
                   partly out of view is cut along a clean card-shaped edge, not the column's border. */}
-              <ScrollArea className="column-scroll mx-1.5 mb-1.5 min-h-0 flex-1 rounded-lg [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
+              <ScrollArea className="column-scroll mx-2.5 mb-1.5 min-h-0 flex-1 rounded-lg [&_[data-slot=scroll-area-scrollbar]]:hidden [&_[data-slot=scroll-area-viewport]>div]:block!">
                 <div className="flex flex-col">
                   <AnimatePresence initial={false} custom={presence}>
                     {cards.map(({ task, key }, i) => {

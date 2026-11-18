@@ -19,7 +19,7 @@ import { formatDate, type DashboardStats, type HeatmapDay } from "@/tasks/tick";
 const SQUARE = 14;
 const GAP = 3;
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 export interface OverviewProps {
   /** Task numbers, or null while tasks aren't set up. */
@@ -109,10 +109,12 @@ export function HomeOverview(p: OverviewProps) {
   );
 }
 
-function Stat({ icon, label, value, onClick, children }: {
+export function Stat({ icon, label, value, valueClassName, onClick, children }: {
   icon: ReactNode;
   label: string;
   value: string;
+  /** Replaces the number's size (default text-3xl). */
+  valueClassName?: string;
   onClick?: () => void;
   children: ReactNode;
 }) {
@@ -122,7 +124,7 @@ function Stat({ icon, label, value, onClick, children }: {
         {icon}
         <span className="truncate">{label}</span>
       </span>
-      <span className="text-3xl leading-9 font-semibold tracking-tight">{value}</span>
+      <span className={cn("font-semibold tracking-tight", valueClassName ?? "text-3xl leading-9")}>{value}</span>
       {/* Full width so long lines (the next event's name) end in an ellipsis at the tile's padding. */}
       <span className="flex h-6 w-full min-w-0 items-center gap-2 text-sm text-muted-foreground">{children}</span>
     </>
@@ -144,14 +146,14 @@ const DELTA_COLORS = { up: "var(--heat)", down: "var(--signal-red)", level: "var
  * The change since last time: the arrow in a small solid square of its own, then the number in
  * the same colour as plain text, then what it's compared with ("▾ −25 vs last week").
  */
-function Delta({ change, versus }: { change: number; versus: string }) {
+export function Delta({ change, versus }: { change: number; versus: string }) {
   const Icon = change > 0 ? IconArrowUpRight : change < 0 ? IconArrowDownRight : IconMinus;
   const color = change > 0 ? DELTA_COLORS.up : change < 0 ? DELTA_COLORS.down : DELTA_COLORS.level;
   return (
-    <span className="flex min-w-0 items-center gap-2" style={{ "--delta": color } as React.CSSProperties}>
-      <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-(--delta)">
+    <span className="flex min-w-0 items-center gap-1.5" style={{ "--delta": color } as React.CSSProperties}>
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-sm bg-(--delta)">
         {/* White on the colour in light mode; a dark arrow on it in dark mode, as in the reference. */}
-        <Icon className="size-3.5 stroke-[length:2.25px]! text-white dark:text-black/75" />
+        <Icon className="size-3 stroke-[length:1.75px]! text-white dark:text-black/75" />
       </span>
       {/* One line of text: the number, a plain space, then what it's compared with. */}
       <span data-label className="truncate">
