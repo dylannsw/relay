@@ -303,6 +303,10 @@ impl Telegram {
                         if handled.is_err() {
                             eprintln!("telegram: an update couldn't be handled; skipped it");
                         }
+                        // grammers never records how far updates have been read by itself, so
+                        // without this the session kept the position from sign-in, and every
+                        // launch replayed every message since. The timer writes it to disk.
+                        let _ = stream.sync_update_state().await;
                     }
                     Err(InvocationError::Dropped(_)) => break, // signed out or quitting
                     Err(e) => {
@@ -415,7 +419,18 @@ impl Telegram {
         let event = match update {
             Update::NewMessage(m) => {
                 let id = m.peer_id();
-                let known = self.chats.read().expect("chats lock").list.contains_key(&id);
+                let (known, seen) = {
+                    let chats = self.chats.read().expect("chats lock");
+                    let e = chats.list.get(&id);
+                    // Ids only grow within a chat. One no newer than the chat's latest is a
+                    // replay (catching up after launch re-sends what the chat list already
+                    // has): counting or showing it again would roll the preview back and
+                    // scroll the open chat through old messages.
+                    (e.is_some(), e.and_then(|e| e.chat.last.as_ref()).is_some_and(|l| l.id >= m.id()))
+                };
+                if seen {
+                    return;
+                }
                 if !known {
                     // A new chat: fetch the list again so it arrives with its name and folders.
                     let _ = self.load_chats(client).await;

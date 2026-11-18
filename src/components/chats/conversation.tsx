@@ -253,6 +253,10 @@ export function Conversation({ chat }: { chat: TgChat }) {
   /** Set before older messages are added on top, so the view stays on what you were reading. */
   const keepFrom = useRef<number | null>(null);
   const stickToBottom = useRef(true);
+  /** The first message that was unread when the chat opened; a line marks where it starts. */
+  const [unreadFrom, setUnreadFrom] = useState<number | null>(null);
+  /** Set when a chat opens with unread messages, so the first draw scrolls to them. */
+  const landOnUnread = useRef(false);
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
@@ -263,7 +267,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
     api.telegram.markRead(c.id).catch((e) => toast.error(errorText(e)));
   }, []);
 
-  // Opening a chat: its latest messages, scrolled to the end, and the chat marked read.
+  // Opening a chat: with unread messages, it opens where you left off (the first unread one) and
+  // is marked read once you've scrolled to the end; otherwise at the end, marked read at once.
   useEffect(() => {
     let live = true;
     setMessages(null);
@@ -272,13 +277,25 @@ export function Conversation({ chat }: { chat: TgChat }) {
     setReplyTo(null);
     setEditing(null);
     setUnseen(0);
+    setUnreadFrom(null);
+    landOnUnread.current = false;
     stickToBottom.current = true;
-    api.telegram.messages(chat.id, undefined, PAGE).then(
+    const unread = chatRef.current.unread;
+    // Enough to reach the first unread message (up to Telegram's 100 a page).
+    const limit = Math.min(Math.max(PAGE, unread + 10), 100);
+    api.telegram.messages(chat.id, undefined, limit).then(
       (list) => {
         if (!live) return;
+        const first = firstUnread(list, unread);
+        if (first !== null) {
+          stickToBottom.current = false;
+          landOnUnread.current = true;
+          setUnreadFrom(first);
+          setUnseen(unread);
+        }
         setMessages(list);
-        if (list.length < PAGE) setOlder("done");
-        markRead();
+        if (list.length < limit) setOlder("done");
+        if (first === null) markRead();
       },
       (e) => live && setError(errorText(e)),
     );
@@ -395,7 +412,17 @@ export function Conversation({ chat }: { chat: TgChat }) {
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el || !messages) return;
-    if (keepFrom.current !== null) {
+    if (landOnUnread.current) {
+      landOnUnread.current = false;
+      const line = el.querySelector<HTMLElement>("[data-unread-line]");
+      if (line) el.scrollTop += line.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      // Everything unread fits on screen (there's nothing to scroll): it's been seen.
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK) {
+        stickToBottom.current = true;
+        setUnseen(0);
+        markRead();
+      }
+    } else if (keepFrom.current !== null) {
       el.scrollTop += el.scrollHeight - keepFrom.current;
       keepFrom.current = null;
     } else if (stickToBottom.current) {
@@ -674,6 +701,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
                 return (
                   <div key={m.id}>
                     {newDay && <DaySeparator date={m.date} />}
+                    {m.id === unreadFrom && <UnreadLine />}
                     {m.service ? (
                       <ServiceLine text={m.service} id={m.id} />
                     ) : (
@@ -828,6 +856,26 @@ function DaySeparator({ date }: { date: number }) {
       </div>
     </div>
   );
+}
+
+/** Where the messages that were unread when you opened the chat begin. */
+function UnreadLine() {
+  return (
+    <div role="separator" data-unread-line className="pt-5 pb-1">
+      <div className="relative flex justify-center">
+        <span className="absolute top-1/2 left-1/2 h-px w-[calc(100cqw+2rem)] -translate-1/2 bg-primary/40" />
+        <span className="relative rounded-full bg-primary px-3 py-1 text-xs leading-none font-medium text-primary-foreground">Unread messages</span>
+      </div>
+    </div>
+  );
+}
+
+/** The first of the last `unread` messages from others (how Telegram counts unread), or null.
+ *  With more unread than were loaded, the first one loaded from others. */
+function firstUnread(list: TgMessage[], unread: number): number | null {
+  if (unread <= 0) return null;
+  const theirs = list.filter((m) => !m.outgoing);
+  return (theirs.at(-unread) ?? theirs[0])?.id ?? null;
 }
 
 /** The reactions under a bubble: a chip each, yours picked out; tapping one adds or takes off yours. */

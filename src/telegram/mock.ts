@@ -42,7 +42,7 @@ const chats: TgChat[] = [
   chat({ id: "104", name: "Marcus", kind: "user", folders: [5, 4], last: { text: "ok bro", outgoing: true, sender: null, date: now - 2 * day } }),
   chat({ id: "100", name: "Saved Messages", kind: "saved", last: { text: "https://example.com/onboarding-notes", outgoing: true, sender: null, date: now - 3 * day } }),
   chat({ id: "105", name: "Relay Bot", kind: "bot", last: { text: "Your weekly summary is ready", outgoing: false, sender: null, date: now - 6 * day } }),
-  chat({ id: "-1005", name: "Old Flatmates", kind: "group", archived: true, last: { text: "bin night is Thursday", outgoing: false, sender: "Dee", date: now - 12 * day } }),
+  chat({ id: "-1005", name: "Old Flatmates", kind: "group", archived: true, folders: [4], last: { text: "bin night is Thursday", outgoing: false, sender: "Dee", date: now - 12 * day } }),
 ];
 
 let nextId = 500;

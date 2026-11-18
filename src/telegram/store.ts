@@ -148,16 +148,21 @@ export function onTelegramEvent(l: (e: TgEvent) => void): () => void {
   return () => void eventListeners.delete(l);
 }
 
-/** Unread chats, as Telegram counts them for a folder badge: muted chats don't count. */
-export function unreadChats(chats: TgChat[], folder: number | null): number {
-  return chats.filter(
-    (c) => (folder === null || c.folders.includes(folder)) && !c.muted && !c.archived && (c.unread > 0 || c.markedUnread || c.mentions > 0),
-  ).length;
+/** Whether a chat shows in All chats (folder null) or one of your folders. All chats leaves
+ *  archived chats to the Archived filter; a folder keeps them, as in Telegram (unless the folder
+ *  excludes archived chats, which the backend already worked into `folders`). */
+function shows(c: TgChat, folder: number | null): boolean {
+  return folder === null ? !c.archived : c.folders.includes(folder);
 }
 
-/** The chats a folder shows: archived chats live under the Archived filter, not here. */
+/** Unread chats, as Telegram counts them for a folder badge: muted chats don't count. */
+export function unreadChats(chats: TgChat[], folder: number | null): number {
+  return chats.filter((c) => shows(c, folder) && !c.muted && (c.unread > 0 || c.markedUnread || c.mentions > 0)).length;
+}
+
+/** The chats All chats or a folder shows. */
 export function chatsIn(chats: TgChat[], folder: number | null): TgChat[] {
-  const list = chats.filter((c) => !c.archived && (folder === null || c.folders.includes(folder)));
+  const list = chats.filter((c) => shows(c, folder));
   // Pinned chats stay on top, as in Telegram (pinned order isn't kept: newest first among them).
   return [...list.filter((c) => c.pinned), ...list.filter((c) => !c.pinned)];
 }
