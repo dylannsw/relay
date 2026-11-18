@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { IconArchive, IconArchiveOff, IconAt, IconChecks, IconCopy, IconPin, IconTrash, IconRobot, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -11,7 +10,6 @@ import { listDate } from "@/format";
 import type { TgChat } from "@/telegram/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
-import { SearchField } from "@/components/search-field";
 import { ChatAvatar } from "./chat-avatar";
 
 function KindIcon({ chat }: { chat: TgChat }) {
@@ -122,26 +120,18 @@ export function ChatList(props: {
   chats: TgChat[];
   selectedId: string | null;
   onOpen: (c: TgChat) => void;
-  query: string;
-  onQuery: (q: string) => void;
   loaded: boolean;
   emptyText: string;
   /** Archives (or restores) a chat from its context menu. */
   onArchive: (c: TgChat) => void;
   /** Asks to delete a chat from its context menu. */
   onDelete: (c: TgChat) => void;
-  /** All | Unread | Archived, on a row of their own under the search box. */
-  filter: ReactNode;
   /** Changes when the list is swapped (filter tab), replaying the entrance animation. */
   animateKey?: string;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-col gap-2 px-3 pt-3 pb-2">
-        <SearchField value={props.query} onValueChange={props.onQuery} placeholder="Search chats" />
-        {props.filter}
-      </div>
-      <div key={props.animateKey} className="no-scrollbar min-h-0 flex-1 animate-in overflow-y-auto px-1.5 pb-2 duration-200 fade-in-0 slide-in-from-bottom-1">
+      <div key={props.animateKey} className="no-scrollbar min-h-0 flex-1 animate-in overflow-y-auto px-1.5 py-2 duration-200 fade-in-0 slide-in-from-bottom-1">
         {!props.loaded ? (
           <div className="flex flex-col gap-1 px-1">
             {Array.from({ length: 8 }, (_, i) => (

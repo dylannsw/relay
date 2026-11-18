@@ -14,6 +14,7 @@ import {
   IconPhoto,
   IconKeyboard,
   IconLogin2,
+  IconLogout,
   IconPalette,
   IconPencil,
   IconPlus,
@@ -101,6 +102,7 @@ import { playShockwave } from "@/lib/sfx";
 import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/updater";
 import { appIconSrc, useAppIcon } from "@/app-icon";
 import { api, errorText, isTauri } from "@/api";
+import { setStatus as setTelegramStatus, useTelegram } from "@/telegram/store";
 import { relativeTime } from "@/format";
 import {
   FIXED_SHORTCUTS,
@@ -1175,6 +1177,55 @@ function AccountsTab({ accounts, onChanged, onSignIn, signingIn }: {
           ))}
         </div>
       )}
+      <TelegramAccountRow divided={accounts.length > 0} />
+    </div>
+  );
+}
+
+/** Telegram, once you're signed in: who you are, and signing out (it isn't a mail account). */
+function TelegramAccountRow({ divided }: { divided: boolean }) {
+  const tg = useTelegram();
+  const me = tg.status?.stage === "ready" ? tg.status.me : null;
+  if (tg.status?.stage !== "ready") return null;
+  const signOut = async () => {
+    try {
+      setTelegramStatus(await api.telegram.signOut());
+      toast.success("Signed out of Telegram");
+    } catch (e) {
+      toast.error(errorText(e));
+    }
+  };
+  return (
+    <div className={cn("flex items-center gap-3 py-3", divided && "border-t")}>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{me?.name ?? "Telegram"}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          Telegram{me && ` · ${me.username ? `@${me.username}` : (me.phone ?? "")}`}
+        </div>
+      </div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <IconLogout />
+            Sign Out
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out of Telegram?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Relay is removed from your Telegram devices and forgets its copy of your chats. Your chats stay in
+              Telegram, and your API ID is kept so signing in again only needs your phone number.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void signOut()}>
+              Sign out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
