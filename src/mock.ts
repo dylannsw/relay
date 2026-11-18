@@ -24,6 +24,7 @@ let config: Config = {
     bannerImage: "mock-banner.png",
     bannerPosition: 40,
     bannerDots: true,
+    bannerHeight: "m",
   },
   displayName: "",
   calendar: { hidden: [], colors: {}, defaultCalendar: "" },

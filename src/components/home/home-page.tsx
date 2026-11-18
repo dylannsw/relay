@@ -1,12 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import { useTasks } from "@/tasks/store";
+import { useTasks, useTasksState } from "@/tasks/store";
 import { useTodayEvents } from "@/calendar/events";
 import { useCalendars } from "@/calendar/store";
 import { clockTime } from "@/format";
 import type { Account } from "@/types";
-import { HomeBanner } from "./home-banner";
+import { BANNER_HEIGHTS, HomeBanner } from "./home-banner";
 import { HomeOverview } from "./home-overview";
 import { greetingName, HomeWelcome } from "./home-welcome";
 import { TaskComposer } from "./task-composer";
@@ -29,6 +29,7 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail, on
   onTaskAdded: (origin: DOMRect) => void;
 }) {
   const t = useTasks();
+  const bannerHeight = useTasksState().config?.bannerHeight ?? "m";
   const today = useTodayEvents();
   const cal = useCalendars();
   const calendarConnected = accounts.some((a) => a.calendarAccess) || cal.calendars.some((c) => c.isFeed);
@@ -63,10 +64,10 @@ export function HomePage({ accounts, onOpenTasks, onOpenCalendar, onOpenMail, on
     <div className="relative flex h-full flex-col">
       <ScrollArea ref={scroller} className="min-h-0 flex-1">
         <div className="flex flex-col" style={{ minHeight: height || undefined }}>
-          {/* The banner reaches 2.5rem under the greeting (where its fade is faintest). It takes
-              1.6× the spare room the space below does, so it's taller and the greeting and overview
-              sit a little below centre; never shorter than 11rem. */}
-          <HomeBanner className="min-h-44 flex-[1.6_1_2.5rem]" />
+          {/* The banner reaches 2.5rem under the greeting (where its fade is faintest). The size
+              chosen in Settings (S/M/L) sets how much of the spare room it takes, so the greeting and
+              overview sit lower the taller it is. */}
+          <HomeBanner className={BANNER_HEIGHTS[bannerHeight]} />
           <div className={`${COLUMN} relative -mt-10 flex flex-col gap-6`}>
             <HomeWelcome name={greetingName(t.displayName, accounts.map((a) => a.displayName))} />
             <HomeOverview

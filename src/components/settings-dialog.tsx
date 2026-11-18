@@ -72,6 +72,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
+import { PillTabs } from "@/components/mail-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MailWindow } from "@/components/mail-window";
@@ -331,6 +332,14 @@ function HomeTab({ accounts }: { accounts: Account[] }) {
           )}
         </div>
       </SettingRow>
+      <SettingRow title="Banner height" description="How tall the banner is on Home. The greeting and overview move down with it.">
+        <PillTabs
+          id="banner-height"
+          value={cfg.bannerHeight ?? "m"}
+          items={BANNER_SIZES}
+          onChange={(v) => void save({ bannerHeight: v })}
+        />
+      </SettingRow>
       <SettingRow title="Dotted banner" description="Draw the banner as a matrix of dots in the picture's colours.">
         <Switch checked={cfg.bannerDots} onCheckedChange={(on) => void save({ bannerDots: on })} aria-label="Dotted banner" />
       </SettingRow>
@@ -340,6 +349,12 @@ function HomeTab({ accounts }: { accounts: Account[] }) {
     </div>
   );
 }
+
+const BANNER_SIZES = [
+  { id: "s", label: "S" },
+  { id: "m", label: "M" },
+  { id: "l", label: "L" },
+] as const;
 
 /** The add-task glow's palettes, each drawn as its four rings, then a choice to turn it off. */
 function HaloSwatches() {

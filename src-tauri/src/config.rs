@@ -57,6 +57,8 @@ pub struct TasksConfig {
     pub banner_position: f64,
     /// Draw the banner as dots rather than the plain picture.
     pub banner_dots: bool,
+    /// How tall the Home banner is: "s", "m" or "l".
+    pub banner_height: String,
 }
 
 impl Default for TasksConfig {
@@ -66,6 +68,7 @@ impl Default for TasksConfig {
             banner_image: String::new(),
             banner_position: 50.0,
             banner_dots: true,
+            banner_height: "m".into(),
         }
     }
 }
@@ -119,6 +122,9 @@ impl Config {
             .into_iter()
             .filter_map(|(id, c)| crate::colors::normalize_hex(&c).map(|c| (id, c)))
             .collect();
+        if !matches!(self.tasks.banner_height.as_str(), "s" | "m" | "l") {
+            self.tasks.banner_height = "m".into();
+        }
         self.tasks.banner_position = if self.tasks.banner_position.is_finite() {
             self.tasks.banner_position.clamp(0.0, 100.0)
         } else {

@@ -145,13 +145,13 @@ export function PillTabs<T extends string>(props: {
   return (
     <Tabs value={props.value} onValueChange={(v) => props.onChange(v as T)}>
       <LayoutGroup id={props.id}>
-        <TabsList>
+        <TabsList className="group-data-vertical/tabs:h-9.5 group-data-vertical/tabs:flex-row">
           {props.items.map((f) => (
             <TabsTrigger
               key={f.id}
               value={f.id}
               // The active background is drawn by the sliding pill below instead.
-              className={cn("data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent", props.triggerClass)}
+              className={cn("group-data-vertical/tabs:w-auto group-data-vertical/tabs:justify-center data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent", props.triggerClass)}
             >
               {props.value === f.id && (
                 <motion.span

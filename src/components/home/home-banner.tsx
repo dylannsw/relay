@@ -59,6 +59,13 @@ export async function chooseBanner(defaultPath?: string): Promise<void> {
  * fading into the page from halfway down. Hovering shows buttons to change, reposition or
  * remove it. The picture is Relay's own (not Tick's), kept in Relay's data folder.
  */
+/** Minimum height and flex share of the spare room for each banner size (M is the default). */
+export const BANNER_HEIGHTS = {
+  s: "min-h-44 flex-[1.6_1_2.5rem]",
+  m: "min-h-56 flex-[2.6_1_2.5rem]",
+  l: "min-h-72 flex-[4_1_2.5rem]",
+} as const;
+
 export function HomeBanner({ className }: { className?: string }) {
   const { config, vaultPath } = useTasksState();
   const src = config?.bannerImage ?? "";

@@ -93,6 +93,8 @@ export interface TasksConfig {
   /** Vertical focus of the banner picture: 0 shows its top, 100 its bottom. */
   bannerPosition: number;
   bannerDots: boolean;
+  /** How tall the Home banner is. */
+  bannerHeight: "s" | "m" | "l";
 }
 
 /** A note read from the vault, with a stamp of the file so a later write can detect changes. */
