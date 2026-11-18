@@ -936,10 +936,10 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
         >
           <div className="relative" style={{ width: trackW, height: headH + 24 * hour + 2 * DAY_EDGE }}>
             {/* Day names, and the all-day row under them, stay put while the hours scroll. */}
-            <div className="sticky top-0 z-(--z-sticky) bg-background" style={{ width: trackW, height: headH }}>
+            <div className="sticky top-0 z-(--z-sticky) bg-canvas" style={{ width: trackW, height: headH }}>
               <div className="relative border-b" style={{ height: DAY_HEAD }}>
                 <div
-                  className="sticky left-0 z-(--z-sticky) flex h-full items-center bg-background pr-2 text-2xs font-semibold text-muted-foreground"
+                  className="sticky left-0 z-(--z-sticky) flex h-full items-center bg-canvas pr-2 text-2xs font-semibold text-muted-foreground"
                   style={{ width: GUTTER }}
                 >
                   {/* Level with the day names beside it. */}
@@ -973,7 +973,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
                 // bars in lanes below the row's current height wait for it to grow.
                 <div className="relative overflow-clip border-b" style={{ height: stripH }}>
                   <div
-                    className="sticky left-0 z-(--z-sticky) flex h-full items-start justify-end bg-background pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
+                    className="sticky left-0 z-(--z-sticky) flex h-full items-start justify-end bg-canvas pr-2.5 text-2xs font-semibold whitespace-nowrap text-muted-foreground"
                     style={{ width: GUTTER, paddingTop: STRIP_TOP }}
                   >
                     {/* As tall as the first lane of bars, so the label sits level with their titles. */}
@@ -1096,7 +1096,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
               )}
               {/* The time column, pinned to the left while the days scroll. */}
               <div
-                className="sticky left-0 z-(--z-raised) h-full bg-background before:absolute before:inset-x-0 before:-top-(--day-edge) before:-bottom-(--day-edge) before:bg-background"
+                className="sticky left-0 z-(--z-raised) h-full bg-canvas before:absolute before:inset-x-0 before:-top-(--day-edge) before:-bottom-(--day-edge) before:bg-canvas"
                 style={{ width: GUTTER }}
               >
                 {range(0, 24).map((h) => (
@@ -1311,7 +1311,7 @@ function MonthTitle({ month, year }: { month: string; year: string }) {
 
 function CalendarHeader({ title, children }: { title: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <PageHeader>
+    <PageHeader etched>
       <PageTitle>{title}</PageTitle>
       {children}
     </PageHeader>

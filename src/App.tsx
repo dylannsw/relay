@@ -802,9 +802,9 @@ export default function App() {
         <SidebarInset
           className={cn(
             "frame min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0",
-            // Views made of cards sit on the canvas grey, a step below the cards. Tasks has its own
-            // grey columns; Calendar and Chats stay white.
-            !["tasks", "calendar", "chats"].includes(view.kind) && "bg-canvas",
+            // Views made of cards sit on the canvas grey, a step below the cards (Tasks' columns are
+            // a step lower again), and so does Calendar's grid. Chats stays white.
+            view.kind !== "chats" && "bg-canvas",
           )}
         >
           {view.kind === "home" ? (

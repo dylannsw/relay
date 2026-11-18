@@ -251,15 +251,7 @@ export function MailList(p: Props) {
           <GroupTitle s={gv} />
         ) : (
           <>
-        {/* Select-all only exists in selection mode (Ctrl-click a row to start one). */}
-        <SelectionSlot show={selecting}>
-          <Checkbox
-            aria-label={allChecked ? "Clear selection" : "Select all"}
-            tabIndex={selecting ? 0 : -1}
-            checked={allChecked ? true : selecting ? "indeterminate" : false}
-            onCheckedChange={() => checkAll(!allChecked)}
-          />
-        </SelectionSlot>
+        {/* Select All lives in the selection bar, so the title never moves. */}
         <div className="relative flex h-full min-w-0 flex-1 items-center">
               <div className={cn("flex min-w-0 items-center gap-2.5", headPending && "invisible")}>
                 {/* Folder names are short; when the header is tight the account chip truncates instead. */}
@@ -352,6 +344,14 @@ export function MailList(p: Props) {
         label={gv ? `${nChecked} of ${p.messages.length} selected` : `${nChecked} ${sd ? (nChecked === 1 ? "sender " : "senders ") : ""}selected`}
         onClear={gv ? undefined : () => checkAll(false)}
       >
+        {/* Beside the count it changes; the same in the inbox, the sender list and a group. */}
+        <SelectionBarAction
+          label={allChecked ? "Clear Selection" : "Select All"}
+          text={allChecked ? "Clear" : "Select All"}
+          shortcut={allChecked ? undefined : "selectAll"}
+          onClick={() => checkAll(!allChecked)}
+        />
+        <SelectionBarSeparator />
         {movesFrom(p.folder).map((a) => (
           <SelectionBarAction
             key={a.to}
@@ -373,12 +373,6 @@ export function MailList(p: Props) {
         {gv && (
           <>
             <SelectionBarSeparator />
-            <SelectionBarAction
-              label={allChecked ? "Clear Selection" : "Select All"}
-              text={allChecked ? "Clear" : "Select All"}
-              shortcut={allChecked ? undefined : "selectAll"}
-              onClick={() => checkAll(!allChecked)}
-            />
             <SelectionBarAction
               label="Keep Latest"
               text="Keep Latest"
