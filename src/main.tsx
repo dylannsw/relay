@@ -20,6 +20,15 @@ try {
   // Storage unavailable: next-themes falls back to the default.
 }
 
+// No browser menu (Save As, Print, Inspect…) on right-click: only the app's own menus open. Text fields
+// keep theirs for cut/copy/paste and spelling suggestions. App menus (Radix) cancel the event before it
+// reaches the window, so anything still uncancelled here has no menu of its own.
+window.addEventListener("contextmenu", (ev) => {
+  const t = ev.target as HTMLElement | null;
+  if (t?.closest?.("input, textarea, [contenteditable]:not([contenteditable='false'])")) return;
+  ev.preventDefault();
+});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider attribute="class" themes={["light", "dark", "mixed"]} defaultTheme="mixed" enableSystem={false} disableTransitionOnChange>

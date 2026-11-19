@@ -83,11 +83,12 @@ export function EmailFrame({ html, text, onMailto }: Props) {
       else if (/^https?:/i.test(href)) void api.openExternal(href);
     });
     // Right-clicking highlighted text offers "Add as task". The frame is its own document, so the event
-    // is replayed on the wrapper (at the same spot) for the menu to open there.
+    // is replayed on the wrapper (at the same spot) for the menu to open there. Without a selection there
+    // is no menu, and the browser's own one is suppressed like everywhere else in the app.
     doc.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
       const text = doc.getSelection()?.toString().trim() ?? "";
       if (!text) return;
-      ev.preventDefault();
       setPicked(text);
       const box = ref.current?.getBoundingClientRect();
       wrapper.current?.dispatchEvent(
