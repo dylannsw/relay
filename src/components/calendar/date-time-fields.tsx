@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MenuHoverPill } from "@/components/ui/menu-hover-pill";
 import { isoDate } from "@/calendar/edit";
 import { parseDate } from "@/calendar/layout";
 import { clockTime } from "@/format";
@@ -119,10 +120,11 @@ export function TimeField({ value, onChange, label: ariaLabel, from, className }
           <span className="truncate">{current === null ? "Pick a time" : label(current)}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="end">
-        <Command shouldFilter={false}>
+      <PopoverContent className="menu-glass w-56 rounded-[14px] p-0" align="end">
+        <Command shouldFilter={false} className="rounded-none! bg-transparent">
           <CommandInput placeholder="Type a time" value={query} onValueChange={setQuery} />
-          <CommandList ref={list} className="max-h-64">
+          <CommandList ref={list} className="max-h-64 p-1 **:[[cmdk-list-sizer]]:relative **:[[cmdk-list-sizer]]:isolate **:[[cmdk-list-sizer]]:flex **:[[cmdk-list-sizer]]:flex-col **:[[cmdk-list-sizer]]:gap-1">
+            <MenuHoverPill list="command" />
             <CommandEmpty>That isn't a time.</CommandEmpty>
             {query.trim() ? (
               typed !== null && (

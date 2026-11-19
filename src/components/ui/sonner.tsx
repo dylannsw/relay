@@ -55,7 +55,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast !border-0 !smooth-shadow-ring-lg !gap-2.5 !px-3 !py-2.5",
+          // Surface, radius, text size and colours: the frosted toast rules in styles.css.
+          toast: "cn-toast !gap-2.5 !px-3.5 !py-3",
           // Sonner fixes its icon slot at 16px; widen it for the 22px icons.
           icon: "!m-0 !size-5.5",
           // The headline in semibold (Sonner's own is 500); the description stays regular.

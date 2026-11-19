@@ -242,10 +242,7 @@ function SenderMenu({ g, s }: { g: SenderGroup; s: SendersProps }) {
       </ContextMenuItem>
       <ContextMenuItem
         onSelect={() =>
-          void navigator.clipboard.writeText(copyText).then(
-            () => toast.success("Copied", { description: copyText }),
-            () => toast.error("Couldn't copy to the clipboard."),
-          )
+          void navigator.clipboard.writeText(copyText).catch(() => toast.error("Couldn't copy to the clipboard."))
         }
       >
         <IconCopy />

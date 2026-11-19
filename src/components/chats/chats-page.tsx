@@ -94,7 +94,6 @@ export function ChatsPage({ folder }: { folder: number | null }) {
       await api.telegram.deleteChat(c.id, both);
       removeChat(c.id);
       if (c.id === selectedId) setSelectedId(null);
-      toast.success(c.kind === "group" || c.kind === "channel" ? "Left chat" : "Chat deleted");
       setDeleting(null);
     } catch (e) {
       toast.error(errorText(e));

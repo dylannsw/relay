@@ -45,10 +45,7 @@ export function EventMenu({ event: e, editable, group, onOpen, onDeleted, childr
     });
     const when = `${day}, ${e.allDay ? "all day" : timeRange(e)}`;
     const text = [e.title, when, e.location, e.meetLink].filter(Boolean).join("\n");
-    void navigator.clipboard.writeText(text).then(
-      () => toast.success("Copied", { description: e.title }),
-      (err) => toast.error(errorText(err)),
-    );
+    void navigator.clipboard.writeText(text).catch((err) => toast.error(errorText(err)));
   };
   const Going = e.myResponse ? RESPONSE[e.myResponse] : null;
   /** Of the selected events, the ones yours to delete (invitations and shared calendars aren't). */

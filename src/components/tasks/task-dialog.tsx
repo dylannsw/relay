@@ -45,7 +45,7 @@ export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
     try {
       const moved = sectionKey(target) !== sectionKey(task.section);
       const landed = await editTask(task, { text, section: target, note, status });
-      toast.success(moved ? `Moved to ${landed ?? target}` : "Task saved");
+      if (moved) toast.success(`Moved to ${landed ?? target}`);
       onClose();
     } catch (e) {
       toast.error(errorText(e));

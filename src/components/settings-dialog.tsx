@@ -74,6 +74,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { PillTabs } from "@/components/mail-list";
+import { SidebarHoverPill } from "@/components/sidebar-hover-pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MailWindow } from "@/components/mail-window";
@@ -203,7 +204,9 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
           orientation="vertical"
           className="min-h-0 flex-1 gap-0"
         >
-          <TabsList className="h-full w-48 shrink-0 items-stretch justify-start gap-0.5 rounded-none border-r bg-transparent p-2 group-data-vertical/tabs:h-full">
+          <TabsList className="relative isolate h-full w-48 shrink-0 items-stretch justify-start gap-0.5 rounded-none border-r bg-transparent p-2 group-data-vertical/tabs:h-full">
+            {/* One hover fill that slides between the sections, like the app sidebar's. */}
+            <SidebarHoverPill rows='[data-slot="tabs-trigger"]' active='[aria-selected="true"]' className="rounded-[7px] corner-smooth bg-tint-hover" />
             {SECTIONS.map((x, i) => (
               <Fragment key={x.id}>
                 {/* A small heading where each group (Tasks, Mail, App) starts. */}
@@ -214,7 +217,7 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
                 )}
                 <TabsTrigger
                   value={x.id}
-                  className="h-9 flex-none justify-start gap-1.5 px-3 text-foreground/75 transition-colors duration-150 hover:bg-tint-hover hover:text-foreground data-active:bg-tint-pressed data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-tint-pressed"
+                  className="h-9 flex-none justify-start gap-1.5 px-3 text-foreground/75 transition-colors duration-150 hover:text-foreground data-active:bg-tint-pressed data-active:text-foreground data-active:shadow-none group-data-[variant=default]/tabs-list:data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-tint-pressed"
                 >
                   <x.icon />
                   {x.label}
@@ -664,10 +667,8 @@ function FeedDialog({ feed, children }: { feed?: CalendarInfo; children: React.R
     try {
       if (feed) {
         await updateCalendarFeed(feed.id, name, url.trim() || null);
-        toast.success(url.trim() ? `${name.trim() || feed.name} now uses the new address` : "Calendar renamed");
       } else {
         await addCalendarFeed(url, name);
-        toast.success("Calendar subscribed");
       }
       setOpen(false);
     } catch (e) {
@@ -749,9 +750,7 @@ function FeedDialog({ feed, children }: { feed?: CalendarInfo; children: React.R
 
 function FeedActions({ calendar: c }: { calendar: CalendarInfo }) {
   const remove = () =>
-    removeCalendarFeed(c.id)
-      .then(() => toast.success(`Unsubscribed from ${c.name}`))
-      .catch((e) => toast.error(errorText(e)));
+    removeCalendarFeed(c.id).catch((e) => toast.error(errorText(e)));
   return (
     <>
       <Tooltip>
@@ -819,7 +818,6 @@ function AccountCalendars({ account: a, calendars, onAccountsChanged }: {
       await api.grantCalendarAccess(a.id);
       onAccountsChanged();
       await syncCalendars();
-      toast.success(`Calendar access allowed for ${a.email}`);
     } catch (e) {
       const text = errorText(e);
       if (text !== "Sign-in cancelled.") toast.error(text);
@@ -971,7 +969,6 @@ function ConnectionsTab() {
     setSaving(true);
     try {
       setCfg(await api.saveConfig({ ...cfg, shortcuts: getOverrides() }));
-      toast.success("Settings saved");
     } catch (e) {
       toast.error(errorText(e));
     } finally {
@@ -1190,7 +1187,6 @@ function TelegramAccountRow({ divided }: { divided: boolean }) {
   const signOut = async () => {
     try {
       setTelegramStatus(await api.telegram.signOut());
-      toast.success("Signed out of Telegram");
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -1260,7 +1256,6 @@ function AccountRow({ account: a, onChanged, onReconnect }: {
     try {
       await api.removeAccount(a.id);
       onChanged();
-      toast.success(`Removed ${a.email}`);
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -1767,10 +1762,7 @@ function ShortcutsTab() {
           size="sm"
           disabled={Object.keys(overrides).length === 0}
           onClick={() =>
-            void resetAllBindings().then(
-              () => toast.success("Shortcuts reset to defaults"),
-              (e) => toast.error(errorText(e)),
-            )
+            void resetAllBindings().catch((e) => toast.error(errorText(e)))
           }
         >
           <IconRestore />

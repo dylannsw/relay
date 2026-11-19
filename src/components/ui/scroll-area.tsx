@@ -29,8 +29,9 @@ function ScrollArea({
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
-      {!hideScrollbar && <ScrollBar />}
-      <ScrollAreaPrimitive.Corner />
+      {/* Radix only lets the viewport scroll (overflow: scroll, else hidden) while a scrollbar is
+          mounted, so "no bar" keeps one in place but invisible and inert. */}
+      <ScrollBar className={hideScrollbar ? "pointer-events-none opacity-0" : undefined} />      <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )
 }

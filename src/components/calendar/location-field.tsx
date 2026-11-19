@@ -3,6 +3,7 @@ import { IconMapPin } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { MenuHoverPill } from "@/components/ui/menu-hover-pill";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
 import type { Place } from "@/types";
@@ -107,12 +108,13 @@ export function LocationField({ value, onChange }: { value: string; onChange: (v
       <PopoverContent
         align="start"
         sideOffset={4}
-        className="w-(--radix-popover-trigger-width) p-1"
+        className="menu-glass w-(--radix-popover-trigger-width) rounded-[14px] p-2"
         // Typing carries on in the field while the suggestions show.
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        <ul role="listbox" aria-label="Suggested places">
+        <ul role="listbox" aria-label="Suggested places" className="relative isolate flex flex-col gap-1">
+          <MenuHoverPill list="listbox" />
           {results.map((p, i) => (
             <li key={p.label} role="option" aria-selected={i === active}>
               <button
@@ -125,7 +127,7 @@ export function LocationField({ value, onChange }: { value: string; onChange: (v
                 onMouseEnter={() => setActive(i)}
                 className={cn(
                   "flex w-full items-start gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none",
-                  i === active && "bg-accent text-accent-foreground",
+                  i === active && "text-accent-foreground",
                 )}
               >
                 <IconMapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

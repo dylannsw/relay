@@ -101,7 +101,6 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
       <ContextMenuItem
         onSelect={() => {
           void navigator.clipboard.writeText(chat.name);
-          toast.success("Name copied");
         }}
       >
         <IconCopy />

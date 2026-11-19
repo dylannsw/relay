@@ -5,6 +5,7 @@ import { IconSearch } from "@tabler/icons-react";
 import { api, errorText } from "@/api";
 import { Command, CommandEmpty, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { MenuHoverPill } from "@/components/ui/menu-hover-pill";
 import { Spinner } from "@/components/ui/spinner";
 import { requestOpenChat, useTelegram } from "@/telegram/store";
 import type { TgChat, TgMessage } from "@/telegram/types";
@@ -73,15 +74,15 @@ export function ForwardPicker(props: {
         sideOffset={6}
         collisionPadding={12}
         aria-label="Forward to"
-        // 12px: the 8px search field and rows sit 4px in (12 = 8 + 4), so the corners are concentric.
-        className="w-72 gap-0 overflow-hidden rounded-[0.75rem] p-0"
+        // 14px: the search field and rows sit 8px in at rounded-md (6px), so the corners are concentric.
+        className="menu-glass w-72 gap-0 overflow-hidden rounded-[14px] p-0"
       >
         {/* Every word typed must appear in the name (cmdk's fuzzy match lets "dan" find "Admin"). */}
-        <Command className="rounded-none! p-0" filter={(value, search) => (search.toLowerCase().split(/\s+/).every((w) => value.toLowerCase().includes(w)) ? 1 : 0)}>
+        <Command className="rounded-none! bg-transparent p-0" filter={(value, search) => (search.toLowerCase().split(/\s+/).every((w) => value.toLowerCase().includes(w)) ? 1 : 0)}>
           {/* Styled like the app's SearchField, but tinted from the text colour so it shows on the
               card in both themes (bg-muted is almost the card's own colour in dark mode). */}
-          <div className="p-1 pb-0">
-            <label className="flex h-8 w-full items-center gap-2 rounded-lg border border-transparent bg-tint-hover px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-field-focus">
+          <div className="p-2 pb-0">
+            <label className="flex h-8 w-full items-center gap-2 rounded-md border border-transparent bg-tint-hover px-2.5 text-sm text-muted-foreground transition-[border-color] focus-within:border-field-focus">
               <IconSearch className="size-4 shrink-0" />
               <CommandPrimitive.Input
                 value={query}
@@ -100,9 +101,10 @@ export function ForwardPicker(props: {
               />
             </label>
           </div>
-          {/* Field and rows sit 4px in from the card; rows keep a 6px gap so two highlights never
+          {/* Field and rows sit 8px in from the card; rows keep a 6px gap so two highlights never
               touch. 224px shows four rows and the top of a fifth, so it's clear the list scrolls. */}
-          <CommandList className="max-h-56 p-1 pt-1.5 **:[[cmdk-list-sizer]]:flex **:[[cmdk-list-sizer]]:flex-col **:[[cmdk-list-sizer]]:gap-1.5">
+          <CommandList className="max-h-56 p-2 pt-1.5 **:[[cmdk-list-sizer]]:relative **:[[cmdk-list-sizer]]:isolate **:[[cmdk-list-sizer]]:flex **:[[cmdk-list-sizer]]:flex-col **:[[cmdk-list-sizer]]:gap-1.5">
+            <MenuHoverPill list="command" />
             <CommandEmpty>No chats found.</CommandEmpty>
             {targets.map((c) => (
               <CommandItem
@@ -110,7 +112,7 @@ export function ForwardPicker(props: {
                 value={`${c.name} ${c.id}`}
                 disabled={!!busy && busy !== c.id}
                 onSelect={() => void forward(c)}
-                className="h-11 gap-2.5 rounded-lg px-2 data-selected:bg-tint-hover"
+                className="h-11 gap-2.5 rounded-md px-2"
               >
                 <ChatAvatar id={c.id} name={c.name} hasPhoto={c.hasPhoto} saved={c.kind === "saved"} size={28} />
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
