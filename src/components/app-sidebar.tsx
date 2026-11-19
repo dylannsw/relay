@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ColorDot } from "@/components/color-dot";
+import { SidebarHoverPill } from "@/components/sidebar-hover-pill";
 import type { Account, Folder, Provider } from "@/types";
 import { relativeTime } from "@/format";
 import { FOLDERS } from "@/folders";
@@ -116,6 +117,13 @@ function RowChevron({ open }: { open: boolean }) {
     />
   );
 }
+
+/**
+ * A folding sidebar group. The height opens in 220ms and closes in 260ms on the app's curve, while
+ * the rows inside dissolve (fade, blur, drift up) faster than that: see `.sidebar-fold` in styles.css.
+ */
+const FOLD =
+  "sidebar-fold overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-260 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220";
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -228,8 +236,7 @@ function AccountItem({ account: a, view, onView, onReconnect, drafts }: {
             <RowChevron open={open} />
           </SidebarMenuButton>
         </CollapsibleTrigger>
-        {/* Opening takes 220ms, closing a quicker 140ms (getting out of the way shouldn't make you wait), on the app's curve. */}
-        <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
+        <CollapsibleContent className={FOLD}>
           {/* Indented so the folder icons line up under the address, beside the dot. */}
           <SidebarMenuSub className="pl-6">
             {a.lastError && (
@@ -399,7 +406,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
             >
               <SidebarMenuItem>
                 {allButton}
-                <CollapsibleContent className="overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-140 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220">
+                <CollapsibleContent className={FOLD}>
                   {/* Indented so the folder icons line up under "All Chats", beside its icon. */}
                   <SidebarMenuSub className="pl-6">
                     {folders.map((f) => {
@@ -434,7 +441,8 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
 
   return (
     <Sidebar variant="inset" className={className}>
-      <SidebarContent>
+      <SidebarContent className="hover-pill-host relative isolate">
+        <SidebarHoverPill />
         {search && <SidebarGroup className={cn(GUTTER, "pb-0")}>{search}</SidebarGroup>}
         <SidebarGroup className={GUTTER}>
           <SidebarGroupLabel>Overview</SidebarGroupLabel>

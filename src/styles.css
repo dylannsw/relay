@@ -421,7 +421,8 @@
       scroll-behavior: auto !important;
     }
     /* Height reveals (the sidebar's collapsible groups) jump straight to their size. */
-    [data-slot="collapsible-content"] {
+    [data-slot="collapsible-content"],
+    .sidebar-fold > * {
       animation: none !important;
     }
   }
@@ -429,6 +430,29 @@
   html, body, #root {
     @apply h-full overflow-hidden overscroll-none;
   }
+}
+
+/* Under a shared hover pill (sidebar-hover-pill.tsx) the rows drop their own hover and press fill,
+   so the pill is the only highlight that moves. The selected row keeps its fill. */
+.hover-pill-host :is([data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]):not([data-active="true"]):is(:hover, :active) {
+  background-color: transparent;
+}
+
+/* Folding sidebar groups: the rows dissolve ahead of the height, so the rows below glide up into
+   empty space instead of the list being cut off at its bottom edge. Closing: gone in 120ms while
+   the height takes 260ms. Opening: they settle in over the 220ms height reveal. Radix leaves an
+   inline animation-name: none on a group that starts open, which keeps the rows still at launch. */
+.sidebar-fold[data-state="closed"]:not([style*="animation-name: none"]) > * {
+  animation: sidebar-fold-out 120ms var(--ease-out-soft) both;
+}
+.sidebar-fold[data-state="open"]:not([style*="animation-name: none"]) > * {
+  animation: sidebar-fold-in 220ms var(--ease-out-soft) both;
+}
+@keyframes sidebar-fold-out {
+  to { opacity: 0; filter: blur(4px); translate: 0 -6px; }
+}
+@keyframes sidebar-fold-in {
+  from { opacity: 0; filter: blur(4px); translate: 0 -6px; }
 }
 
 /* Light mode: the framed content (main panel, email/compose/settings cards) sits flat, outlined
