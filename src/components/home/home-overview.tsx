@@ -51,8 +51,14 @@ export function HomeOverview(p: OverviewProps) {
     // Its edges and lines catch the light of the add-task glow (see `.halo-glint` in styles.css).
     // --heat (the activity grid's colour) is set here so Tasks Completed's icon and its "up" change
     // share the grid's "More" green.
+    // Dark mode matches Tasks' metrics band: the columns' fill (--card pointed at --column, so the
+    // tiles follow and keep their hover) and a quieter ring (6% white), with the inner lines (--border)
+    // at the same 6% so they match it.
     <Card
-      className={cn("halo-glint-inset relative @container gap-0 py-0", p.className)}
+      className={cn(
+        "halo-glint-inset relative @container gap-0 py-0 dark:[--card:var(--column)] dark:[--smooth-ring-color:rgb(255_255_255/6%)] dark:[--border:rgb(255_255_255/6%)]",
+        p.className,
+      )}
       style={{ "--heat": p.heatColor || "var(--primary)" } as React.CSSProperties}
     >
       {/* Equal padding above and below: the stock header adds extra bottom padding when bordered,
@@ -69,10 +75,23 @@ export function HomeOverview(p: OverviewProps) {
           </Badge>
         </CardAction>
       </CardHeader>
-      {/* The 1px gaps over a border-coloured background draw the lines between tiles. */}
-      <div className={cn("halo-glint-fill grid grid-cols-2 gap-px bg-border @3xl:grid-cols-4", s && "halo-glint relative border-b")}>
+      {/* The lines between tiles: each tile has a clear 1px border (on the sides that face another tile) with
+          its fill stopping inside it, so the grid's border-coloured background shows through as the line,
+          and the add-task glow on that background lights it. Borders, not gaps, so they snap to whole
+          device pixels like the header's and the bottom rule (a 1px gap smears over two at 150% scaling and
+          reads brighter). Two columns: tiles 2 and 4 get a left line, 3 and 4 a top one; four: 2–4 a left.
+          The grid's background stops at its padding edge so the bottom border isn't painted over it: dark
+          mode's line colour is see-through, and the two layers would double into a brighter line. */}
+      <div
+        className={cn(
+          "halo-glint-fill grid grid-cols-2 bg-border bg-clip-padding @3xl:grid-cols-4",
+          "*:border-transparent *:bg-clip-padding [&>:nth-child(even)]:border-l [&>:nth-child(n+3)]:border-t",
+          "@3xl:[&>:nth-child(n+2)]:border-l @3xl:[&>:nth-child(n+3)]:border-t-0",
+          s && "halo-glint relative border-b",
+        )}
+      >
         <Stat icon={<IconClipboardCheck className="text-(--heat)" />} label="Tasks Completed" value={s ? s.week.toLocaleString() : "–"} onClick={p.onOpenTasks}>
-          {s ? <Delta change={s.week - s.previousWeek} versus="vs past week" /> : "Connect your vault"}
+          {s ? <Delta change={s.previousWeek - s.weekBeforeLast} versus="vs last week" /> : "Connect your vault"}
         </Stat>
         <Stat
           icon={<Fire weight="bold" className="ph-icon text-(--home)" />}

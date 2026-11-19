@@ -6,7 +6,7 @@ import { addressList, dedupeAddresses, prefixSubject } from "@/format";
 import { folderLabel } from "@/folders";
 import { loadShortcuts, matchShortcut, type ShortcutId } from "@/shortcuts";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { TitleBar } from "@/components/title-bar";
+import { WindowStrip } from "@/components/title-bar";
 import { AppSidebar, isPageView, stepSidebarView, type View } from "@/components/app-sidebar";
 import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
@@ -370,7 +370,6 @@ export default function App() {
     for (const x of moved) byFolder.set(x.folder, [...(byFolder.get(x.folder) ?? []), x.id]);
     try {
       for (const [folder, ids] of byFolder) await api.moveMessages(ids, folder);
-      toast.success(moved.length === 1 ? "Moved back" : `Moved ${moved.length} messages back`);
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -771,13 +770,10 @@ export default function App() {
   return (
     <SidebarProvider
       className="h-svh min-h-0 flex-col overflow-hidden bg-sidebar"
-      style={{ "--titlebar-height": "2.75rem" } as React.CSSProperties}
+      style={{ "--window-strip-height": "3rem" } as React.CSSProperties}
     >
-      <TitleBar />
       <div className="flex min-h-0 flex-1">
         <AppSidebar
-          // The sidebar is position:fixed; start it below the title bar.
-          className="top-(--titlebar-height) h-[calc(100svh-var(--titlebar-height))] pt-0"
           accounts={accounts}
           view={view}
           onView={(v) => {
@@ -812,12 +808,15 @@ export default function App() {
         />
         <SidebarInset
           className={cn(
-            "frame min-w-0 overflow-hidden md:peer-data-[variant=inset]:mt-0",
+            "frame min-w-0 overflow-hidden",
             // Views made of cards sit on the canvas grey, a step below the cards (Tasks' columns are
             // a step lower again), and so does Calendar's grid. Chats stays white.
             view.kind !== "chats" && "bg-canvas",
           )}
         >
+          <WindowStrip />
+          {/* The view takes what the strip leaves; views size themselves h-full against this box. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
           {view.kind === "home" ? (
             <HomePage
               accounts={accounts}
@@ -880,6 +879,7 @@ export default function App() {
             senders={senders}
           />
           )}
+          </div>
         </SidebarInset>
       </div>
 
@@ -948,9 +948,11 @@ export default function App() {
 
       {/* The window-wide shockwave: over the whole app (title bar, sidebar, page) and under toasts. It
           frames itself against this box, takes the window's corners for its edge line, and lights the
-          borders of everything in the app. */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-(--z-shockwave)">
-        <Shockwave ref={windowHalo} radii={windowCorners} scope={() => document.body} />
+          borders of everything in the app. Absolute with no z-index, so it's not a stacking context: in dark
+          mode the rings screen-blend, which would isolate a stacking context round them and leave the bend
+          nothing behind it to warp. The layers carry the z-index instead. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <Shockwave ref={windowHalo} radii={windowCorners} scope={() => document.body} layerZ="z-(--z-shockwave)" />
       </div>
     </SidebarProvider>
   );

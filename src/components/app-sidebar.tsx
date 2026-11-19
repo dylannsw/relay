@@ -1,3 +1,4 @@
+import { SidebarBrand } from "@/components/title-bar";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconAlertCircle,
@@ -237,8 +238,8 @@ function AccountItem({ account: a, view, onView, onReconnect, drafts }: {
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent className={FOLD}>
-          {/* Indented so the folder icons line up under the address, beside the dot. */}
-          <SidebarMenuSub className="pl-6">
+          {/* A light indent, as under All Chats: enough to read as the account's folders, not a full step. */}
+          <SidebarMenuSub className="pl-3">
             {a.lastError && (
               <SidebarMenuSubItem>
                 <Tooltip>
@@ -341,7 +342,7 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 /**
  * Telegram: All chats, with your own Telegram folders folded away beneath it (in their order), each
  * with how many unread chats it has (muted ones don't count, as in Telegram). Clicking All chats
- * opens it; clicking it again, or its chevron, shows or hides the folders. Going to a folder from elsewhere unfolds them,
+ * opens it and unfolds the folders; clicking it again, or its chevron, shows or hides them. Going to a folder from elsewhere unfolds them,
  * and moving on folds them again unless you opened or closed them yourself, as with accounts.
  * Before you sign in it's just All chats, which opens the sign-in.
  */
@@ -370,13 +371,18 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
     <SidebarMenuButton
       isActive={allSelected}
       {...stop({ kind: "chats", folder: null })}
-      // The first click opens All chats; clicking it again once it's open shows or hides the folders.
+      // The first click opens All chats and unfolds the folders; clicking it again once it's open shows or hides them.
       onClick={() => {
         if (allSelected && folders.length > 0) {
           autoOpened.current = false; // your choice now: it stays as you left it
           setOpen((o) => !o);
         } else {
           onView({ kind: "chats", folder: null });
+          // Unfolded for you, so it folds again when you move on (as going to a folder does).
+          setOpen((was) => {
+            if (!was) autoOpened.current = true;
+            return true;
+          });
         }
       }}
       className="relative"
@@ -407,8 +413,8 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
               <SidebarMenuItem>
                 {allButton}
                 <CollapsibleContent className={FOLD}>
-                  {/* Indented so the folder icons line up under "All Chats", beside its icon. */}
-                  <SidebarMenuSub className="pl-6">
+                  {/* A light indent: enough to read as children of All Chats, not a full step. */}
+                  <SidebarMenuSub className="pl-3">
                     {folders.map((f) => {
                       const Icon = chatFolderIcon(f.title);
                       const unread = unreadChats(tg.chats, f.id);
@@ -441,6 +447,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
 
   return (
     <Sidebar variant="inset" className={className}>
+      <SidebarBrand />
       <SidebarContent className="hover-pill-host relative isolate">
         <SidebarHoverPill />
         {search && <SidebarGroup className={cn(GUTTER, "pb-0")}>{search}</SidebarGroup>}

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useTasksState } from "@/tasks/store";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { toast } from "sonner";
@@ -185,43 +186,6 @@ function movesFrom(folder: Folder): { to: Folder; label: string; icon: ReactNode
   ].filter((x) => !!x);
 }
 
-function IconAction(props: {
-  label: string;
-  /** A rebindable action's key, or a fixed key such as "Escape". */
-  shortcut?: ShortcutId;
-  fixedKey?: string;
-  onClick: () => void;
-  children: ReactNode;
-  variant?: "ghost" | "outline" | "tinted";
-  size?: "icon-sm" | "icon-xs";
-  destructive?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          disabled={props.disabled}
-          // Delete is a tinted red pill; the moves beside it get the same pill in the brand colour.
-          variant={props.destructive ? "destructive" : (props.variant ?? "ghost")}
-          size={props.size ?? "icon-sm"}
-          className={cn(props.size === "icon-xs" && "[&_svg:not([class*='size-'])]:size-4.5")}
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onClick();
-          }}
-        >
-          {props.children}
-          <span className="sr-only">{props.label}</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        {props.label} <ShortcutKbd id={props.shortcut} keys={props.fixedKey} />
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function MailList(p: Props) {
   const sd = p.senders && !p.senders.group ? p.senders : undefined; // the sender list is showing
   const gv = p.senders?.group ? { ...p.senders, group: p.senders.group } : undefined; // a group is open
@@ -244,8 +208,11 @@ export function MailList(p: Props) {
   const headPending = !head;
   const shown = head ?? { title: p.title, account: p.account, count: undefined };
 
+  // The activity grid's green from Home, for the Unread chip.
+  const heat = useTasksState().settings.heatmapColor || "var(--primary)";
+
   return (
-    <div className="relative flex h-full flex-col">
+    <div className="relative flex h-full flex-col" style={{ "--heat": heat } as React.CSSProperties}>
       <PageHeader etched className="gap-0">
         {gv ? (
           <GroupTitle s={gv} />
@@ -479,11 +446,6 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
   const checked = p.checked.has(m.id);
   const showAccount = p.showAccount && !!account;
   const hasChips = showAccount || m.hasAttachments;
-  // The hover buttons (each with its own tooltip) were most of the cost of showing a folder,
-  // so they mount the first time the pointer reaches the row. Their wrapper is always there,
-  // so they still fade in with it.
-  const [armed, setArmed] = useState(false);
-
   return (
     <ContextMenu>
     <ContextMenuTrigger asChild>
@@ -492,7 +454,6 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
       data-highlighted={highlighted || undefined}
       role="button"
       tabIndex={-1}
-      onPointerEnter={armed ? undefined : () => setArmed(true)}
       onClick={(e) => {
         // Ctrl-click starts (or adds to) a selection, Shift-click selects a range, and once
         // anything is selected a plain click ticks rows too. Otherwise a click opens the email.
@@ -506,8 +467,10 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
       }}
       className={cn(
         listCard,
-        "group/row flex rounded-xl p-3.5 data-[state=open]:border-border-strong data-[state=open]:bg-accent/60",
-        highlighted && "bg-muted hover:bg-muted",
+        // Hover: a step past --accent, and the row swells a touch (as a task column does under a
+        // dragged card), long and soft so it reads as growth, not a jump.
+        "group/row flex rounded-xl p-3.5 transition-[background-color,border-color,scale] duration-300 hover:scale-[1.004] hover:bg-[color-mix(in_oklab,var(--accent),var(--foreground)_10%)] data-[state=open]:border-border-strong data-[state=open]:bg-accent/60",
+        highlighted && "bg-muted hover:bg-[color-mix(in_oklab,var(--accent),var(--foreground)_10%)]",
         // Selected: the same sky frame and sky-tinted card colour as a selected task card.
         checked && listCardSelected,
       )}
@@ -529,41 +492,17 @@ function MessageRow({ m, ...p }: Props & { m: MessageSummary; selecting: boolean
             {!m.isRead && (
               <motion.span
                 key="unread"
-                className="shrink-0 rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
+                className="shrink-0 rounded-md bg-[color-mix(in_srgb,var(--heat)_16%,transparent)] px-2 py-0.5 text-xs font-medium text-[color-mix(in_oklab,var(--heat),var(--foreground)_55%)] dark:text-[color-mix(in_oklab,var(--heat),white_25%)]"
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.5, opacity: 0 }}
                 transition={quick}
               >
-                New
+                Unread
               </motion.span>
             )}
           </AnimatePresence>
-          <div className="relative ml-auto flex shrink-0 items-center">
-            {/* The date gives way to the row's actions on hover, or when the row is highlighted. */}
-            <span
-              className={cn(
-                "text-meta whitespace-nowrap transition-[opacity,transform] duration-200 ease-(--ease-out-soft) group-hover/row:-translate-x-1 group-hover/row:opacity-0",
-                highlighted ? "-translate-x-1 opacity-0" : "text-muted-foreground",
-              )}
-            >
-              {listDate(m.date)}
-            </span>
-            <div
-              className={cn(
-                "absolute top-1/2 right-0 flex -translate-y-1/2 items-center gap-0.5 transition-[opacity,transform] duration-200 ease-(--ease-out-soft)",
-                highlighted
-                  ? "translate-x-0 opacity-100"
-                  : "pointer-events-none translate-x-2 opacity-0 group-hover/row:pointer-events-auto group-hover/row:translate-x-0 group-hover/row:opacity-100",
-              )}
-            >
-              {(armed || highlighted) && movesFrom(m.folder).map((a) => (
-                <IconAction key={a.to} size="icon-xs" variant="tinted" destructive={a.to === "trash"} label={a.label} shortcut={a.shortcut} onClick={() => p.onMove(m, a.to)}>
-                  {a.icon}
-                </IconAction>
-              ))}
-            </div>
-          </div>
+          <span className="ml-auto shrink-0 text-meta whitespace-nowrap text-muted-foreground">{listDate(m.date)}</span>
         </div>
         <div className={cn("line-clamp-1 text-sm", m.isRead ? "font-normal" : "font-medium")}>
           {m.subject || "(no subject)"}
@@ -696,7 +635,6 @@ function RowMenu({ m, ...p }: Props & { m: MessageSummary }) {
         onSelect={() =>
           void navigator.clipboard
             .writeText(m.from.email)
-            .then(() => toast.success("Copied", { description: m.from.email }))
             .catch(() => toast.error("Couldn't copy to the clipboard"))
         }
       >

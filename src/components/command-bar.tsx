@@ -188,11 +188,6 @@ const isHintKey = (k: string): k is HintKey => k in KEY_FACE;
 
 /** Task mode's first section is Tick's default one, shown under this name. */
 const NO_CATEGORY = "No Category";
-/**
- * After a task is added the bar fades out (180ms). The glow starts once it has mostly gone, so it
- * isn't drawn over the bar.
- */
-const OVERLAY_GONE_MS = 160;
 
 type TaskRow = "section" | "status";
 
@@ -377,16 +372,15 @@ export function CommandBar(p: Props) {
     setBusy(true);
     // Measured while the bar is still up: the glow starts from its middle.
     const origin = barBox();
-    // The bar closes at once; saving (read, write, reload the note) carries on behind it.
+    // The bar closes at once and the glow goes out with it, under the fading bar; saving (read,
+    // write, reload the note) carries on behind them, and a failed save says so in its toast.
     p.onOpenChange(false);
-    const shut = performance.now();
+    p.onTaskAdded(origin);
     try {
       const added = await addTask(taskName, section, undefined, taskStatus);
       lastTask.section = added;
       lastTask.status = taskStatus;
       toast.success(`Added to ${added}`, { description: taskName });
-      // Only a saved task gets the glow; it starts once the bar's dimmed overlay has faded.
-      window.setTimeout(() => p.onTaskAdded(origin), Math.max(0, OVERLAY_GONE_MS - (performance.now() - shut)));
     } catch (e) {
       toast.error(errorText(e), { description: `Not added: ${taskName}` });
     } finally {

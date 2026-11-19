@@ -66,8 +66,9 @@ export interface FontChoice {
 
 export const FONTS: FontChoice[] = [
   { id: "default", label: "Geist", family: "'Geist Variable', sans-serif" },
-  // Apple's SF fonts aren't bundled: they're used when installed on this PC (Geist otherwise).
-  { id: "sf", label: "SF Pro", family: "'SF Pro Text', 'SF Pro', 'SF Pro Display', 'Geist Variable', sans-serif", needs: "SF Pro Text" },
+  // Inter is bundled. The id stays "sf" so anyone who had picked SF Pro lands on Inter.
+  { id: "sf", label: "Inter", family: "'Inter Variable', 'Geist Variable', sans-serif" },
+  // Apple's SF Pro Rounded isn't bundled: it's used when installed on this PC (Geist otherwise).
   { id: "sf-rounded", label: "SF Pro Rounded", family: "'SF Pro Rounded', 'Geist Variable', sans-serif", needs: "SF Pro Rounded" },
 ];
 

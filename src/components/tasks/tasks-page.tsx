@@ -10,7 +10,7 @@ import {
   type Transition,
 } from "motion/react";
 import { toast } from "sonner";
-import { IconArrowBackUp, IconCheck, IconCircleCheck, IconCopy, IconFolder, IconPencil, IconBrandOpenai, IconTrash } from "@tabler/icons-react";
+import { IconArrowBackUp, IconCheck, IconCircleCheck, IconCopy, IconFolder, IconPencil, IconBrandOpenai, IconSquareRounded, IconSquareRoundedCheckFilled, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ease, quick, smooth, tilt, trail } from "@/lib/motion";
 import {
@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { TaskMetrics } from "@/components/tasks/task-metrics";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -284,7 +283,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           description: one ? tasks[0]!.text : undefined,
           action: {
             label: "Undo",
-            onClick: () => void undoAll(undos, one ? tasks[0]!.text : `${undos.length} tasks`),
+            onClick: () => void undoAll(undos),
           },
         });
       }
@@ -344,7 +343,6 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const remove = async (task: ParsedTask) => {
     try {
       await deleteTask(task);
-      toast.success("Task deleted", { description: task.text });
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -354,7 +352,6 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     try {
       await deleteTaskList(tasks);
       setSelected(new Set());
-      toast.success(tasks.length === 1 ? "Task deleted" : `${tasks.length} tasks deleted`);
     } catch (e) {
       toast.error(errorText(e));
     }
@@ -363,12 +360,8 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   /** Puts the selected cards on the clipboard as a prompt for Claude, in board order. */
   const copyForClaude = (cards = picked) => {
     if (!cards.length) return;
-    const n = cards.length;
     void navigator.clipboard.writeText(tasksToMarkdown(cards.map((c) => c.task))).then(
-      () => {
-        toast.success(n === 1 ? "Copied 1 task as a prompt" : `Copied ${n} tasks as a prompt`);
-        setSelected(new Set());
-      },
+      () => setSelected(new Set()),
       (e) => toast.error(errorText(e)),
     );
   };
@@ -572,10 +565,15 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
               aria-label={STATUS_META[status].label}
               className={cn(
                 // The overview card's corner (rounded-xl); the cards inside, 6px in, are 6px less.
-                // The sidebar grey (0.935), a step below the canvas, with the cards' outer outline and an inner rim.
-                "flex min-h-0 flex-col rounded-2xl border bg-sidebar inset-shadow-[0_0_0_1px_oklch(0.985_0_0)] dark:inset-shadow-none transition-[background-color,border-color,box-shadow] duration-400 ease-(--ease-out-soft)",
-                // Under the pointer: the column's colour pushed 5% toward the text colour (darker in light mode, lighter in dark).
-                target && "border-border-strong bg-[color-mix(in_srgb,var(--sidebar)_94%,var(--foreground))] dark:bg-[color-mix(in_srgb,var(--sidebar)_93%,var(--foreground))]",
+                // --column: in light mode the sidebar grey (0.935), a step below the canvas; in dark mode a step
+                // above the page and below the cards. In light mode the cards' outer outline and an inner rim; in
+                // dark mode no outline, the fill alone sets the column off (the border stays, transparent, so
+                // nothing shifts when a drag target lights it).
+                "flex min-h-0 flex-col rounded-2xl border bg-column inset-shadow-[0_0_0_1px_oklch(0.985_0_0)] dark:border-transparent dark:inset-shadow-none transition-[background-color,border-color,box-shadow] duration-400 ease-(--ease-out-soft)",
+                // Under the pointer: the column's colour pushed toward the text colour (darker in light mode, lighter in
+                // dark). Dark mode barely lifts it (#151515 to about #181818) with a faint 5% hairline, since the column
+                // has no outline at rest.
+                target && "border-border-strong dark:border-[oklch(1_0_0/5%)] bg-[color-mix(in_srgb,var(--column)_94%,var(--foreground))] dark:bg-[color-mix(in_srgb,var(--column)_98.5%,var(--foreground))]",
               )}
             >
               <h2 className="flex h-11 shrink-0 items-center gap-2 px-3.5 text-sm font-semibold">
@@ -758,7 +756,7 @@ function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick
       onPointerDown={onPointerDown}
       className={cn(
         listCard,
-        "group/card flex gap-3 rounded-lg p-3 pr-3.5 transition-[background-color,border-color,box-shadow] dark:hover:bg-accent/40",
+        "group/card flex gap-3 rounded-lg p-3 pr-3.5 transition-[background-color,border-color,box-shadow]",
         // Selected: a sky frame and the card's own colour tinted sky — a light tint, so it never ends up darker than the column behind it.
         selected && listCardSelected,
         hidden && "opacity-0 transition-none",
@@ -766,13 +764,20 @@ function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick
       )}
     >
       <div className="flex h-6 shrink-0 items-center" data-no-drag onClick={(e) => e.stopPropagation()}>
-        <Checkbox
-          checked={done}
-          onCheckedChange={onToggle}
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={done}
+          onClick={() => onToggle?.()}
           tabIndex={onToggle ? undefined : -1}
           aria-label={done ? `Untick ${task.text}` : `Complete ${task.text}`}
-          className="size-[18px] rounded-full border-foreground/25 dark:border-foreground/30"
-        />
+          className={cn(
+            "relative flex size-5 items-center justify-center rounded-md outline-none transition-colors after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:ring-2 focus-visible:ring-ring/50",
+            done ? "text-primary" : "text-foreground/25 hover:text-foreground/50 dark:text-foreground/30 dark:hover:text-foreground/55",
+          )}
+        >
+          {done ? <IconSquareRoundedCheckFilled className="size-5" /> : <IconSquareRounded className="size-5" />}
+        </button>
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <span
@@ -873,10 +878,7 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
         </ContextMenuSub>
         <ContextMenuItem
           onSelect={() =>
-            void navigator.clipboard.writeText(task.text).then(
-              () => toast.success("Copied", { description: task.text }),
-              (e) => toast.error(errorText(e)),
-            )
+            void navigator.clipboard.writeText(task.text).catch((e) => toast.error(errorText(e)))
           }
         >
           <IconCopy />
@@ -1108,10 +1110,9 @@ function DoneZone({ zoneRef, active, count }: { zoneRef: React.RefObject<HTMLDiv
 }
 
 /** The toast's Undo: puts completed tasks back where they were, the last completed first. */
-async function undoAll(undos: UndoComplete[], what: string) {
+async function undoAll(undos: UndoComplete[]) {
   try {
     for (const undo of [...undos].reverse()) await undo();
-    toast.success(undos.length === 1 ? "Task restored" : `${undos.length} tasks restored`, { description: undos.length === 1 ? what : undefined });
   } catch (e) {
     toast.error(errorText(e));
   }

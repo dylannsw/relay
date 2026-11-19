@@ -1,6 +1,7 @@
 import { useEffect, useId, useImperativeHandle, useRef, type Ref } from "react";
 import { currentHaloPalette, type Rgb } from "@/halo";
 import { playShockwave } from "@/lib/sfx";
+import { cn } from "@/lib/utils";
 
 export interface ShockwaveHandle {
   /**
@@ -250,8 +251,14 @@ function fieldImages(w: number, h: number, cx: number, cy: number, dMax: number,
  * see styles.css. With reduced motion there's no bend and no glints: the halo fades in and out in
  * place at half strength.
  */
-export function Shockwave({ ref, radii, scope }: {
+export function Shockwave({ ref, radii, scope, layerZ = "z-(--z-sticky)" }: {
   ref?: Ref<ShockwaveHandle>;
+  /**
+   * The z-index class of the bend and ring layers. A window-wide wave sits in a wrapper that must
+   * not be a stacking context (dark mode's screen blend would isolate it, and the bend, which reads
+   * what's behind it only up to that group, would see an empty box), so the layers carry its z-index.
+   */
+  layerZ?: string;
   /**
    * The edge line's corner radii in px (top-left, top-right, bottom-right, bottom-left), read each
    * run. Without it they're the parent's parent's (the framed content's); a window-wide wave passes the window's.
@@ -490,8 +497,8 @@ export function Shockwave({ ref, radii, scope }: {
           <feComposite in="redGreen" in2="blueOnly" operator="arithmetic" k2="1" k3="1" />
         </filter>
       </svg>
-      <div ref={bendLayer} aria-hidden className="pointer-events-none absolute inset-0 z-(--z-sticky) hidden" />
-      <div ref={layer} aria-hidden className="pointer-events-none absolute inset-0 z-(--z-sticky) hidden">
+      <div ref={bendLayer} aria-hidden className={cn("pointer-events-none absolute inset-0 hidden", layerZ)} />
+      <div ref={layer} aria-hidden className={cn("pointer-events-none absolute inset-0 hidden", layerZ)}>
         {/* The line of light along the page's edge (same blend and fade as the band). */}
         <div ref={edge} className="absolute inset-0 hidden [mask-repeat:no-repeat] [mask-size:100%_100%]" />
       </div>

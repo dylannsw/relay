@@ -4,7 +4,7 @@
  * the white rim just inside the border (--card-highlight; transparent in dark mode).
  */
 export const listCard =
-  "cursor-default border bg-card inset-shadow-[0_0_0_1px_var(--card-highlight)] text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-border-strong hover:bg-accent/50";
+  "cursor-default border bg-card inset-shadow-[0_0_0_1px_var(--card-highlight)] text-left transition-[background-color,border-color] duration-200 ease-(--ease-out-soft) select-none hover:border-border-strong hover:bg-accent/50 dark:hover:bg-card-hover";
 
 /** A ticked card: the selection frame, and the card's own colour tinted to match. */
 export const listCardSelected =

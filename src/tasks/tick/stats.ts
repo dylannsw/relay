@@ -72,10 +72,12 @@ export interface Heatmap {
 export interface DashboardStats {
   today: number;
   yesterday: number;
-  /** Today and the 6 days before it. */
+  /** This calendar week so far (Monday to today). */
   week: number;
-  /** The 7 days before those. */
+  /** Last week, Monday to Sunday: the latest week that has ended. */
   previousWeek: number;
+  /** The week before last, to compare last week against. */
+  weekBeforeLast: number;
   /** Open tasks in the to-do note. */
   open: number;
   /** Sections with at least one open task. */
@@ -104,6 +106,7 @@ export function dashboardStats(
     return n;
   };
 
+  const sinceMonday = weekdayIndex(today);
   const open = parseTasks(todoContent, defaultSection);
 
   let currentStreak = 0;
@@ -121,8 +124,10 @@ export function dashboardStats(
   return {
     today: on(today),
     yesterday: on(addDays(today, -1)),
-    week: sum(0, 6),
-    previousWeek: sum(7, 13),
+    // Weeks run Monday to Sunday and are only compared once they've ended.
+    week: sum(0, sinceMonday),
+    previousWeek: sum(sinceMonday + 1, sinceMonday + 7),
+    weekBeforeLast: sum(sinceMonday + 8, sinceMonday + 14),
     open: open.length,
     openSections: new Set(open.map((t) => sectionKey(t.section))).size,
     currentStreak,

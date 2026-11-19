@@ -92,28 +92,30 @@ export function TaskComposer({ sections, ready, vaultPath, className, onAdded }:
       return;
     }
     setBusy(true);
+    // The press and the glow go out on Enter, not once the save (read, write) is back, so they
+    // answer the key at once; if the save fails, its toast says so.
+    const box = tray.current;
+    if (box) {
+      // A press as the glow leaves: dip at 60ms, swell to 1.009 at 200ms, settle (as Zen's URL bar does).
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        box.animate(
+          [
+            { scale: 1, easing: "cubic-bezier(0.3, 0, 0.6, 1)" },
+            { scale: 0.994, offset: 60 / 480, easing: "cubic-bezier(0.25, 0.8, 0.3, 1)" },
+            { scale: 1.009, offset: 200 / 480, easing: "cubic-bezier(0.45, 0, 0.25, 1)" },
+            { scale: 1 },
+          ],
+          { duration: 480 },
+        );
+      }
+      onAdded?.(box.getBoundingClientRect());
+    }
     try {
       const added = await addTask(value, section, note.trim() || undefined, status);
       lastTask.section = added;
       setText("");
       setNote("");
       setNoteOpen(false);
-      const box = tray.current;
-      if (box) {
-        // A press as the glow leaves: dip at 60ms, swell to 1.009 at 200ms, settle (as Zen's URL bar does).
-        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-          box.animate(
-            [
-              { scale: 1, easing: "cubic-bezier(0.3, 0, 0.6, 1)" },
-              { scale: 0.994, offset: 60 / 480, easing: "cubic-bezier(0.25, 0.8, 0.3, 1)" },
-              { scale: 1.009, offset: 200 / 480, easing: "cubic-bezier(0.45, 0, 0.25, 1)" },
-              { scale: 1 },
-            ],
-            { duration: 480 },
-          );
-        }
-        onAdded?.(box.getBoundingClientRect());
-      }
       toast.success(`Added to ${added}`, { description: value });
     } catch (e) {
       toast.error(errorText(e));

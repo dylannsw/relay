@@ -118,8 +118,8 @@ src-tauri/src/           Rust backend
 Relay is a personal, non-commercial project. The code is public so it can be read; it isn't
 offered for reuse, and there's no license attached, so the usual "all rights reserved" applies.
 
-- **Fonts:** Relay bundles only [Geist](https://vercel.com/font) (SIL Open Font License). The
-  *SF Pro* options in Settings are used only if those fonts are already installed on your PC;
-  no Apple fonts are included in this repository or the app.
+- **Fonts:** Relay bundles [Geist](https://vercel.com/font) and [Inter](https://rsms.me/inter/) (both SIL Open
+  Font License). The *SF Pro Rounded* option in Settings is used only if that font is already
+  installed on your PC; no Apple fonts are included in this repository or the app.
 - **Trademarks:** Gmail and Google are trademarks of Google LLC, and Outlook and Microsoft are
   trademarks of Microsoft Corporation. Relay isn't affiliated with or endorsed by either.

@@ -15,7 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
  */
 
 export function ComposerTray({ ref, className, ...props }: ComponentProps<"div">) {
-  return <div ref={ref} className={cn("halo-glint relative rounded-tray border bg-muted p-1.5 dark:bg-sidebar", className)} {...props} />;
+  return <div ref={ref} className={cn("halo-glint relative rounded-tray border bg-muted p-2 dark:bg-column", className)} {...props} />;
 }
 
 /** The input's frame. Focus only nudges the border a shade greyer, instead of the accent-coloured focus ring. */
