@@ -32,6 +32,7 @@ import {
   IconFileTypeZip,
   IconMapPin,
   IconMicrophone,
+  IconMoodSmile,
   IconMusic,
   IconPencil,
   IconPhoto,
@@ -62,13 +63,22 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
 import { typingText, useTyping } from "@/telegram/typing";
-import type { TgChat, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
+import type { TgChat, TgMember, TgMention, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
 import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
 import { MessageText } from "./message-text";
 import { InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
@@ -81,6 +91,7 @@ import { StickerArt, useInView, useObjectUrl } from "./sticker-view";
 import { StickerPicker } from "./sticker-picker";
 import { PageHeader } from "@/components/page-header";
 import { ForwardPicker } from "./forward-picker";
+import { MentionPicker, TagBackdrop, matchMembers, mentionTrigger, mentionsFor, tagRanges, tagText, useMembers, type NameTag } from "./mention-picker";
 
 const PAGE = 50;
 /** Messages from the same person this close together share one run (one name, one avatar, one tail). */
@@ -90,6 +101,8 @@ const BOTTOM_SLACK = 80;
 
 /** What you'd typed in each chat, kept while Relay is open. */
 const drafts = new Map<string, string>();
+/** The people tagged by name in each chat's draft. */
+const draftTags = new Map<string, NameTag[]>();
 
 /**
  * The reactions offered in a message's right-click menu. Only emoji from Telegram's own reaction
@@ -168,7 +181,7 @@ function subtitle(c: TgChat): string | null {
  * ("sending", with a negative stand-in id) or that didn't go through ("failed").
  */
 /** A message as shown: pending ones carry how sending went, and a file being sent its path (for Try again). */
-type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker; voice?: Recording };
+type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker; voice?: Recording; mentions?: TgMention[] };
 
 let tempSeq = 0;
 
@@ -572,8 +585,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
    * Sends the way Telegram does: the bubble is there at once with a clock, becomes Telegram's
    * message (ticks) when it's confirmed, or turns red with Try again if it fails.
    */
-  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker; voice?: Recording } = {}, after?: Promise<unknown>): Promise<unknown> => {
-    const { file, sticker, voice } = what;
+  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker; voice?: Recording; mentions?: TgMention[] } = {}, after?: Promise<unknown>): Promise<unknown> => {
+    const { file, sticker, voice, mentions } = what;
     const name = file?.split(/[\\/]/).pop() ?? "";
     const temp: Shown = {
       id: -++tempSeq,
@@ -583,7 +596,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
       senderId: null,
       senderName: "You",
       text,
-      entities: [],
+      entities: (mentions ?? []).filter((x) => x.kind !== "url").map((x) => ({ offset: x.offset, length: x.length, kind: "mention" as const, url: null })),
       media: file
         ? { kind: "file", label: name, width: null, height: null, mime: null }
         : voice
@@ -594,6 +607,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
       file,
       sticker,
       voice,
+      mentions,
       reply: reply ? { id: reply.id, sender: reply.outgoing ? "You" : reply.senderName, senderId: reply.outgoing ? null : reply.senderId, text: reply.text || reply.media?.label || "Message" } : null,
       forwardedFrom: null,
       edited: false,
@@ -615,7 +629,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
             ? api.telegram.sendVoice(chat.id, voice.bytes, voice.duration, voice.waveform, reply?.id)
             : file
             ? api.telegram.sendFile(chat.id, file, text, reply?.id)
-            : api.telegram.send(chat.id, text, reply?.id),
+            : api.telegram.send(chat.id, text, reply?.id, mentions),
       )
       .then(
         (m) => {
@@ -630,9 +644,9 @@ export function Conversation({ chat }: { chat: TgChat }) {
   };
 
   /** The caption (and the reply) go with the first file. */
-  const sendAll = (text: string, files: string[]) => {
+  const sendAll = (text: string, files: string[], mentions: TgMention[]) => {
     if (!files.length) {
-      void send(text, replyTo);
+      void send(text, replyTo, undefined, { mentions });
       return;
     }
     files.reduce<Promise<unknown> | undefined>((prev, f, i) => send(i === 0 ? text : "", i === 0 ? replyTo : null, undefined, { file: f }, prev), undefined);
@@ -640,7 +654,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
 
   const retry = (m: Shown) => {
     const reply = m.reply ? (messages?.find((x) => x.id === m.reply!.id) ?? null) : null;
-    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker, voice: m.voice });
+    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker, voice: m.voice, mentions: m.mentions });
   };
   const discard = (m: Shown) => setMessages((list) => list?.filter((x) => x.id !== m.id) ?? list);
 
@@ -666,19 +680,19 @@ export function Conversation({ chat }: { chat: TgChat }) {
         </div>
       </PageHeader>
 
-      <div className="relative min-h-0 flex-1">
+      <div className="@container/chat relative min-h-0 flex-1">
         <div
           ref={scroller}
           onScroll={onScroll}
-          style={{ paddingBottom: composerH + 8 }}
-          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3"
+          style={{ paddingBottom: composerH + 20 }}
+          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3 @3xl/chat:px-[100px]"
         >
           {error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !messages ? (
             <LoadingBubbles />
           ) : (
-            <div ref={content} className="mx-auto flex max-w-3xl flex-col">
+            <div ref={content} className="flex flex-col">
               {older === "loading" && (
                 <div className="flex justify-center py-2">
                   <Spinner className="text-muted-foreground" />
@@ -835,7 +849,7 @@ function LoadingBubbles() {
     { out: true, w: "w-52" },
   ];
   return (
-    <div className="mx-auto flex max-w-3xl flex-col justify-end gap-2 pt-10">
+    <div className="flex flex-col justify-end gap-2 pt-10">
       {rows.map((r, i) => (
         <Skeleton key={i} className={cn("h-9 rounded-2xl", r.w, r.out && "self-end")} />
       ))}
@@ -843,15 +857,11 @@ function LoadingBubbles() {
   );
 }
 
-/**
- * A day's start: a small chip on a hairline that runs out to both edges of the frame. The line is
- * the scroller's full width (100cqw, plus its 1rem padding each side) and meets the chip's border.
- */
+/** A day's start: just a small chip, centred. */
 function DaySeparator({ date }: { date: number }) {
   return (
     <div role="separator" className="pt-5 pb-1">
       <div className="relative flex justify-center">
-        <span className="absolute top-1/2 left-1/2 h-px w-[calc(100cqw+2rem)] -translate-1/2 bg-border" />
         <span className="relative rounded-full border bg-background px-3 py-1 text-xs leading-none font-medium text-foreground">{dayLabel(date)}</span>
       </div>
     </div>
@@ -863,7 +873,7 @@ function UnreadLine() {
   return (
     <div role="separator" data-unread-line className="pt-5 pb-1">
       <div className="relative flex justify-center">
-        <span className="absolute top-1/2 left-1/2 h-px w-[calc(100cqw+2rem)] -translate-1/2 bg-primary/40" />
+        <span className="absolute top-1/2 left-1/2 h-px w-[calc(100cqw+2rem)] -translate-1/2 bg-primary/40 @3xl/chat:w-[calc(100cqw+200px)]" />
         <span className="relative rounded-full bg-primary px-3 py-1 text-xs leading-none font-medium text-primary-foreground">Unread messages</span>
       </div>
     </div>
@@ -901,6 +911,128 @@ function Reactions({ list, onReact, disabled }: { list: TgReaction[]; onReact: (
         </button>
       ))}
     </div>
+  );
+}
+
+/** How many reaction badges fit on a bubble's corner; the rest show as "+n". */
+const CORNER_MAX = 3;
+
+/**
+ * The reactions pinned to a bubble's bottom corner, on the side away from the sender: a badge each,
+ * yours in your accent colour. Each sits half below the bubble and half sunk into it (the bubble pads
+ * its text up to clear it). The first hangs 8px past the corner and the rest run inward along the
+ * bottom edge. The row is laid out (at no height) rather than floated, so a short bubble widens to
+ * hold it. Tapping one adds or takes off yours.
+ */
+function CornerReactions({ list, out, onReact, disabled }: { list: TgReaction[]; out: boolean; onReact: (emoji: string) => void; disabled: boolean }) {
+  const shown = list.slice(0, CORNER_MAX);
+  const rest = list.slice(CORNER_MAX).reduce((n, r) => n + r.count, 0);
+  return (
+    <div className={cn("relative flex h-0 gap-1 *:-translate-y-3", out ? "-ml-2 pr-2" : "-mr-2 flex-row-reverse pl-2")}>
+      {shown.map((r) => (
+        <button
+          key={r.emoji}
+          type="button"
+          disabled={disabled}
+          aria-pressed={r.mine}
+          aria-label={`${showEmoji(r.emoji)} ${r.count}${r.mine ? ", including you" : ""}`}
+          onClick={() => onReact(r.emoji)}
+          onDoubleClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-xs leading-none font-medium tabular-nums ring-3 ring-background transition-[filter] duration-150 hover:brightness-110",
+            r.mine ? "bg-reaction-mine text-reaction-mine-foreground" : "bg-reaction text-foreground",
+          )}
+        >
+          <span className="text-sm leading-none">{showEmoji(r.emoji)}</span>
+          {r.count > 1 && <span className="pr-0.5">{r.count}</span>}
+        </button>
+      ))}
+      {rest > 0 && (
+        <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-reaction px-2 text-xs leading-none font-medium text-muted-foreground tabular-nums ring-3 ring-background">
+          +{rest}
+        </span>
+      )}
+    </div>
+  );
+}
+
+type Reactor = { emoji: string; name: string; mine: boolean };
+
+/**
+ * Who reacted, for the right-click menu. A one-to-one chat needs no lookup (it's you or them);
+ * a group asks Telegram once the menu opens.
+ */
+function useReactors(chat: TgChat, m: Shown, open: boolean): Reactor[] | "loading" | "failed" | null {
+  const direct = chat.kind === "user" || chat.kind === "bot" || chat.kind === "saved";
+  const [fetched, setFetched] = useState<{ key: string; list: Reactor[] | "failed" } | null>(null);
+  const key = `${m.id}:${m.reactions.map((r) => `${r.emoji}${r.count}${r.mine ? "*" : ""}`).join()}`;
+  const want = open && !direct && m.reactions.length > 0 && !m.pending;
+  useEffect(() => {
+    if (!want || fetched?.key === key) return;
+    let live = true;
+    api.telegram
+      .reactors(chat.id, m.id)
+      .then((list) => live && setFetched({ key, list }))
+      .catch(() => live && setFetched({ key, list: "failed" }));
+    return () => {
+      live = false;
+    };
+  }, [want, key, chat.id, m.id, fetched?.key]);
+  if (m.reactions.length === 0 || m.pending) return null;
+  if (direct) {
+    return m.reactions.flatMap((r) => [
+      ...(r.mine ? [{ emoji: r.emoji, name: "You", mine: true }] : []),
+      ...(r.count > (r.mine ? 1 : 0) ? [{ emoji: r.emoji, name: chat.kind === "saved" ? "You" : chat.name, mine: false }] : []),
+    ]);
+  }
+  return fetched?.key === key ? fetched.list : "loading";
+}
+
+/** How many people the menu lists before the rest go into a submenu. */
+const REACTORS_INLINE = 4;
+
+function ReactorRow({ r }: { r: Reactor }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 px-2.5 py-1.5 text-sm">
+      <span className="w-4.5 shrink-0 text-center text-base leading-none">{showEmoji(r.emoji)}</span>
+      <span className={cn("truncate", r.mine && "font-medium")}>{r.name}</span>
+    </div>
+  );
+}
+
+/** The menu's list of who reacted: a few inline, everyone in a submenu when there are more. */
+function ReactorList({ reactors, total }: { reactors: Reactor[] | "loading" | "failed"; total: number }) {
+  if (reactors === "loading") {
+    return (
+      <div className="flex items-center gap-2.5 px-2.5 py-1.5 text-sm text-muted-foreground">
+        <Spinner className="size-4.5" />
+        Loading reactions…
+      </div>
+    );
+  }
+  if (reactors === "failed" || reactors.length === 0) {
+    return <div className="px-2.5 py-1.5 text-sm text-muted-foreground">Can't see who reacted here</div>;
+  }
+  const fits = reactors.length <= REACTORS_INLINE && total <= REACTORS_INLINE;
+  return (
+    <>
+      {(fits ? reactors : reactors.slice(0, REACTORS_INLINE - 1)).map((r, i) => (
+        <ReactorRow key={i} r={r} />
+      ))}
+      {!fits && (
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <IconMoodSmile />
+            All {total} Reactions
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="max-h-80 w-56 overflow-y-auto">
+            {reactors.map((r, i) => (
+              <ReactorRow key={i} r={r} />
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+      )}
+    </>
   );
 }
 
@@ -952,7 +1084,7 @@ function useMediaBytes(chatId: string, m: TgMessage, kind: "photo" | "sticker" |
   return { bytes, failed };
 }
 
-/** A photo or GIF's size in the bubble: its own shape, within 320×360. */
+/** A photo or GIF's size in the bubble: its own shape, within 320×360, and never narrower than the bubble (min-w-full). */
 function frameStyle(media: TgMedia): CSSProperties {
   const w = media.width || 4;
   const h = media.height || 3;
@@ -991,7 +1123,7 @@ function Gif({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedi
       playsInline
       disablePictureInPicture
       style={frameStyle(media)}
-      className={cn("block max-w-full object-cover", !url && "animate-pulse bg-current/10")}
+      className={cn("block max-w-full min-w-full object-cover", !url && "animate-pulse bg-current/10")}
     />
   );
 }
@@ -1036,12 +1168,12 @@ function Photo({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMe
       type="button"
       aria-label="Open photo"
       onClick={(e) => openGlance({ chatId, messageId: m.id, kind: "photo", source: e.currentTarget, preview: url, width: media.width, height: media.height })}
-      className="block max-w-full cursor-zoom-in"
+      className="block w-full max-w-full cursor-zoom-in"
     >
-      <img src={url} alt="" draggable={false} style={style} className="block max-w-full object-cover" />
+      <img src={url} alt="" draggable={false} style={style} className="block max-w-full min-w-full object-cover" />
     </button>
   ) : (
-    <div style={style} className="max-w-full animate-pulse bg-current/10" />
+    <div style={style} className="max-w-full min-w-full animate-pulse bg-current/10" />
   );
 }
 
@@ -1064,7 +1196,7 @@ function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media:
       aria-label={round ? "Play video message" : "Play video"}
       onClick={(e) => openGlance({ chatId, messageId: m.id, kind: "video", source: e.currentTarget, preview: url, width: round ? 360 : media.width, height: round ? 360 : media.height, round })}
       style={style}
-      className={cn("relative block max-w-full overflow-hidden bg-black/80", round && "rounded-full")}
+      className={cn("relative block max-w-full overflow-hidden bg-black/80", round ? "rounded-full" : "min-w-full")}
     >
       {url && <img src={url} alt="" draggable={false} className="absolute inset-0 size-full object-cover" />}
       {!url && !failed && <span className="absolute inset-0 animate-pulse bg-white/10" />}
@@ -1208,11 +1340,20 @@ function Bubble(props: {
   // Every bubble is fully rounded; each run has its name above and its time and ticks below.
   const corners = "rounded-bubble";
   const showTime = last || !!m.pending || m.edited;
-  const nameLine = props.showName && <div className="truncate px-1 text-sm font-semibold text-foreground">{m.senderName}</div>;
+  // Group chats: the sender's picture and name above their run, lined up with the bubble's left edge.
+  const nameLine = props.showName && (
+    <div className="mb-1 flex max-w-full min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
+      <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={24} />
+      <span className="truncate">{m.senderName}</span>
+    </div>
+  );
+  // Stickers and round videos have no bubble to pin badges to, so theirs stay in a row underneath.
   const reactions = m.reactions.length > 0 && <Reactions list={m.reactions} onReact={props.onReact} disabled={!!m.pending} />;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const reactors = useReactors(chat, m, menuOpen);
 
   const copy = () => {
-    void navigator.clipboard.writeText(m.text).then(() => toast.success("Copied"));
+    void navigator.clipboard.writeText(m.text).catch((e) => toast.error(errorText(e)));
   };
   const toComposer = useRef(false);
   const toPicker = useRef(false);
@@ -1226,11 +1367,6 @@ function Bubble(props: {
   return (
     <>
     <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-4" : "pt-2", out ? "justify-end" : "justify-start")}>
-      {props.showAvatar && (
-        <div className="w-8 shrink-0 self-start">
-          {first && <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={32} />}
-        </div>
-      )}
       {failed && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1242,10 +1378,10 @@ function Bubble(props: {
           <TooltipContent>Not sent. Try again</TooltipContent>
         </Tooltip>
       )}
-      <ContextMenu>
+      <ContextMenu onOpenChange={setMenuOpen}>
         <ContextMenuTrigger asChild>
           {sticker ? (
-            <div data-bubble onDoubleClick={m.pending ? undefined : props.onReply} className={cn("relative flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]", out ? "origin-right" : "origin-left")}>
+            <div data-bubble onDoubleClick={m.pending ? undefined : props.onReply} className={cn("relative flex max-w-[min(78%,40rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]", out ? "origin-right" : "origin-left")}>
               {nameLine}
               {(m.forwardedFrom !== null || m.reply) && (
                 <div className={cn("max-w-full min-w-0 self-start rounded-2xl bg-bubble px-3 py-1.5", out && "self-end")}>
@@ -1275,15 +1411,21 @@ function Bubble(props: {
             data-bubble
             onContextMenu={pickSelection}
             // Double-clicking the text selects a word (as everywhere); only the rest of the bubble replies.
-            onDoubleClick={m.pending ? undefined : (e) => !(e.target as HTMLElement).closest("[data-msg-text]") && props.onReply()} className={cn("flex max-w-[min(78%,34rem)] min-w-0 flex-col gap-1", out ? "origin-right items-end" : "origin-left items-start")}>
+            onDoubleClick={m.pending ? undefined : (e) => !(e.target as HTMLElement).closest("[data-msg-text]") && props.onReply()} className={cn("flex max-w-[min(78%,40rem)] min-w-0 flex-col gap-1", out ? "origin-right items-end" : "origin-left items-start")}>
           {nameLine}
+          {/* A column, so a reacted bubble stretches to at least its badges' width. The badges hang 12px below it: the time
+              (on the other side from them) sits just clear of that, and without one 16px keeps the next message clear. */}
+          <div className={cn("flex max-w-full min-w-0 flex-col", m.reactions.length > 0 && (showTime ? "mb-1" : "mb-4"))}>
           <div
             className={cn(
               // max-w-full: a long quoted line would otherwise size the bubble past the column's cap.
               "relative max-w-full min-w-0 overflow-hidden border text-sm leading-[1.4] break-words text-foreground",
               corners,
-              out ? "border-bubble-out-border bg-bubble-out" : "border-bubble-border bg-bubble",
-              !photoOnly && "px-2.5 py-[7px]",
+              out ? "bubble-out border-bubble-out-border bg-bubble-out" : "border-bubble-border bg-bubble",
+              !photoOnly && "px-3 py-[9px]",
+              // Reacted: the badge sinks 12px into the bubble's bottom, so the text ends 10px higher to clear
+              // it. A photo at the bottom stays flush (the badge just sits over its corner), with no strip under it.
+              !photoOnly && m.reactions.length > 0 && !(photo && !hasText) && "pb-[19px]",
             )}
           >
             {m.forwardedFrom !== null && (
@@ -1295,14 +1437,15 @@ function Bubble(props: {
               <button
                 type="button"
                 onClick={() => m.reply && props.onJump(m.reply.id)}
-                // 5px from the bubble's edge on three sides (the text keeps its 10px sides and 7px top), 4px above the text.
-                className={cn("-mx-[5px] mb-1 flex w-[calc(100%+10px)] min-w-0 flex-col rounded-md border px-2 py-1 text-left text-sm leading-snug", m.forwardedFrom === null ? "-mt-[2px]" : "mt-0.5", out ? quoteOut : "bg-tint-hover")}
+                // 5px from the bubble's edge on three sides (its corners 9px, the bubble's 14 less that gap), padded like the
+                // bubble's own text (12px sides, 9px top and bottom), and 9px above the text (the bubble's bottom padding).
+                className={cn("-mx-[7px] mb-[9px] flex w-[calc(100%+14px)] min-w-0 flex-col rounded-[9px] border px-3 py-[9px] text-left text-sm leading-snug", m.forwardedFrom === null ? "-mt-[4px]" : "mt-0.5", out ? quoteOut : "bg-tint-hover")}
               >
                 <QuoteLines chat={chat} reply={m.reply} out={out} />
               </button>
             )}
             {photo && (
-              <div className={cn(!photoOnly && "-mx-2.5", !photoOnly && (m.forwardedFrom !== null && !m.reply ? "mt-[7px]" : "mt-1"),!photoOnly && !hasText && "-mb-[7px]", hasText && "mb-[7px]", !photoOnly && !m.reply && m.forwardedFrom === null && "-mt-[7px]")}>
+              <div className={cn(!photoOnly && "-mx-3", !photoOnly && !m.reply && m.forwardedFrom !== null && "mt-[9px]",!photoOnly && !hasText && "-mb-[9px]", hasText && "mb-[9px]", !photoOnly && !m.reply && m.forwardedFrom === null && "-mt-[9px]")}>
                 {photo.kind === "gif" ? (
                   <Gif chatId={chat.id} m={m} media={photo} />
                 ) : photo.kind === "video" ? (
@@ -1323,7 +1466,8 @@ function Bubble(props: {
               </div>
             ) : null}
           </div>
-          {reactions}
+          {m.reactions.length > 0 && <CornerReactions list={m.reactions} out={out} onReact={props.onReact} disabled={!!m.pending} />}
+          </div>
           </div>
           )}
         </ContextMenuTrigger>
@@ -1363,6 +1507,12 @@ function Bubble(props: {
                   );
                 })}
               </div>
+              <ContextMenuSeparator />
+            </>
+          )}
+          {reactors && (
+            <>
+              <ReactorList reactors={reactors} total={m.reactions.reduce((n, r) => n + r.count, 0)} />
               <ContextMenuSeparator />
             </>
           )}
@@ -1435,7 +1585,7 @@ function Bubble(props: {
       </ContextMenu>
     </div>
     {showTime && (
-      <div className={cn("flex pt-2", out ? "justify-end" : "justify-start", props.showAvatar && !out ? "pl-10" : "px-1")}>
+      <div className={cn("flex pt-2", out ? "justify-end" : "justify-start", "px-1")}>
         <Meta m={m} read={read} />
       </div>
     )}
@@ -1458,8 +1608,8 @@ function Composer(props: {
   onEditLast: () => boolean;
   /** Whether the latest message is yours (you've answered); false when it's theirs or there's none. */
   lastFromYou: boolean;
-  /** The text (the caption, with files), and the files to send. */
-  onSend: (text: string, files: string[]) => void;
+  /** The text (the caption, with files), the files to send, and the people tagged in the text. */
+  onSend: (text: string, files: string[], mentions: TgMention[]) => void;
   onSticker: (s: TgSticker) => void;
   onVoice: (r: Recording) => void;
 }) {
@@ -1489,6 +1639,46 @@ function Composer(props: {
   }, [editingId]);
   const [files, setFiles] = useState<string[]>([]);
   const area = useRef<HTMLTextAreaElement | null>(null);
+
+  // Tagging: typing @ in a group lists its members to pick from.
+  const tags = useRef<NameTag[]>(draftTags.get(chat.id) ?? []);
+  const [caret, setCaret] = useState(0);
+  const [active, setActive] = useState(0);
+  /** Where the @ was when Escape closed its list; typing elsewhere brings the list back. */
+  const [dismissed, setDismissed] = useState<number | null>(null);
+  const trigger = isGroup(chat) && !editing && !recording ? mentionTrigger(text, caret) : null;
+  // Fetched when a group opens, so the list is there by the time an @ is typed (Enter would send otherwise).
+  const members = useMembers(chat.id, isGroup(chat), trigger?.query ?? "");
+  const matches = trigger && members ? matchMembers(members, trigger.query) : [];
+  const picking = !!trigger && dismissed !== trigger.start && matches.length > 0;
+  const query = trigger ? `${trigger.start}:${trigger.query}` : "";
+  useEffect(() => {
+    setActive(0);
+    if (!trigger) setDismissed(null);
+    // Back to the top whenever what's typed after the @ changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+  const keepCaret = () => {
+    const el = area.current;
+    if (el) setCaret(el.selectionStart);
+  };
+
+  const pickMember = (m: TgMember) => {
+    if (!trigger) return;
+    const tag = tagText(m);
+    const insert = `${tag} `;
+    const v = text.slice(0, trigger.start) + insert + text.slice(caret);
+    if (!tags.current.some((t) => t.text === tag)) {
+      tags.current = [...tags.current, { text: tag, userId: m.id, byUsername: !!m.username }];
+      draftTags.set(chat.id, tags.current);
+    }
+    update(v);
+    const at = trigger.start + insert.length;
+    setCaret(at);
+    pendingCaret.current = at;
+  };
+  /** Where the caret goes once the text a pick put in has rendered (sooner, a frame could undo keys typed meanwhile). */
+  const pendingCaret = useRef<number | null>(null);
   // The chips stay drawn while the row collapses after the last one is removed.
   const lastFiles = useRef<string[]>([]);
   if (files.length) lastFiles.current = files;
@@ -1496,6 +1686,7 @@ function Composer(props: {
 
   useEffect(() => {
     setText(drafts.get(chat.id) ?? "");
+    tags.current = draftTags.get(chat.id) ?? [];
     setFiles([]);
     setRecording(false);
   }, [chat.id]);
@@ -1506,7 +1697,18 @@ function Composer(props: {
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    if (pendingCaret.current !== null) {
+      el.focus();
+      el.setSelectionRange(pendingCaret.current, pendingCaret.current);
+      pendingCaret.current = null;
+    }
+    if (backdrop.current) backdrop.current.scrollTop = el.scrollTop;
   }, [text]);
+
+  // Picked tags show in the accent colour in the box too (not while editing: those aren't sent as tags).
+  const backdrop = useRef<HTMLDivElement>(null);
+  const ranges = editing ? [] : tagRanges(text, tags.current);
+  const boxText = "pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] md:text-title";
 
   const update = (v: string) => {
     setText(v);
@@ -1526,9 +1728,13 @@ function Composer(props: {
       return;
     }
     if (!body.trim() && !files.length) return;
+    // Captions go without tags (names stay as plain text there).
+    const mentions = files.length ? [] : mentionsFor(body, tags.current);
     update("");
+    tags.current = [];
+    draftTags.delete(chat.id);
     setFiles([]);
-    props.onSend(body, files);
+    props.onSend(body, files, mentions);
     area.current?.focus();
   };
 
@@ -1561,10 +1767,11 @@ function Composer(props: {
   return (
     // Floats over the chat's end, so messages scroll up to the bar's edge. Behind its lower half
     // and the gap under it the page shows, so nothing peeks out below the bar. It's 8px wider each
-    // side than the messages (px-2 and 49rem against their px-4 and 48rem).
-    <div ref={props.boxRef} className="absolute inset-x-0 bottom-0 px-2 pb-3">
+    // side than the messages (px-2 against their px-4; 92px against 100px once the chat is wide).
+    <div ref={props.boxRef} className="absolute inset-x-0 bottom-0 px-2 pb-3 @3xl/chat:px-[92px]">
       <div aria-hidden className="absolute inset-x-0 top-1/2 bottom-0 bg-background" />
-      <ComposerTray className="mx-auto max-w-[49rem]">
+      <MentionPicker open={picking} members={matches} active={active} onActive={setActive} onPick={pickMember} onClose={() => trigger && setDismissed(trigger.start)}>
+      <ComposerTray>
         <AnimatePresence initial={false}>
           {(editing ?? replyTo) && (
             <motion.div
@@ -1636,6 +1843,8 @@ function Composer(props: {
               }}
             />
           ) : (
+          <div className="relative flex min-w-0 flex-1">
+          {ranges.length > 0 && <TagBackdrop ref={backdrop} text={text} ranges={ranges} className={boxText} />}
           <InputGroupTextarea
             ref={(el) => {
               area.current = el;
@@ -1644,9 +1853,40 @@ function Composer(props: {
             }}
             rows={1}
             value={text}
-            onChange={(e) => update(e.target.value)}
+            onChange={(e) => {
+              update(e.target.value);
+              setCaret(e.target.selectionStart);
+            }}
+            onSelect={keepCaret}
             onPaste={paste}
+            onScroll={(e) => {
+              if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
+            }}
+            role={isGroup(chat) ? "combobox" : undefined}
+            aria-expanded={isGroup(chat) ? picking : undefined}
+            aria-controls={picking ? "mention-list" : undefined}
+            aria-activedescendant={picking && matches[active] ? `mention-${matches[active].id}` : undefined}
             onKeyDown={(e) => {
+              if (picking && !e.nativeEvent.isComposing) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const d = e.key === "ArrowDown" ? 1 : -1;
+                  setActive((i) => (i + d + matches.length) % matches.length);
+                  return;
+                }
+                if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+                  e.preventDefault();
+                  const m = matches[active];
+                  if (m) pickMember(m);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDismissed(trigger!.start);
+                  return;
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
@@ -1667,8 +1907,14 @@ function Composer(props: {
                   : "Write a reply…"
             }
             aria-label="Message"
-            className="no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60 pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] md:text-title"
+            className={cn(
+              "no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60",
+              boxText,
+              // The backdrop shows the text; the caret and the selection's tint stay the box's own.
+              ranges.length > 0 && "relative text-transparent caret-foreground selection:bg-primary/25 selection:text-transparent",
+            )}
           />
+          </div>
           )}
           <ComposerSubmit
             ready={canSend || recording}
@@ -1695,6 +1941,7 @@ function Composer(props: {
           <div ref={setWaveSlot} className="flex min-w-0 flex-1 justify-end pr-1.5" />
         </ComposerOptions>
       </ComposerTray>
+      </MentionPicker>
     </div>
   );
 }

@@ -84,6 +84,40 @@ pub struct Telegram {
     stickers: RwLock<stickers::StickerCache>,
     /// Whether Relay last told Telegram you're online.
     online: std::sync::atomic::AtomicBool,
+    /// Access hashes of group members listed for tagging, by user id: a tag that names someone
+    /// without a username has to carry it.
+    member_hashes: RwLock<HashMap<i64, i64>>,
+}
+
+/// Someone in a group you can tag.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgMember {
+    /// Their user id.
+    id: String,
+    name: String,
+    username: Option<String>,
+    bot: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgMembers {
+    members: Vec<TgMember>,
+    /// The group has more members than came back: search Telegram for names not among them.
+    more: bool,
+}
+
+/// A tag in a message you're sending, `length` UTF-16 units from `offset`: someone tagged by
+/// name ("name", with their `user_id`), or, alongside those, an @username or a link ("username",
+/// "url"), which Telegram only finds in the text by itself when no entities are sent.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgMention {
+    offset: i32,
+    length: i32,
+    kind: String,
+    user_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -197,6 +231,7 @@ impl Telegram {
             chats: RwLock::new(Chats::default()),
             stickers: RwLock::new(stickers::StickerCache::default()),
             online: Default::default(),
+            member_hashes: Default::default(),
         }
     }
 
@@ -795,19 +830,113 @@ pub async fn telegram_messages(tg: Tg<'_>, chat_id: String, before: Option<i32>,
     Ok(tg.with_replies(&client, list).await)
 }
 
+/// The people in a group you could tag (you aren't among them): the most recently active first,
+/// up to 200, or in a big group those whose name or username matches `query`.
 #[tauri::command]
-pub async fn telegram_send(app: AppHandle, tg: Tg<'_>, chat_id: String, text: String, reply_to: Option<i32>) -> Result<TgMessage> {
+pub async fn telegram_members(tg: Tg<'_>, chat_id: String, query: Option<String>) -> Result<TgMembers> {
+    const LIMIT: usize = 200;
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (id, peer) = tg.entry(&chat_id)?;
+    let query = query.map(|q| q.trim().to_string()).filter(|q| !q.is_empty());
+    let (users, more) = match id.kind() {
+        PeerKind::Chat => {
+            let chat_id = id.bare_id().ok_or_else(|| msg("That chat id isn't valid."))?;
+            let tl::enums::messages::ChatFull::Full(full) = client.invoke(&tl::functions::messages::GetFullChat { chat_id }).await.map_err(tg_error)?;
+            (full.users, false)
+        }
+        PeerKind::Channel => {
+            let filter = match &query {
+                Some(q) => tl::types::ChannelParticipantsSearch { q: q.clone() }.into(),
+                None => tl::enums::ChannelParticipantsFilter::ChannelParticipantsRecent,
+            };
+            let request = tl::functions::channels::GetParticipants { channel: peer.into(), filter, offset: 0, limit: LIMIT as i32, hash: 0 };
+            match client.invoke(&request).await {
+                Ok(tl::enums::channels::ChannelParticipants::Participants(p)) => (p.users, p.count as usize > p.participants.len()),
+                Ok(tl::enums::channels::ChannelParticipants::NotModified) => (Vec::new(), false),
+                // Broadcast channels (and some big groups) only show their members to admins.
+                Err(e) if rpc_named(&e, "CHAT_ADMIN_REQUIRED") => (Vec::new(), false),
+                Err(e) => return Err(tg_error(e)),
+            }
+        }
+        _ => (Vec::new(), false),
+    };
+    let mut hashes = tg.member_hashes.write().expect("member hashes lock");
+    let members = users
+        .into_iter()
+        .filter_map(|u| match u {
+            tl::enums::User::User(u) if !u.is_self && !u.deleted => Some(u),
+            _ => None,
+        })
+        .take(LIMIT)
+        .map(|u| {
+            if let Some(h) = u.access_hash {
+                hashes.insert(u.id, h);
+            }
+            let username = u.username.clone().or_else(|| {
+                u.usernames.iter().flatten().find_map(|tl::enums::Username::Username(n)| n.active.then(|| n.username.clone()))
+            });
+            let name = [u.first_name.as_deref(), u.last_name.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+            let name = if name.is_empty() { username.clone().unwrap_or_else(|| "Unknown".into()) } else { name };
+            TgMember { id: u.id.to_string(), name, username, bot: u.bot }
+        })
+        .collect();
+    Ok(TgMembers { members, more })
+}
+
+/// Tags as Telegram entities. Someone without a username is tagged by name, which needs their
+/// access hash from when the group's members were listed. Without any of those none are sent, and
+/// Telegram finds @usernames and links in the text itself.
+fn mention_entities(tg: &Telegram, mentions: &[TgMention]) -> Vec<tl::enums::MessageEntity> {
+    if !mentions.iter().any(|m| m.kind == "name") {
+        return Vec::new();
+    }
+    let hashes = tg.member_hashes.read().expect("member hashes lock");
+    mentions
+        .iter()
+        .filter_map(|m| {
+            let (offset, length) = (m.offset, m.length);
+            match m.kind.as_str() {
+                "username" => return Some(tl::types::MessageEntityMention { offset, length }.into()),
+                "url" => return Some(tl::types::MessageEntityUrl { offset, length }.into()),
+                _ => {}
+            }
+            let user_id: i64 = m.user_id.as_deref()?.parse().ok()?;
+            let access_hash = *hashes.get(&user_id)?;
+            Some(
+                tl::types::InputMessageEntityMentionName {
+                    offset: m.offset,
+                    length: m.length,
+                    user_id: tl::types::InputUser { user_id, access_hash }.into(),
+                }
+                .into(),
+            )
+        })
+        .collect()
+}
+
+/// Sends a text message, with the people tagged in it.
+#[tauri::command]
+pub async fn telegram_send(
+    app: AppHandle,
+    tg: Tg<'_>,
+    chat_id: String,
+    text: String,
+    reply_to: Option<i32>,
+    mentions: Option<Vec<TgMention>>,
+) -> Result<TgMessage> {
     if text.trim().is_empty() {
         return Err(msg("Type a message first."));
     }
     let client = Telegram::client(&*tg.inner.lock().await)?;
     let (id, peer) = tg.entry(&chat_id)?;
+    let mut message = InputMessage::new().text(text.trim_end()).reply_to(reply_to);
+    let entities = mention_entities(&tg, mentions.as_deref().unwrap_or_default());
+    if !entities.is_empty() {
+        message = message.fmt_entities(entities);
+    }
     // Never leave the composer spinning: if Telegram doesn't confirm in time, say so (the message
     // may well have gone through, and then arrives in the chat as a live update anyway).
-    let sent = tokio::time::timeout(
-        Duration::from_secs(30),
-        client.send_message(peer, InputMessage::new().text(text.trim_end()).reply_to(reply_to)),
-    )
+    let sent = tokio::time::timeout(Duration::from_secs(30), client.send_message(peer, message))
     .await
     .map_err(|_| msg("Telegram didn't confirm the message in time. It may still have been sent; check the chat before sending it again."))?
     .map_err(tg_error)?;
@@ -925,6 +1054,56 @@ pub async fn telegram_react(tg: Tg<'_>, chat_id: String, message_id: i32, emojis
         .await
         .map_err(tg_error)?;
     Ok(())
+}
+
+/// One person's reaction to a message, for the list of who reacted.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgReactor {
+    emoji: String,
+    /// Their user (or channel) id.
+    id: String,
+    name: String,
+    mine: bool,
+}
+
+/// Who reacted to a message in a group, newest first (up to 100). Only plain emoji, as with the
+/// reactions themselves. One-to-one chats don't need this: it's you or them.
+#[tauri::command]
+pub async fn telegram_reactors(tg: Tg<'_>, chat_id: String, message_id: i32) -> Result<Vec<TgReactor>> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (_, peer) = tg.entry(&chat_id)?;
+    let request = tl::functions::messages::GetMessageReactionsList { peer: peer.into(), id: message_id, reaction: None, offset: None, limit: 100 };
+    let tl::enums::messages::MessageReactionsList::List(list) = client.invoke(&request).await.map_err(tg_error)?;
+    let mut names: HashMap<i64, String> = HashMap::new();
+    for u in &list.users {
+        if let tl::enums::User::User(u) = u {
+            let name = [u.first_name.as_deref(), u.last_name.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+            let name = if name.is_empty() { u.username.clone().unwrap_or_else(|| "Deleted Account".into()) } else { name };
+            names.insert(u.id, name);
+        }
+    }
+    for c in &list.chats {
+        match c {
+            tl::enums::Chat::Chat(c) => names.insert(c.id, c.title.clone()),
+            tl::enums::Chat::Channel(c) => names.insert(c.id, c.title.clone()),
+            _ => None,
+        };
+    }
+    Ok(list
+        .reactions
+        .into_iter()
+        .filter_map(|tl::enums::MessagePeerReaction::Reaction(r)| {
+            let tl::enums::Reaction::Emoji(e) = r.reaction else { return None };
+            let id = match r.peer_id {
+                tl::enums::Peer::User(p) => p.user_id,
+                tl::enums::Peer::Chat(p) => p.chat_id,
+                tl::enums::Peer::Channel(p) => p.channel_id,
+            };
+            let name = if r.my { "You".into() } else { names.get(&id).cloned().unwrap_or_else(|| "Someone".into()) };
+            Some(TgReactor { emoji: e.emoticon, id: id.to_string(), name, mine: r.my })
+        })
+        .collect())
 }
 
 /// Forwards messages from one chat to another, showing who they came from (as Telegram's Forward

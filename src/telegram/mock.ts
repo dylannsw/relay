@@ -2,7 +2,7 @@
 // Sign-in walks through every step: any API ID and 32-character hash, any phone number, then any
 // code ("22222" asks for a password too). Open the preview with ?tg=ready to skip sign-in.
 
-import type { TgChat, TgEvent, TgFolder, TgMessage, TgPreview, TgStatus } from "./types";
+import type { TgChat, TgEvent, TgFolder, TgMember, TgMessage, TgPreview, TgStatus } from "./types";
 
 const now = Date.now();
 const min = 60_000;
@@ -62,6 +62,17 @@ const msg = (m: Partial<TgMessage> & Pick<TgMessage, "chatId" | "text" | "date">
   ...m,
 });
 
+/** Who you can tag in the sample groups; Dee and Sgt Tan have no username, so they are tagged by name. */
+const mockMembers: TgMember[] = [
+  { id: "101", name: "Maya Lim", username: "mayalim", bot: false },
+  { id: "201", name: "Jun Hao", username: "junhao_t", bot: false },
+  { id: "202", name: "Priya Raman", username: "priyar", bot: false },
+  { id: "203", name: "Ken Ong", username: "kenong", bot: false },
+  { id: "204", name: "Dee", username: null, bot: false },
+  { id: "205", name: "Sgt Tan Wei Ming", username: null, bot: false },
+  { id: "206", name: "Demo Day Bot", username: "demoday_bot", bot: true },
+];
+
 const history: Record<string, TgMessage[]> = {
   "101": [
     msg({ chatId: "101", text: "Hey! Welcome to the team 👋", senderName: "Maya Lim", senderId: "101", date: now - 2 * day }),
@@ -72,6 +83,7 @@ const history: Record<string, TgMessage[]> = {
     msg({ chatId: "101", text: "", outgoing: true, senderName: "You", date: now - 1 * day + 1.1 * min, media: { kind: "sticker", label: "👍 Sticker", width: 512, height: 512, mime: "image/svg+xml" } }),
     msg({ chatId: "101", text: "Is this the right dashboard?", outgoing: true, senderName: "You", date: now - 1 * day + 1.2 * min }),
     msg({ chatId: "101", text: "Yes that's the one. Ping me if anything's unclear", senderName: "Maya Lim", senderId: "101", date: now - 20 * hr, reactions: [{ emoji: "🙏", count: 1, mine: true }] }),
+    msg({ chatId: "101", text: "This is the one you mean, right? The filters are along the top and the status column is on the far right.", senderName: "Maya Lim", senderId: "101", date: now - 19.9 * hr, reply: { id: 0, sender: "You", senderId: null, text: "Is this the right dashboard?" }, media: { kind: "photo", label: "Photo", width: 1280, height: 400, mime: null } }),
     msg({ chatId: "101", text: "Morning!", senderName: "Maya Lim", senderId: "101", date: now - 6 * min }),
     msg({ chatId: "101", text: "Can you send me the deck before standup?", senderName: "Maya Lim", senderId: "101", date: now - 4 * min }),
   ],
@@ -243,6 +255,11 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       return r(status());
     case "telegram_chats":
       return r({ folders, chats: [...chats].sort((a, b) => (b.last?.date ?? 0) - (a.last?.date ?? 0)), loaded: stage === "ready" }, 200);
+    case "telegram_members": {
+      const c = chats.find((x) => x.id === String(args.chatId));
+      if (!c || c.kind !== "group") return r({ members: [], more: false }, 150);
+      return r({ members: mockMembers, more: false }, 300);
+    }
     case "telegram_messages": {
       const list = history[String(args.chatId)] ?? [];
       const before = args.before as number | null;
@@ -252,7 +269,12 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       const id = String(args.chatId);
       // In the preview, a message with "fail!" in it fails, to show the not-sent state.
       if (String(args.text).includes("fail!")) return new Promise<T>((_, no) => setTimeout(() => no("Telegram didn't confirm the message in time. It may still have been sent; check the chat before sending it again."), 1500));
-      const m = msg({ chatId: id, text: String(args.text).trimEnd(), outgoing: true, senderName: "You", date: Date.now() });
+      const mentions = (args.mentions as { offset: number; length: number; kind: string }[] | null) ?? [];
+      const text = String(args.text).trimEnd();
+      const tagged = mentions.filter((x) => x.kind !== "url").map((x) => ({ offset: x.offset, length: x.length, kind: "mention" as const, url: null }));
+      // Telegram finds @usernames itself when no tags come with the message.
+      if (!mentions.length) for (const u of text.matchAll(/(^|\s)(@[A-Za-z0-9_]{4,32})/g)) tagged.push({ offset: u.index + u[1]!.length, length: u[2]!.length, kind: "mention", url: null });
+      const m = msg({ chatId: id, text, outgoing: true, senderName: "You", date: Date.now(), entities: tagged });
       const replyTo = args.replyTo as number | null;
       if (replyTo) {
         const o = history[id]?.find((x) => x.id === replyTo);
@@ -321,6 +343,20 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       m.reactions = list;
       setTimeout(() => listener?.({ reload: false, chat: null, message: null, edited: false, deleted: [], deletedChatId: null, reactions: { chatId, messageId: m.id, reactions: structuredClone(list), min: false } }), 400);
       return r(undefined, 250);
+    }
+    case "telegram_reactors": {
+      const m = history[String(args.chatId)]?.find((x) => x.id === args.messageId);
+      if (!m) return Promise.reject("That message is gone.");
+      const others = mockMembers.filter((x) => !x.bot);
+      let n = 0;
+      const list = m.reactions.flatMap((x) => [
+        ...(x.mine ? [{ emoji: x.emoji, id: "0", name: "You", mine: true }] : []),
+        ...Array.from({ length: x.count - (x.mine ? 1 : 0) }, () => {
+          const p = others[n++ % others.length];
+          return { emoji: x.emoji, id: p.id, name: p.name, mine: false };
+        }),
+      ]);
+      return r(list, 300);
     }
     case "telegram_forward": {
       const from = String(args.fromChatId);

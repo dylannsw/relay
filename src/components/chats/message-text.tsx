@@ -98,7 +98,7 @@ export function MessageText({ text, entities }: { text: string; entities: TgEnti
       else if (e.kind === "pre") node = <code key={k} className="my-1 block overflow-x-auto rounded-md bg-current/10 px-2 py-1.5 font-mono text-[0.85em] whitespace-pre">{node}</code>;
       else if (e.kind === "spoiler") node = <Spoiler key={k}>{node}</Spoiler>;
       else if (e.kind === "quote") node = <span key={k} className="my-0.5 block border-l-2 border-current/40 pl-2">{node}</span>;
-      else if (e.kind === "mention") node = <span key={k} className="font-medium text-link">{node}</span>;
+      else if (e.kind === "mention") node = <span key={k} className="font-medium text-mention">{node}</span>;
     }
     pieces.push(node);
   }

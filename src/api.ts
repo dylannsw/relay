@@ -4,7 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { mockInvoke } from "./mock";
 import { mockTelegramEvents } from "./telegram/mock";
-import type { TgChatList, TgEvent, TgMessage, TgProgress, TgStatus, TgStickerSet } from "./telegram/types";
+import type { TgChatList, TgEvent, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet } from "./telegram/types";
 import type {
   Account,
   CalendarConfig,
@@ -158,13 +158,17 @@ export const api = {
     /** Oldest first: the latest page, or the page before message `before`. */
     messages: (chatId: string, before?: number, limit?: number) =>
       call<TgMessage[]>("telegram_messages", { chatId, before: before ?? null, limit: limit ?? null }),
-    send: (chatId: string, text: string, replyTo?: number) =>
-      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null }),
+    send: (chatId: string, text: string, replyTo?: number, mentions?: TgMention[]) =>
+      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null, mentions: mentions?.length ? mentions : null }),
+    /** The people you could tag in a group: the most recently active, or (in a big group) those matching `query`. */
+    members: (chatId: string, query?: string) => call<TgMembers>("telegram_members", { chatId, query: query ?? null }),
     markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
     /** Shows you online to others (and gets their online status pushed) while Relay is focused. */
     setOnline: (online: boolean) => call<void>("telegram_set_online", { online }),
     /** Sets your reactions on a message (an empty list takes yours off). */
     react: (chatId: string, messageId: number, emojis: string[]) => call<void>("telegram_react", { chatId, messageId, emojis }),
+    /** Who reacted to a message in a group, newest first (up to 100). */
+    reactors: (chatId: string, messageId: number) => call<TgReactor[]>("telegram_reactors", { chatId, messageId }),
     /** Forwards messages to another chat; resolves to the new messages there, oldest first. */
     forward: (fromChatId: string, toChatId: string, ids: number[]) => call<TgMessage[]>("telegram_forward", { fromChatId, toChatId, ids }),
     /** Changes the text (or caption) of one of your messages; resolves to the message as it now is. */

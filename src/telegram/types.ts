@@ -108,6 +108,32 @@ export interface TgStickerSet {
   stickers: TgSticker[];
 }
 
+/** Someone in a group you can tag. */
+export interface TgMember {
+  /** Their user id. */
+  id: string;
+  name: string;
+  username: string | null;
+  bot: boolean;
+}
+
+export interface TgMembers {
+  members: TgMember[];
+  /** The group has more members than came back: search for names not among them. */
+  more: boolean;
+}
+
+/**
+ * A tag in a message being sent (UTF-16 offsets): someone tagged by name, or, alongside those,
+ * an @username or a link, which Telegram only finds by itself when no tags are sent.
+ */
+export interface TgMention {
+  offset: number;
+  length: number;
+  kind: "name" | "username" | "url";
+  userId: string | null;
+}
+
 /** How far a media download has got. */
 export interface TgProgress {
   chatId: string;
@@ -141,6 +167,15 @@ export interface TgMessage {
 export interface TgReaction {
   emoji: string;
   count: number;
+  mine: boolean;
+}
+
+/** One person's reaction to a message, for the list of who reacted. */
+export interface TgReactor {
+  emoji: string;
+  /** Their user (or channel) id. */
+  id: string;
+  name: string;
   mine: boolean;
 }
 
