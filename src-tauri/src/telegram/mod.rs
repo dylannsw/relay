@@ -87,6 +87,8 @@ pub struct Telegram {
     /// Access hashes of group members listed for tagging, by user id: a tag that names someone
     /// without a username has to carry it.
     member_hashes: RwLock<HashMap<i64, i64>>,
+    /// Names of senders Telegram sent without their details, once looked up (see `fill_senders`).
+    sender_names: RwLock<HashMap<PeerId, String>>,
 }
 
 /// Someone in a group you can tag.
@@ -232,6 +234,7 @@ impl Telegram {
             stickers: RwLock::new(stickers::StickerCache::default()),
             online: Default::default(),
             member_hashes: Default::default(),
+            sender_names: Default::default(),
         }
     }
 
@@ -589,7 +592,74 @@ impl Telegram {
                 }
             }
         }
-        list.iter().map(|m| convert::message(m, &by_id)).collect()
+        let mut out: Vec<TgMessage> = list.iter().map(|m| convert::message(m, &by_id)).collect();
+        self.fill_senders(client, &list, &mut out).await;
+        out
+    }
+
+    /// Names the senders Telegram left unnamed. An anonymous admin's message comes from the group
+    /// itself (signed with their title, if any) and shows as the group. Someone whose details didn't
+    /// come with the message is looked up through it, as Telegram's own apps do, and remembered.
+    async fn fill_senders(&self, client: &Client, list: &[Message], out: &mut [TgMessage]) {
+        for (m, t) in list.iter().zip(out.iter_mut()) {
+            if t.sender_name.is_some() || m.outgoing() || m.action().is_some() {
+                continue;
+            }
+            let chat = m.peer_id();
+            let as_group = || {
+                let name = self.chats.read().expect("chats lock").list.get(&chat).map(|e| e.chat.name.clone());
+                m.post_author().filter(|a| !a.trim().is_empty()).map(str::to_string).or(name)
+            };
+            match m.sender_id() {
+                None => {
+                    t.sender_name = as_group();
+                    t.sender_id = Some(convert::chat_id(chat));
+                }
+                Some(id) if id == chat => {
+                    t.sender_name = as_group();
+                    t.sender_id = Some(convert::chat_id(chat));
+                }
+                Some(id) => {
+                    let known = self.sender_names.read().expect("sender names lock").get(&id).cloned();
+                    let name = match known {
+                        Some(n) => Some(n),
+                        None => self.look_up_sender(client, m, id).await,
+                    };
+                    if let Some(n) = &name {
+                        self.sender_names.write().expect("sender names lock").insert(id, n.clone());
+                    }
+                    t.sender_name = name;
+                }
+            }
+        }
+    }
+
+    /// A sender's name, asked of Telegram by way of the message they sent (no access hash needed).
+    async fn look_up_sender(&self, client: &Client, m: &Message, id: PeerId) -> Option<String> {
+        let peer: tl::enums::InputPeer = self.peer_ref(m.peer_id())?.into();
+        let bare = id.bare_id()?;
+        match id.kind() {
+            PeerKind::User => {
+                let input = tl::types::InputUserFromMessage { peer, msg_id: m.id(), user_id: bare };
+                let users = client.invoke(&tl::functions::users::GetUsers { id: vec![input.into()] }).await.ok()?;
+                users.iter().find_map(|u| match u {
+                    tl::enums::User::User(u) => Some(user_name(u)),
+                    _ => None,
+                })
+            }
+            PeerKind::Channel => {
+                let input = tl::types::InputChannelFromMessage { peer, msg_id: m.id(), channel_id: bare };
+                let chats = match client.invoke(&tl::functions::channels::GetChannels { id: vec![input.into()] }).await.ok()? {
+                    tl::enums::messages::Chats::Chats(c) => c.chats,
+                    tl::enums::messages::Chats::Slice(c) => c.chats,
+                };
+                chats.iter().find_map(|c| match c {
+                    tl::enums::Chat::Channel(c) => Some(c.title.clone()),
+                    _ => None,
+                })
+            }
+            PeerKind::Chat => None,
+        }
     }
 
     fn peer_ref(&self, id: PeerId) -> Option<PeerRef> {
@@ -1056,6 +1126,16 @@ pub async fn telegram_react(tg: Tg<'_>, chat_id: String, message_id: i32, emojis
     Ok(())
 }
 
+/// A user's name as Telegram shows it: first and last name, else their username.
+fn user_name(u: &tl::types::User) -> String {
+    let name = [u.first_name.as_deref(), u.last_name.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+    if name.is_empty() {
+        u.username.clone().unwrap_or_else(|| "Deleted Account".into())
+    } else {
+        name
+    }
+}
+
 /// One person's reaction to a message, for the list of who reacted.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1078,9 +1158,7 @@ pub async fn telegram_reactors(tg: Tg<'_>, chat_id: String, message_id: i32) -> 
     let mut names: HashMap<i64, String> = HashMap::new();
     for u in &list.users {
         if let tl::enums::User::User(u) = u {
-            let name = [u.first_name.as_deref(), u.last_name.as_deref()].into_iter().flatten().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
-            let name = if name.is_empty() { u.username.clone().unwrap_or_else(|| "Deleted Account".into()) } else { name };
-            names.insert(u.id, name);
+            names.insert(u.id, user_name(u));
         }
     }
     for c in &list.chats {
