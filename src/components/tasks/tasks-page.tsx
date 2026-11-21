@@ -10,19 +10,10 @@ import {
   type Transition,
 } from "motion/react";
 import { toast } from "sonner";
+import { queueDelete, usePendingDeletes } from "@/lib/undo-delete";
 import { IconArrowBackUp, IconCheck, IconCircleCheck, IconCopy, IconFolder, IconPencil, IconBrandOpenai, IconSquareRounded, IconSquareRoundedCheckFilled, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ease, quick, smooth, tilt, trail } from "@/lib/motion";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { TaskMetrics } from "@/components/tasks/task-metrics";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -40,7 +31,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { matchShortcut } from "@/shortcuts";
 import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { errorText } from "@/api";
-import { completeTask, deleteTask, deleteTaskList, editTask, reloadTasks, useTasks, type UndoComplete } from "@/tasks/store";
+import { completeTask, deleteTaskList, editTask, reloadTasks, useTasks, type UndoComplete } from "@/tasks/store";
 import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
 import { sectionChip } from "@/tasks/chips";
 import { tasksToMarkdown } from "@/tasks/copy";
@@ -152,9 +143,7 @@ const without = <K, V>(m: Map<K, V>, keys: K[]) => {
 export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useTasks();
   const [editing, setEditing] = useState<ParsedTask | null>(null);
-  const [deleting, setDeleting] = useState<ParsedTask | null>(null);
-  /** The selection, while its delete is being confirmed. */
-  const [deletingMany, setDeletingMany] = useState<ParsedTask[] | null>(null);
+  const pendingDeletes = usePendingDeletes();
   /** Ticked cards waiting out the pause, by card key, with their timers. */
   const [ticked, setTicked] = useState<Map<string, number>>(() => new Map());
   const pending = useRef(new Map<string, ParsedTask>());
@@ -253,7 +242,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const columnCards = new Map<TaskStatus, Card[]>(STATUSES.map((s) => [s, []]));
   t.tasks.forEach((task, i) => {
     const key = keys[i]!;
-    if (dragging.has(key)) return;
+    if (dragging.has(key) || pendingDeletes.has(`task:${key}`)) return;
     const where = moved.get(key) ?? task.status;
     if (where !== "done") columnCards.get(where)!.push({ task, key });
   });
@@ -340,21 +329,24 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     }
   };
 
-  const remove = async (task: ParsedTask) => {
-    try {
-      await deleteTask(task);
-    } catch (e) {
-      toast.error(errorText(e));
+  const remove = (cards: Card[]) => {
+    if (!cards.length) return;
+    const queued = queueDelete(
+      cards.map(({ key }) => `task:${key}`),
+      cards.length === 1 ? "Task deleted" : `${cards.length} tasks deleted`,
+      async () => {
+        const missing = await deleteTaskList(cards.map(({ task }) => task));
+        if (missing) toast.error(`${missing} of ${cards.length} tasks couldn't be deleted`);
+      },
+    );
+    if (!queued) return;
+    const keys = cards.map(({ key }) => key);
+    for (const key of keys) {
+      window.clearTimeout(ticked.get(key));
+      pending.current.delete(key);
     }
-  };
-
-  const removeMany = async (tasks: ParsedTask[]) => {
-    try {
-      await deleteTaskList(tasks);
-      setSelected(new Set());
-    } catch (e) {
-      toast.error(errorText(e));
-    }
+    setTicked((state) => without(state, keys));
+    setSelected((selection) => new Set([...selection].filter((key) => !keys.includes(key))));
   };
 
   /** Puts the selected cards on the clipboard as a prompt for Claude, in board order. */
@@ -535,7 +527,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           hint="Delete selected tasks"
           icon={<IconTrash />}
           destructive
-          onClick={() => setDeletingMany(picked.map((c) => c.task))}
+          onClick={() => remove(picked)}
         />
       </SelectionBar>
 
@@ -611,8 +603,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                             onEdit={() => setEditing(task)}
                             onDelete={() => {
                               const group = menuGroup(key);
-                              if (group.length > 1) setDeletingMany(group.map((c) => c.task));
-                              else setDeleting(task);
+                              remove(group.length ? group : [{ task, key }]);
                             }}
                             onStatus={(s) => drop([{ task, key }], s)}
                             onSection={(s) => void moveSection(task, s)}
@@ -677,7 +668,10 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           sections={t.addSections}
           onClose={() => setEditing(null)}
           onDelete={() => {
-            setDeleting(editing);
+            const card = ordered.find(({ task }) => task === editing)
+              ?? ordered.find(({ task }) => task.line === editing.line && task.text === editing.text && task.section === editing.section);
+            if (card) remove([card]);
+            else toast.error("That task changed or was removed. Look at the list again.");
             setEditing(null);
           }}
           onComplete={() => {
@@ -687,42 +681,6 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           }}
         />
       )}
-      <AlertDialog
-        open={!!deleting || !!deletingMany}
-        onOpenChange={(open) => {
-          if (open) return;
-          setDeleting(null);
-          setDeletingMany(null);
-        }}
-      >
-        <AlertDialogContent
-          size="sm"
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            if (deletingMany) void removeMany(deletingMany);
-            else if (deleting) void remove(deleting);
-            else return;
-            e.preventDefault();
-            setDeleting(null);
-            setDeletingMany(null);
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>{deletingMany && deletingMany.length > 1 ? `Delete ${deletingMany.length} tasks?` : "Delete this task?"}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deletingMany && deletingMany.length > 1
-                ? "These tasks and their notes are removed from your to-do note. They aren't archived as completed."
-                : `“${(deletingMany?.[0] ?? deleting)?.text}” and its note are removed from your to-do note. It isn't archived as completed.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => (deletingMany ? void removeMany(deletingMany) : deleting && void remove(deleting))}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

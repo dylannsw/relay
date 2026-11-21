@@ -17,16 +17,6 @@ import {
 import { cn } from "@/lib/utils";
 import { api, errorText } from "@/api";
 import { fileSize } from "@/format";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
@@ -60,6 +50,7 @@ interface Props {
   onSaved: (id: string | undefined) => void;
   /** Sends the draft; `id` is its saved copy in Drafts, if any. */
   onSend: (id: string | undefined) => Promise<void>;
+  onDiscard: (draft: SavedDraft) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -139,10 +130,10 @@ function AttachmentChip({ file, onRemove }: { file: FileInfo; onRemove: () => vo
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-export function ComposeDialog({ draft, accounts, onChange, onSaved, onSend, onClose }: Props) {
+export function ComposeDialog({ draft, accounts, onChange, onSaved, onSend, onDiscard, onClose }: Props) {
   const [sending, setSending] = useState(false);
   const [showCc, setShowCc] = useState(!!draft.cc);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const discarding = useRef(false);
   const [saveState, setSaveState] = useState<SaveState>(draft.id ? "saved" : "idle");
   const account = accounts.find((a) => a.id === draft.accountId);
   const set = (patch: Partial<Draft>) => onChange({ ...draft, ...patch });
@@ -200,6 +191,7 @@ export function ComposeDialog({ draft, accounts, onChange, onSaved, onSend, onCl
 
   /** Closing keeps the draft: whatever isn't saved yet is saved first. */
   const close = async () => {
+    if (discarding.current) return;
     const hadContent = draftHasContent(latest.current);
     await saveNow();
     if (hadContent && savedId.current) toast("Saved to Drafts");
@@ -207,23 +199,16 @@ export function ComposeDialog({ draft, accounts, onChange, onSaved, onSend, onCl
   };
 
   const discard = async () => {
+    if (discarding.current || sending) return;
+    discarding.current = true;
     window.clearTimeout(timer.current);
     dirty.current = false;
     await queue.current;
-    if (savedId.current) {
-      try {
-        await api.deleteDraft(savedId.current);
-        onSaved(undefined);
-      } catch (e) {
-        toast.error(errorText(e));
-      }
-    }
-    onClose();
+    if (!(await onDiscard(toSavedDraft(latest.current, savedId.current)))) discarding.current = false;
   };
-  const requestDiscard = () => (draftHasContent(draft) ? setConfirmDiscard(true) : void discard());
 
   const send = async () => {
-    if (sending) return;
+    if (sending || discarding.current) return;
     setSending(true);
     try {
       // Let a save in flight finish, so it can't put the draft back after it's sent.
@@ -299,7 +284,7 @@ export function ComposeDialog({ draft, accounts, onChange, onSaved, onSend, onCl
               <Separator orientation="vertical" className="mx-1 data-vertical:h-5 data-vertical:self-center" />
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={requestDiscard}>
+                  <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => void discard()} disabled={sending}>
                     <IconTrash />
                     <span className="sr-only">Discard</span>
                   </Button>
@@ -417,20 +402,6 @@ export function ComposeDialog({ draft, accounts, onChange, onSaved, onSend, onCl
         </MailWindow>
       </Dialog>
 
-      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Discard this draft?</AlertDialogTitle>
-            <AlertDialogDescription>It will be removed from Drafts and can't be brought back.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void discard()}>
-              Discard
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

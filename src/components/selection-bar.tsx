@@ -13,30 +13,34 @@ export const SELECTION_BAR_ROOM = 86;
  * The floating action bar: what you can do with the selected items, pinned to the bottom centre
  * of the page while anything is selected. Its parent must be `relative`.
  *
- * Its colours are its own (.selection-bar in styles.css): light in Light, dark in Dark and in Mixed,
- * where it floats dark over the light content like the toasts and tooltips.
+ * It wears the menus' frosted glass (.menu-glass) and engraved dividers, so it matches the right-click
+ * menu in every theme; its chip and hover tints are in .selection-bar in styles.css.
  */
-export function SelectionBar({ open, label, onClear, children, placement = "floating" }: {
+export function SelectionBar({ open, label, ariaLabel = "Selection actions", onClear, children, placement = "floating", className }: {
   open: boolean;
-  /** "3 selected", "2 of 5 selected"… */
-  label: ReactNode;
+  /** "3 selected", "2 of 5 selected"… Leave it out for a bar that isn't about a selection (no count chip). */
+  label?: ReactNode;
+  /** What assistive tech calls the toolbar. */
+  ariaLabel?: string;
   /** Shows ✕ (Escape) when given. */
   onClear?: () => void;
   children: ReactNode;
   placement?: "floating" | "inline";
+  /** Extra classes for the bar's positioning wrapper, e.g. a different `bottom-*` lift. */
+  className?: string;
 }) {
   // Keep the last label while the bar leaves, so it doesn't read "0 selected" on its way out.
   const shown = useRef<ReactNode>(label);
   if (open) shown.current = label;
   const inline = placement === "inline";
   return (
-    <div className={cn("pointer-events-none z-(--z-floating) flex justify-center px-4", inline ? "relative shrink-0" : "absolute inset-x-0 bottom-5")}>
+    <div className={cn("pointer-events-none z-(--z-floating) flex justify-center px-4", inline ? "relative shrink-0" : "absolute inset-x-0 bottom-5", className)}>
       <AnimatePresence>
         {open && (
           <motion.div
             role="toolbar"
-            aria-label="Selection actions"
-            className={cn("selection-bar pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto no-scrollbar rounded-2xl p-1.5", inline && "my-2")}
+            aria-label={ariaLabel}
+            className={cn("selection-bar menu-glass pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto no-scrollbar rounded-2xl p-1.5 text-popover-foreground", inline && "my-2")}
             initial={{ opacity: 0, y: inline ? -4 : 16, scale: inline ? 1 : 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { type: "spring", duration: 0.35, bounce: 0.25, opacity: { duration: 0.15 } } }}
             exit={{ opacity: 0, y: inline ? -4 : 10, scale: inline ? 1 : 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
@@ -44,9 +48,11 @@ export function SelectionBar({ open, label, onClear, children, placement = "floa
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <span className="sb-chip flex h-9.5 shrink-0 items-center rounded-[10px] px-3 text-sm font-semibold whitespace-nowrap tabular-nums">
-              {shown.current}
-            </span>
+            {shown.current != null && (
+              <span className="sb-chip flex h-9.5 shrink-0 items-center rounded-[10px] px-3 text-sm font-semibold whitespace-nowrap tabular-nums">
+                {shown.current}
+              </span>
+            )}
             {children}
             {onClear && (
               <>
@@ -63,7 +69,7 @@ export function SelectionBar({ open, label, onClear, children, placement = "floa
 
 /** A thin upright line between groups of actions. */
 export function SelectionBarSeparator() {
-  return <div aria-hidden className="sb-separator mx-1 h-6 w-px shrink-0" />;
+  return <div aria-hidden className="menu-divider-upright mx-1 h-6 shrink-0" />;
 }
 
 /**

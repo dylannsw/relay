@@ -562,6 +562,27 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       vaultEvents.dispatchEvent(new Event("bookmarks-changed"));
       return delay(mockOrikoImport) as Promise<T>;
     }
+    case "bookmarks_capture": {
+      const request = args.request as import("./bookmarks/types").CaptureRequest;
+      if (args.vaultPath !== config.tasks.vaultPath) return Promise.reject("The connected vault changed. Refresh Bookmarks and try again.");
+      const source = request.url ?? request.files[0] ?? "";
+      // Mock links containing "fail" show the failure card.
+      if (source.includes("fail")) return delay({ status: "failed", message: "The site asks you to sign in before it shows this page.", retry: true }, 900) as Promise<T>;
+      const existing = mockBookmarks.find((note) => note.url && note.url === request.url);
+      if (existing) return delay({ status: "duplicate", id: existing.bookmarkId, boardId: existing.boardId, title: existing.title ?? "Bookmark" }) as Promise<T>;
+      const id = crypto.randomUUID();
+      const title = request.url ? new URL(request.url).hostname : source.split(/[\\/]/).at(-1) ?? "Bookmark";
+      const revision = String(++bookmarkRevision);
+      const notePath = `Relay/Bookmarks/Notes/${id}.md`;
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      mockBookmarks.unshift({
+        bookmarkId: id, notePath, revision, title, url: request.url, boardId: request.boardId,
+        clippedAt: new Date().toISOString(), media: [{ reference: "relay.png", kind: "image", mediaPath: relayIcon, revision: null }],
+        cover: null, migrationId: null, description: null, author: null, categories: [], tags: [], publishedAt: null, status: null,
+      });
+      vaultEvents.dispatchEvent(new Event("bookmarks-changed"));
+      return delay({ status: "saved", id, boardId: request.boardId, title, notePath, revision, warnings: [] }) as Promise<T>;
+    }
     case "bookmarks_write_boards":
     case "bookmarks_write_note":
     case "bookmarks_create":

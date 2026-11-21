@@ -8,7 +8,9 @@
 // is closed; the Completed note is written first, so a failure can only duplicate, never lose.
 
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 import { api, errorText } from "@/api";
+import { UNDO_DELETE_MS } from "@/lib/undo-delete";
 import type { Config, NoteFile, NoteKind, TasksConfig } from "@/types";
 import {
   addTask as addToNote,
@@ -453,6 +455,27 @@ export async function saveTasksConfig(patch: Partial<Omit<TasksConfig, "vaultPat
 export async function saveDisplayName(name: string): Promise<void> {
   const cfg = await api.saveDisplayName(name);
   set({ displayName: cfg.displayName });
+}
+
+export async function removeBanner(source: string): Promise<void> {
+  try {
+    await saveTasksConfig({ bannerImage: "" });
+    toast("Banner removed", {
+      duration: UNDO_DELETE_MS,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          if (state.config?.bannerImage) {
+            toast.info("A new banner is already set.");
+            return;
+          }
+          void saveTasksConfig({ bannerImage: source }).catch((error) => toast.error(errorText(error)));
+        },
+      },
+    });
+  } catch (error) {
+    toast.error(errorText(error));
+  }
 }
 
 export async function setBanner(source: string): Promise<void> {

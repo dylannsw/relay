@@ -9,7 +9,7 @@ Status is ready for implementation. The Oriko and task migrations have yet to ru
 | Area | Deliverable |
 | --- | --- |
 | Capture | C1–C6 and C9. Save pages and direct media URLs, paste or drop files, detect duplicate URLs, show capture progress, and use a full-page screenshot as a fallback. Dedicated capture sites are Pinterest, X, Instagram, and Threads. |
-| Wall and viewer | W1–W9 and W11. Masonry, pan and zoom, tile density, hover badges, media previews, full-screen viewer, details and actions, copyable swatches, rich social cards, and multi-select. Keep YouTube card presentation where metadata exists. |
+| Wall and viewer | W1–W9 and W11. Masonry, pan, tile density, hover badges, media previews, full-screen viewer, details and actions, copyable swatches, rich social cards, and multi-select. Keep YouTube card presentation where metadata exists. |
 | Boards and editing | B1, B2, B6, B7, B8, and B9. Named manual boards, unfiled Home, create a board while moving, global appearance, single and bulk property editing, and Relay-style Undo toasts. |
 | Vault cutover | A verified copy of the Oriko notes and media under Relay’s folders. Move the original Tick task and completion notes into `Relay/Tasks`. |
 | Optional follow-up | A **Save to Relay** URL command in Tick’s Raycast extension. The Relay feature ships independently. |
@@ -75,7 +75,7 @@ The source settings currently resolve to `oriko/clippings` and `oriko/attachment
 
 ### Wall and viewer
 
-1. Build a responsive, newest-first masonry wall using media aspect ratios. Virtualize the visible region and reserve tile geometry while media loads. Reuse Relay's theme and controls in light and dark modes. Desktop supports scroll, drag-to-pan from empty space or with Space held, zoom around the pointer, and reset. Touch supports pan and pinch. Tile size reflows the layout independently of zoom.
+1. Build a responsive, newest-first masonry wall using media aspect ratios. Virtualize the visible region and reserve tile geometry while media loads. Reuse Relay's theme and controls in light and dark modes. Desktop supports scroll and drag-to-pan from empty space or with Space held. Touch supports pan. The wall does not zoom; tile size is how the layout scales.
 2. The toolbar contains the active board picker, **Add bookmark**, and access to Bookmarks settings. Give tile overlays the configured top and bottom badge. Animate long property values on hover and provide a static value when Reduce Motion is active. Use posters or stills for videos and GIFs. Play muted video only when eligible and visible. Pause playback offscreen, in the background, or when the viewer opens.
 3. Make each tile keyboard reachable. Click, tap, or Enter opens an accessible media viewer with focus restoration on close. Support image pan, zoom, reset, and previous or next navigation in visible wall order. Give video normal playback, seeking, and mute controls. Respect the global open-muted preference and carry an explicit mute change through the viewer session. Provide a media picker for bookmarks with multiple saved assets.
 4. Show title, dimensions, filename, clipped date, source, and available properties in the viewer. Provide open source, open Obsidian note, reveal file, export media, edit properties, and remove actions. Export a local copy through Relay's desktop save or Downloads flow and handle filename collisions. Keep actions available through menus and keyboard focus. Offer copyable hex swatches from decoded local imagery or the displayed video poster.

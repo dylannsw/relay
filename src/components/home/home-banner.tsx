@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, errorText, isTauri } from "@/api";
-import { saveTasksConfig, setBanner, useTasksState } from "@/tasks/store";
+import { removeBanner, saveTasksConfig, setBanner, useTasksState } from "@/tasks/store";
 import { decodePicture, DotRenderer, overflow, type Picture } from "@/tasks/dots";
 
 const REVEAL_MS = 1100;
@@ -235,7 +235,7 @@ export function HomeBanner({ className }: { className?: string }) {
       <div
         data-banner-toolbar
         className={cn(
-          "absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-background/85 p-1 smooth-shadow-ring-sm backdrop-blur-md transition-opacity duration-150",
+          "absolute top-3 right-3 flex items-center gap-1 menu-glass rounded-lg p-1 transition-opacity duration-150",
           repositioning ? "opacity-100" : "opacity-0 group-hover/banner:opacity-100 focus-within:opacity-100",
         )}
       >
@@ -266,7 +266,7 @@ export function HomeBanner({ className }: { className?: string }) {
             >
               <IconGrain />
             </ToolbarButton>
-            <ToolbarButton label="Remove banner" destructive onClick={() => void save({ bannerImage: "" })}>
+            <ToolbarButton label="Remove banner" destructive onClick={() => void removeBanner(src)}>
               <IconTrash />
             </ToolbarButton>
           </>

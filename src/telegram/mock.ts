@@ -2,7 +2,7 @@
 // Sign-in walks through every step: any API ID and 32-character hash, any phone number, then any
 // code ("22222" asks for a password too). Open the preview with ?tg=ready to skip sign-in.
 
-import type { TgChat, TgEvent, TgFolder, TgMember, TgMessage, TgPreview, TgStatus } from "./types";
+import type { TgChat, TgEntityKind, TgEvent, TgFolder, TgMember, TgMessage, TgPreview, TgStatus } from "./types";
 
 const now = Date.now();
 const min = 60_000;
@@ -274,7 +274,8 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       const tagged = mentions.filter((x) => x.kind !== "url").map((x) => ({ offset: x.offset, length: x.length, kind: "mention" as const, url: null }));
       // Telegram finds @usernames itself when no tags come with the message.
       if (!mentions.length) for (const u of text.matchAll(/(^|\s)(@[A-Za-z0-9_]{4,32})/g)) tagged.push({ offset: u.index + u[1]!.length, length: u[2]!.length, kind: "mention", url: null });
-      const m = msg({ chatId: id, text, outgoing: true, senderName: "You", date: Date.now(), entities: tagged });
+      const formatted = ((args.formats as { offset: number; length: number; kind: TgEntityKind }[] | null) ?? []).map((f) => ({ ...f, url: null }));
+      const m = msg({ chatId: id, text, outgoing: true, senderName: "You", date: Date.now(), entities: [...tagged, ...formatted] });
       const replyTo = args.replyTo as number | null;
       if (replyTo) {
         const o = history[id]?.find((x) => x.id === replyTo);
@@ -389,7 +390,8 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       if (!m) return Promise.reject("That message is gone.");
       // In the preview, an edit with "fail!" in it fails, to show the error.
       if (String(args.text).includes("fail!")) return new Promise<T>((_, no) => setTimeout(() => no("This message is too old to edit."), 800));
-      Object.assign(m, { text: String(args.text).trimEnd(), entities: [], edited: m.edited || m.text !== String(args.text).trimEnd() });
+      const formatted = ((args.formats as { offset: number; length: number; kind: TgEntityKind }[] | null) ?? []).map((f) => ({ ...f, url: null }));
+      Object.assign(m, { text: String(args.text).trimEnd(), entities: formatted, edited: m.edited || m.text !== String(args.text).trimEnd() });
       const c = chats.find((x) => x.id === chatId);
       if (c?.last?.id === m.id) {
         c.last = { ...c.last, text: m.text || m.media?.label || "" };

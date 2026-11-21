@@ -50,11 +50,16 @@ export function SidebarHoverPill({
     const place = (el: HTMLElement, slide: boolean) => {
       const h = host.getBoundingClientRect();
       const r = el.getBoundingClientRect();
+      // A menu opens scaled up from 95%, and the pill lives inside that scale: measured on screen
+      // mid-animation it would come out 5% too small and off-centre once the menu settles. Divide
+      // the scale back out so it is placed in the host's own, unscaled coordinates.
+      const sx = host.offsetWidth ? h.width / host.offsetWidth : 1;
+      const sy = host.offsetHeight ? h.height / host.offsetHeight : 1;
       // Coming from nowhere it appears in place; only a move between rows slides.
       pill.style.transitionProperty = slide ? "translate, width, height, opacity" : "opacity";
-      pill.style.translate = `${r.left - h.left + host.scrollLeft}px ${r.top - h.top + host.scrollTop}px`;
-      pill.style.width = `${r.width}px`;
-      pill.style.height = `${r.height}px`;
+      pill.style.translate = `${(r.left - h.left) / sx + host.scrollLeft}px ${(r.top - h.top) / sy + host.scrollTop}px`;
+      pill.style.width = `${r.width / sx}px`;
+      pill.style.height = `${r.height / sy}px`;
       pill.style.opacity = active && el.matches(active) ? "0" : "1";
     };
 

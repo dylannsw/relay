@@ -122,6 +122,16 @@ pub struct TgMention {
     user_id: Option<String>,
 }
 
+/// Formatting in a message you're sending, `length` UTF-16 units from `offset`: "bold", "italic",
+/// "underline", "strike", "spoiler" or "code".
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgFormat {
+    offset: i32,
+    length: i32,
+    kind: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TgMe {
@@ -957,7 +967,7 @@ pub async fn telegram_members(tg: Tg<'_>, chat_id: String, query: Option<String>
 /// access hash from when the group's members were listed. Without any of those none are sent, and
 /// Telegram finds @usernames and links in the text itself.
 fn mention_entities(tg: &Telegram, mentions: &[TgMention]) -> Vec<tl::enums::MessageEntity> {
-    if !mentions.iter().any(|m| m.kind == "name") {
+    if mentions.is_empty() {
         return Vec::new();
     }
     let hashes = tg.member_hashes.read().expect("member hashes lock");
@@ -984,7 +994,29 @@ fn mention_entities(tg: &Telegram, mentions: &[TgMention]) -> Vec<tl::enums::Mes
         .collect()
 }
 
-/// Sends a text message, with the people tagged in it.
+/// Formatting as Telegram entities. Any that would reach past the text's end (after it's trimmed)
+/// are left out, since Telegram turns the whole message down for those.
+fn format_entities(formats: &[TgFormat], text: &str) -> Vec<tl::enums::MessageEntity> {
+    let units = text.encode_utf16().count() as i32;
+    formats
+        .iter()
+        .filter(|f| f.length > 0 && f.offset >= 0 && f.offset + f.length <= units)
+        .filter_map(|f| {
+            let (offset, length) = (f.offset, f.length);
+            Some(match f.kind.as_str() {
+                "bold" => tl::types::MessageEntityBold { offset, length }.into(),
+                "italic" => tl::types::MessageEntityItalic { offset, length }.into(),
+                "underline" => tl::types::MessageEntityUnderline { offset, length }.into(),
+                "strike" => tl::types::MessageEntityStrike { offset, length }.into(),
+                "spoiler" => tl::types::MessageEntitySpoiler { offset, length }.into(),
+                "code" => tl::types::MessageEntityCode { offset, length }.into(),
+                _ => return None,
+            })
+        })
+        .collect()
+}
+
+/// Sends a text message, with the people tagged in it and its formatting.
 #[tauri::command]
 pub async fn telegram_send(
     app: AppHandle,
@@ -993,6 +1025,7 @@ pub async fn telegram_send(
     text: String,
     reply_to: Option<i32>,
     mentions: Option<Vec<TgMention>>,
+    formats: Option<Vec<TgFormat>>,
 ) -> Result<TgMessage> {
     if text.trim().is_empty() {
         return Err(msg("Type a message first."));
@@ -1000,7 +1033,8 @@ pub async fn telegram_send(
     let client = Telegram::client(&*tg.inner.lock().await)?;
     let (id, peer) = tg.entry(&chat_id)?;
     let mut message = InputMessage::new().text(text.trim_end()).reply_to(reply_to);
-    let entities = mention_entities(&tg, mentions.as_deref().unwrap_or_default());
+    let mut entities = mention_entities(&tg, mentions.as_deref().unwrap_or_default());
+    entities.extend(format_entities(formats.as_deref().unwrap_or_default(), text.trim_end()));
     if !entities.is_empty() {
         message = message.fmt_entities(entities);
     }
@@ -1015,7 +1049,15 @@ pub async fn telegram_send(
 
 /// Sends a file from this PC, with an optional caption. Pictures go as photos, anything else as a file.
 #[tauri::command]
-pub async fn telegram_send_file(app: AppHandle, tg: Tg<'_>, chat_id: String, path: String, caption: String, reply_to: Option<i32>) -> Result<TgMessage> {
+pub async fn telegram_send_file(
+    app: AppHandle,
+    tg: Tg<'_>,
+    chat_id: String,
+    path: String,
+    caption: String,
+    reply_to: Option<i32>,
+    formats: Option<Vec<TgFormat>>,
+) -> Result<TgMessage> {
     let file = Path::new(&path);
     let size = std::fs::metadata(file).map_err(|_| msg("That file can't be read."))?.len();
     if size == 0 {
@@ -1033,7 +1075,11 @@ pub async fn telegram_send_file(app: AppHandle, tg: Tg<'_>, chat_id: String, pat
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     // Telegram turns these into photos; big ones (over 10 MB) it only takes as files.
     let photo = matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") && size <= 10 * 1024 * 1024;
-    let message = InputMessage::new().text(caption.trim_end()).reply_to(reply_to);
+    let mut message = InputMessage::new().text(caption.trim_end()).reply_to(reply_to);
+    let entities = format_entities(formats.as_deref().unwrap_or_default(), caption.trim_end());
+    if !entities.is_empty() {
+        message = message.fmt_entities(entities);
+    }
     let message = if photo { message.photo(uploaded) } else { message.document(uploaded) };
     let sent = tokio::time::timeout(Duration::from_secs(60), client.send_message(peer, message))
         .await
@@ -1216,9 +1262,17 @@ pub async fn telegram_forward(app: AppHandle, tg: Tg<'_>, from_chat_id: String, 
 
 /// Changes the text (or caption) of one of your messages; returns the message as it now is.
 #[tauri::command]
-pub async fn telegram_edit(app: AppHandle, tg: Tg<'_>, chat_id: String, message_id: i32, text: String) -> Result<TgMessage> {
+pub async fn telegram_edit(
+    app: AppHandle,
+    tg: Tg<'_>,
+    chat_id: String,
+    message_id: i32,
+    text: String,
+    formats: Option<Vec<TgFormat>>,
+) -> Result<TgMessage> {
     let client = Telegram::client(&*tg.inner.lock().await)?;
     let (id, peer) = tg.entry(&chat_id)?;
+    let entities = format_entities(formats.as_deref().unwrap_or_default(), text.trim_end());
     // Sent as is (not left out when empty), so a caption can be taken off.
     let request = tl::functions::messages::EditMessage {
         no_webpage: false,
@@ -1228,7 +1282,7 @@ pub async fn telegram_edit(app: AppHandle, tg: Tg<'_>, chat_id: String, message_
         message: Some(text.trim_end().to_string()),
         media: None,
         reply_markup: None,
-        entities: None,
+        entities: (!entities.is_empty()).then_some(entities),
         schedule_date: None,
         schedule_repeat_period: None,
         quick_reply_shortcut_id: None,

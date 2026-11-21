@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import {
@@ -15,9 +16,39 @@ const Toaster = ({ ...props }: ToasterProps) => {
   // Toasts float outside the frames, so Mixed shows them dark.
   const { resolvedTheme } = useTheme()
   const { toastPosition } = useAppearance()
+  const toaster = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const undo = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented || event.repeat || event.isComposing ||
+        !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey ||
+        event.key.toLowerCase() !== "z"
+      ) return
+
+      const target = event.composedPath()[0]
+      if (target instanceof HTMLElement && (
+        target.isContentEditable || target.closest("input, textarea, select")
+      )) return
+
+      // Sonner renders newest first and keeps exiting toasts in the DOM during their transition.
+      const actions = toaster.current?.querySelectorAll<HTMLButtonElement>(
+        '[data-sonner-toast][data-mounted="true"][data-visible="true"][data-removed="false"] button[data-action]:enabled',
+      )
+      const button = actions && Array.from(actions).find((action) => action.textContent.trim() === "Undo")
+      if (!button) return
+
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      button.click()
+    }
+    window.addEventListener("keydown", undo, true)
+    return () => window.removeEventListener("keydown", undo, true)
+  }, [])
 
   return (
     <Sonner
+      ref={toaster}
       theme={resolvedTheme === "light" ? "light" : "dark"}
       position={toastPosition}
       className="toaster group"

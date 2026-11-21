@@ -29,6 +29,7 @@ pub struct AppState {
     pub sync_lock: tokio::sync::Mutex<()>,
     pub calendar_lock: tokio::sync::Mutex<()>,
     pub bookmark_writes: Mutex<()>,
+    pub bookmark_captures: crate::bookmarks::capture::Reservations,
     pub auth_cancel: Mutex<Option<oneshot::Sender<()>>>,
 }
 
@@ -63,6 +64,7 @@ impl AppState {
             sync_lock: tokio::sync::Mutex::new(()),
             calendar_lock: tokio::sync::Mutex::new(()),
             bookmark_writes: Mutex::new(()),
+            bookmark_captures: Default::default(),
             auth_cancel: Mutex::new(None),
         })
     }

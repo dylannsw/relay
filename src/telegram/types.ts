@@ -134,6 +134,15 @@ export interface TgMention {
   userId: string | null;
 }
 
+export type TgFormatKind = "bold" | "italic" | "underline" | "strike" | "spoiler" | "code";
+
+/** Formatting on a message being sent or edited (UTF-16 offsets into its text). */
+export interface TgFormat {
+  offset: number;
+  length: number;
+  kind: TgFormatKind;
+}
+
 /** How far a media download has got. */
 export interface TgProgress {
   chatId: string;

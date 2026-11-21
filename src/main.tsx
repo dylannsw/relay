@@ -6,10 +6,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import App from "./App";
 import { initAppearance } from "./appearance";
+import { initCaretGlide } from "./lib/caret-glide";
 import "./styles.css";
 
 // Accent colour and font, before the first paint.
 initAppearance();
+initCaretGlide();
 
 // "Match Windows" was replaced by Mixed: keep whatever it looked like for people who chose it.
 try {

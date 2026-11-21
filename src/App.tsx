@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { UNDO_DELETE_MS } from "@/lib/undo-delete";
 import { api, errorText, isTauri } from "@/api";
 import type { Account, ComposeMode, Folder, ListQuery, MessageDetail, MessageSummary, Provider, SavedDraft, SenderGroup } from "@/types";
 import { addressList, dedupeAddresses, prefixSubject } from "@/format";
@@ -11,7 +12,8 @@ import { AppSidebar, isPageView, stepSidebarView, type View } from "@/components
 import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
 import { BookmarksPage } from "@/components/bookmarks/bookmarks-page";
-import { BookmarkHandoffDialog } from "@/components/bookmarks/bookmark-handoff-dialog";
+import { BookmarkDialogs } from "@/components/bookmarks/bookmark-dialogs";
+import { bookmarkUi, openBookmarkDialog, useBookmarkUi } from "@/bookmarks/ui";
 import { useBookmarkHandoffs } from "@/bookmarks/handoff";
 import { CalendarPage } from "@/components/calendar/calendar-page";
 import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
@@ -50,6 +52,7 @@ function useDebounced<T>(value: T, ms: number): T {
 
 export default function App() {
   const bookmarkHandoff = useBookmarkHandoffs();
+  const bookmarkRequests = useBookmarkUi();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [view, setView] = useState<View>({ kind: "home" });
   const [filter, setFilter] = useState<Filter>("all");
@@ -532,18 +535,22 @@ export default function App() {
     }
   };
 
-  const deleteDraft = async (d: SavedDraft) => {
+  const deleteDraft = async (d: SavedDraft, onDeleted?: () => void) => {
     try {
-      await api.deleteDraft(d.id);
+      if (d.id) await api.deleteDraft(d.id);
+      onDeleted?.();
       setDrafts((list) => list.filter((x) => x.id !== d.id));
       toast("Draft deleted", {
+        duration: UNDO_DELETE_MS,
         action: {
           label: "Undo",
           onClick: () => void api.saveDraft(d).then(refreshDrafts, (e) => toast.error(errorText(e))),
         },
       });
+      return true;
     } catch (e) {
       toast.error(errorText(e));
+      return false;
     }
   };
 
@@ -728,6 +735,21 @@ export default function App() {
   }, []);
 
   // ----- render -----
+
+  // A Raycast link opens Add bookmark once nothing else is in the way.
+  useEffect(() => {
+    if (!bookmarkHandoff.url || draft || settingsOpen || commandOpen || signingIn || bookmarkUi().dialog) return;
+    openBookmarkDialog({ kind: "add", url: bookmarkHandoff.url });
+    bookmarkHandoff.close();
+  }, [bookmarkHandoff, draft, settingsOpen, commandOpen, signingIn, bookmarkRequests.dialog]);
+
+  // A board asked for from anywhere opens Bookmarks; the page selects the board itself.
+  const destinationSeq = bookmarkRequests.destination?.seq;
+  useEffect(() => {
+    if (destinationSeq === undefined) return;
+    setView((v) => (v.kind === "bookmarks" ? v : { kind: "bookmarks" }));
+    clearSelection();
+  }, [destinationSeq]);
 
   const viewTitle =
     view.kind === "cleanup"
@@ -928,14 +950,13 @@ export default function App() {
         onMailto={(address) => startCompose("new", undefined, address)}
       />
 
-      {bookmarkHandoff.url && !draft && !settingsOpen && !commandOpen && !signingIn && (
-        <BookmarkHandoffDialog key={bookmarkHandoff.url} url={bookmarkHandoff.url} onClose={bookmarkHandoff.close} />
-      )}
+      <BookmarkDialogs />
       {draft && (
         <ComposeDialog
           draft={draft}
           accounts={accounts}
           onChange={setDraft}
+          onDiscard={(saved) => deleteDraft(saved, () => setDraft(null))}
           onSaved={(id) => {
             setDraft((d) => d && { ...d, id });
             void refreshDrafts();

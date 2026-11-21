@@ -37,7 +37,7 @@ export function mediaPaths(bookmarks: Bookmark[]) {
 export function editableProperty(name: string) {
   return !!name && name.trim() === name && !/[\r\n\0]/.test(name) &&
     !["bookmarkId", "migrationId", "boardId", "url", "title", "description", "author", "clippedAt", "publishedAt",
-      "tags", "categories", "status", "cover", "poster", "source", "created", "published", "updated", "grid", "folder", "social"].includes(name) &&
+      "tags", "categories", "status", "cover", "poster", "captureKey", "source", "created", "published", "updated", "grid", "folder", "social"].includes(name) &&
     !name.startsWith("orikoOriginalProperties");
 }
 

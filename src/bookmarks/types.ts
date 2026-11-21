@@ -1,5 +1,5 @@
 export interface BookmarksConfig {
-  tileSize: "tiny" | "small" | "medium" | "large" | "huge";
+  tileSize: "medium" | "large" | "huge";
   autoplayPreviews: boolean;
   openVideosMuted: boolean;
   topBadge: "none" | "clippedDate" | "publishedDate";
@@ -9,6 +9,13 @@ export interface BookmarksConfig {
 
 export type SocialSite = "x" | "instagram" | "threads" | "youtube";
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+/** The wall's tile sizes, as the S / M / L choice offered in Settings and the Bookmarks header. */
+export const BOOKMARK_TILE_SIZES = [
+  { id: "medium", label: "S" },
+  { id: "large", label: "M" },
+  { id: "huge", label: "L" },
+] as const;
 
 export const DEFAULT_BOOKMARKS_CONFIG: BookmarksConfig = {
   tileSize: "medium",
@@ -83,6 +90,19 @@ export interface NewBookmark {
 }
 
 export interface BookmarkTarget { id: string; path: string; expected: string }
+
+export interface CaptureRequest {
+  url: string | null;
+  files: string[];
+  boardId: string | null;
+}
+
+export type CaptureStage = "reading" | "downloading" | "capturing" | "saving";
+
+export type CaptureOutcome =
+  | { status: "saved"; id: string; boardId: string | null; title: string; notePath: string; revision: string; warnings: string[] }
+  | { status: "duplicate"; id: string; boardId: string | null; title: string }
+  | { status: "failed"; message: string; retry: boolean };
 
 export type BookmarkHandoff = { kind: "open"; url: string } | { kind: "invalid" };
 

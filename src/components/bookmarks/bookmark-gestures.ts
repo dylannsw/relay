@@ -7,7 +7,8 @@ const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const point = (event: PointerEvent): Point => ({ x: event.clientX, y: event.clientY });
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
-export function useBookmarkViewport(minimum = 0.65, maximum = 3, centerWall = false) {
+/** A scrolling, pannable viewport. Pass a zoom range to make it zoomable too; without one it never zooms. */
+export function useBookmarkViewport(zoomable?: { minimum: number; maximum: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [view, setView] = useState({ x: 0, y: 0, width: 0, height: 0 });
@@ -34,15 +35,14 @@ export function useBookmarkViewport(minimum = 0.65, maximum = 3, centerWall = fa
 
   function applyZoom(factor: number, around?: Point, delta: Point = { x: 0, y: 0 }, reset = false) {
     const element = ref.current;
-    if (!element) return;
+    if (!element || !zoomable) return;
     const before = zoomRef.current;
-    const after = reset ? 1 : Math.max(minimum, Math.min(maximum, before * factor));
+    const after = reset ? 1 : Math.max(zoomable.minimum, Math.min(zoomable.maximum, before * factor));
     const rect = element.getBoundingClientRect();
     const center = around ? { x: around.x - rect.left, y: around.y - rect.top } : { x: element.clientWidth / 2, y: element.clientHeight / 2 };
     const previous = pending.current ?? { x: element.scrollLeft, y: element.scrollTop };
-    const inset = (scale: number) => centerWall ? Math.max(0, element.clientWidth * (1 - scale) / 2) : 0;
     const next = reset ? { x: 0, y: 0 } : {
-      x: (previous.x + center.x - inset(before)) * after / before + inset(after) - center.x - delta.x,
+      x: (previous.x + center.x) * after / before - center.x - delta.x,
       y: (previous.y + center.y) * after / before - center.y - delta.y,
     };
     if (after === before && !pending.current) {
@@ -73,6 +73,7 @@ export function useBookmarkViewport(minimum = 0.65, maximum = 3, centerWall = fa
     };
     const wheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
+      // Always swallowed, so Ctrl+scroll never zooms the whole app; it only zooms a zoomable viewport.
       event.preventDefault();
       wheelZoom.current(Math.exp(-event.deltaY * (event.deltaMode === 1 ? 0.06 : 0.002)), { x: event.clientX, y: event.clientY });
     };
@@ -100,7 +101,8 @@ export function useBookmarkViewport(minimum = 0.65, maximum = 3, centerWall = fa
 type Tracking = { mode: "tap" | "pan" | "box"; origin: Point; id: number; moved: boolean; additive: boolean };
 interface GestureOptions {
   pan: (dx: number, dy: number) => void;
-  pinch: (scale: number, center: Point, delta: Point) => void;
+  /** Two-finger zoom. Without it, two fingers just pan. */
+  pinch?: (scale: number, center: Point, delta: Point) => void;
   canPan?: () => boolean;
   box?: (start: Point, end: Point, commit: boolean, additive: boolean) => void;
   cancelBox?: () => void;
@@ -179,7 +181,9 @@ export function useBookmarkGesture(options: GestureOptions) {
       const [c, d] = [...pointers.current.values()] as [Point, Point];
       const oldMid = midpoint(a, b);
       const newMid = midpoint(c, d);
-      options.pinch(distance(c, d) / Math.max(1, distance(a, b)), oldMid, { x: newMid.x - oldMid.x, y: newMid.y - oldMid.y });
+      const delta = { x: newMid.x - oldMid.x, y: newMid.y - oldMid.y };
+      if (options.pinch) options.pinch(distance(c, d) / Math.max(1, distance(a, b)), oldMid, delta);
+      else options.pan(delta.x, delta.y);
       return;
     }
     if (pointers.current.size !== 1 || current.id !== event.pointerId || current.mode === "tap") return;

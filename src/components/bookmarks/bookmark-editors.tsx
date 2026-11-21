@@ -1,11 +1,13 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import {
-  IconArrowDown, IconArrowUp, IconBookmark, IconBriefcase, IconCamera, IconCoffee, IconFolder, IconHeart,
-  IconPalette, IconPencil, IconPlus, IconStar, IconTrash,
+  IconArrowDown, IconArrowUp, IconBookmark, IconBriefcase, IconCamera, IconCoffee, IconFolder, IconFolderCog, IconHeart, IconHome,
+  IconPalette, IconPencil, IconPhoto, IconPlus, IconStar, IconTrash, IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { errorText } from "@/api";
-import { addBookmark, createBoardAndMove, deleteBookmarkBoard, editBoards, editBookmarks, equalBookmarkValues } from "@/bookmarks/actions";
+import { api, errorText } from "@/api";
+import { createBoardAndMove, deleteBookmarkBoard, editBoards, editBookmarks, equalBookmarkValues } from "@/bookmarks/actions";
+import { captureFiles, startCapture } from "@/bookmarks/capture";
+import { isWebUrl } from "@/bookmarks/ui";
 import { bookmarkTitle, bookmarkUrl, editableProperty } from "@/bookmarks/presentation";
 import type { Bookmark, BookmarkBoard, BookmarkNoteChange, BookmarksSnapshot, JsonValue } from "@/bookmarks/types";
 import { Button } from "@/components/ui/button";
@@ -13,7 +15,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const BOARD_ICONS = {
   bookmark: { label: "Bookmark", icon: IconBookmark },
@@ -33,13 +36,14 @@ export function BoardIcon({ icon }: { icon: string }) {
 
 const HOME = "home";
 const NEW = "new";
+const MANAGE = "manage";
 const boardValue = (id: string | null) => id ? `board:${id}` : HOME;
 const boardId = (value: string) => value === HOME ? null : value.slice(6);
 
 export function BoardOptions({ boards, allowNew }: { boards: BookmarkBoard[]; allowNew?: boolean }) {
   return (
     <>
-      <SelectItem value={HOME}>Home</SelectItem>
+      <SelectItem value={HOME}><IconHome /> Home</SelectItem>
       {boards.map((board) => (
         <SelectItem key={board.id} value={boardValue(board.id)}>
           <BoardIcon icon={board.icon} /> {board.name}
@@ -50,11 +54,23 @@ export function BoardOptions({ boards, allowNew }: { boards: BookmarkBoard[]; al
   );
 }
 
-export function BoardSelect({ boards, value, onChange }: { boards: BookmarkBoard[]; value: string | null; onChange: (id: string | null) => void }) {
+/** `onManage` adds a Manage Boards entry under the boards; choosing it opens the manager and keeps the current board. */
+export function BoardSelect({ boards, value, onChange, onManage, className, side, variant }: {
+  boards: BookmarkBoard[]; value: string | null; onChange: (id: string | null) => void; onManage?: () => void;
+  className?: string; side?: "top" | "bottom"; variant?: "default" | "glass";
+}) {
   return (
-    <Select value={boardValue(value)} onValueChange={(value) => onChange(boardId(value))}>
-      <SelectTrigger aria-label="Bookmark board" className="max-w-44"><SelectValue /></SelectTrigger>
-      <SelectContent><BoardOptions boards={boards} /></SelectContent>
+    <Select value={boardValue(value)} onValueChange={(next) => next === MANAGE ? onManage?.() : onChange(boardId(next))}>
+      <SelectTrigger aria-label="Bookmark board" variant={variant} className={cn("max-w-44", className)}><SelectValue /></SelectTrigger>
+      <SelectContent align="start" side={side}>
+        <BoardOptions boards={boards} />
+        {onManage && (
+          <>
+            <SelectSeparator />
+            <SelectItem value={MANAGE}><IconFolderCog /> Manage Boards</SelectItem>
+          </>
+        )}
+      </SelectContent>
     </Select>
   );
 }
@@ -102,29 +118,77 @@ function useSave() {
   return { busy, save };
 }
 
-export function AddBookmarkDialog({ snapshot, initialBoard, initialUrl = "", onClose, onAdded }: EditorProps & {
-  initialBoard: string | null; initialUrl?: string; onAdded?: (id: string, board: string | null) => void;
+export function AddBookmarkDialog({ snapshot, initialBoard, initialUrl = "", initialFiles = [], onClose }: EditorProps & {
+  initialBoard: string | null; initialUrl?: string; initialFiles?: string[];
 }) {
-  const [title, setTitle] = useState(() => initialUrl ? new URL(initialUrl).hostname : "");
   const [url, setUrl] = useState(initialUrl);
+  const [files, setFiles] = useState(initialFiles);
   const [destination, setDestination] = useState(initialBoard);
-  const { busy, save } = useSave();
+  const link = url.trim();
+  const invalid = !!link && !isWebUrl(link);
+  const ready = (!!link || files.length > 0) && !invalid;
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!ready) return;
+    // With a link, chosen files become that bookmark's media; on their own, each is a bookmark.
+    if (link) startCapture(snapshot.vaultPath, { url: link, files, boardId: destination });
+    else captureFiles(snapshot.vaultPath, files, destination);
+    onClose();
+  }
   return (
-    <Editor title="Add bookmark" onClose={onClose} busy={busy}>
-      <form onSubmit={(e) => void save(e, async () => {
-        const id = await addBookmark(snapshot.vaultPath, { title, url: url.trim() || null, boardId: destination });
-        onAdded?.(id, destination);
-        onClose();
-      })}>
+    <Editor title="Add bookmark" description="Save a page, a picture or video link, or files from this PC." onClose={onClose} busy={false}>
+      <form onSubmit={submit}>
         <div className="grid gap-3">
-          <Label htmlFor="bookmark-title">Title</Label>
-          <Input id="bookmark-title" required value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
-          <Label htmlFor="bookmark-url">URL (optional)</Label>
-          <Input id="bookmark-url" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
+          <Label htmlFor="bookmark-url">Link</Label>
+          <Input id="bookmark-url" type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" autoFocus
+            aria-invalid={invalid || undefined} />
+          {invalid && <p className="-mt-1 text-sm text-destructive">Enter an HTTP or HTTPS address.</p>}
+          <div className="flex items-center justify-between gap-2">
+            <Label>Files</Label>
+            <Button type="button" variant="outline" size="sm" onClick={() => void api.pickBookmarkFiles().then(
+              (picked) => { if (picked.length) setFiles((current) => [...new Set([...current, ...picked])]); },
+              (error) => toast.error(errorText(error)),
+            )}><IconPhoto /> Choose…</Button>
+          </div>
+          {files.length > 0 ? (
+            <ul className="grid max-h-32 gap-1 overflow-y-auto">
+              {files.map((file) => (
+                <li key={file} className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
+                  <span className="min-w-0 flex-1 truncate" title={file}>{file.split(/[\\/]/).at(-1)}</span>
+                  <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${file.split(/[\\/]/).at(-1)}`}
+                    onClick={() => setFiles((current) => current.filter((item) => item !== file))}><IconX /></Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="-mt-1 text-sm text-muted-foreground">Optional. Pictures or videos to save with the link, or on their own.</p>
+          )}
           <Label>Board</Label>
           <BoardSelect boards={snapshot.boards} value={destination} onChange={setDestination} />
         </div>
-        <EditorFooter busy={busy} disabled={!title.trim()} label="Add bookmark" onClose={onClose} />
+        <EditorFooter busy={false} disabled={!ready} label="Save bookmark" onClose={onClose} />
+      </form>
+    </Editor>
+  );
+}
+
+export function NewBoardDialog({ snapshot, onClose, onCreated }: EditorProps & { onCreated: (board: string) => void }) {
+  const [name, setName] = useState("");
+  const [icon, setIcon] = useState("bookmark");
+  const { busy, save } = useSave();
+  const invalid = boardNameError(name, snapshot.boards);
+  return (
+    <Editor title="New bookmark board" onClose={onClose} busy={busy}>
+      <form onSubmit={(e) => void save(e, async () => {
+        if (!name.trim() || invalid) return;
+        const board = { id: crypto.randomUUID(), name: name.trim(), icon };
+        await editBoards(snapshot, [...snapshot.boards, board], "Board created");
+        onCreated(board.id);
+        onClose();
+      })}>
+        <BoardFields name={name} onName={setName} icon={icon} onIcon={setIcon} />
+        {invalid && <p className="mt-2 text-sm text-destructive">{invalid}</p>}
+        <EditorFooter busy={busy} disabled={!name.trim() || !!invalid} label="Create board" onClose={onClose} />
       </form>
     </Editor>
   );

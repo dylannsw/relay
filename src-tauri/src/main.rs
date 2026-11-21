@@ -121,6 +121,7 @@ fn main() {
             commands::bookmarks_write_boards,
             commands::bookmarks_write_note,
             commands::bookmarks_create,
+            commands::bookmarks_capture,
             commands::bookmarks_recover_note,
             commands::bookmark_open_note,
             commands::bookmark_reveal_media,

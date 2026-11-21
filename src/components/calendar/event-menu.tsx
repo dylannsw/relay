@@ -11,8 +11,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { api, errorText } from "@/api";
-import { deleteEvent, deleteMany, reply, type Rsvp } from "@/calendar/edit";
-import type { CalendarEvent } from "@/types";
+import { deleteMany, reply, type Rsvp } from "@/calendar/edit";
+import type { CalendarEvent, EditScope } from "@/types";
 import { RESPONSE } from "./event-details";
 import { timeRange } from "./event-style";
 
@@ -49,7 +49,11 @@ export function EventMenu({ event: e, editable, group, onOpen, onDeleted, childr
   };
   const Going = e.myResponse ? RESPONSE[e.myResponse] : null;
   /** Of the selected events, the ones yours to delete (invitations and shared calendars aren't). */
-  const deletable = group?.filter((g) => g.canEdit && !!g.remoteId) ?? [];
+  const selected = group?.filter((g) => g.canEdit && !!g.remoteId) ?? [];
+  const deletable = selected.length > 1 ? selected : editable ? [e] : [];
+  const canDeleteSeries = deletable.some((event) => event.recurringEventId);
+  const hasGuests = deletable.some((event) => event.attendees.some((attendee) => !attendee.isYou));
+  const remove = (scope: EditScope, notify?: boolean) => void deleteMany(deletable, scope, notify).then((ok) => ok && onDeleted());
 
   return (
     <ContextMenu>
@@ -96,21 +100,34 @@ export function EventMenu({ event: e, editable, group, onOpen, onDeleted, childr
             Open in Google Calendar
           </ContextMenuItem>
         )}
-        {deletable.length > 1 ? (
+        {deletable.length > 0 && (
           <>
             <ContextMenuSeparator />
-            <ContextMenuItem variant="destructive" onSelect={() => void deleteMany(deletable).then((ok) => ok && onDeleted())}>
+            <ContextMenuItem variant="destructive" onSelect={() => remove("this")}>
               <IconTrash />
-              Delete {deletable.length} Events
+              {deletable.length > 1 ? `Delete ${deletable.length} Events` : "Delete"}
             </ContextMenuItem>
-          </>
-        ) : editable && (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuItem variant="destructive" onSelect={() => void deleteEvent(e).then((ok) => ok && onDeleted())}>
-              <IconTrash />
-              Delete
-            </ContextMenuItem>
+            {canDeleteSeries && (
+              <ContextMenuItem variant="destructive" onSelect={() => remove("all")}>
+                <IconTrash />
+                {deletable.length > 1 ? "Delete Including Recurring Series" : "Delete Recurring Series"}
+              </ContextMenuItem>
+            )}
+            {hasGuests && (
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>Delete Without Notifying Guests</ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  <ContextMenuItem variant="destructive" onSelect={() => remove("this", false)}>
+                    {deletable.length > 1 ? "Delete Selected Events" : "Delete This Event"}
+                  </ContextMenuItem>
+                  {canDeleteSeries && (
+                    <ContextMenuItem variant="destructive" onSelect={() => remove("all", false)}>
+                      {deletable.length > 1 ? "Delete Including Recurring Series" : "Delete Recurring Series"}
+                    </ContextMenuItem>
+                  )}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            )}
           </>
         )}
       </ContextMenuContent>

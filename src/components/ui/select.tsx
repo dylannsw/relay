@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { wrapLabels } from "@/lib/labels"
 import { Select as SelectPrimitive } from "radix-ui"
 import { IconChevronDown, IconCheck, IconChevronUp } from "@tabler/icons-react"
+import { GLASS_BUTTON } from "@/components/ui/button"
 import { MenuHoverPill } from "@/components/ui/menu-hover-pill"
 
 function Select({
@@ -35,17 +36,23 @@ function SelectValue({
 function SelectTrigger({
   className,
   size = "default",
+  variant = "default",
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
+  /** "glass" is Button's glass variant: the menus' frosted surface, for a trigger that floats over content. */
+  variant?: "default" | "glass"
 }) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
+      data-variant={variant}
       className={cn(
         "flex w-fit items-center justify-between gap-1 rounded-[10px] corner-smooth border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-field-focus disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9.5 data-[size=sm]:h-9.5 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
+        // The floating action bar's size and corner (see Button's glass compound variant).
+        variant === "glass" && cn(GLASS_BUTTON, "box-content rounded-2xl py-1.5 pr-3.5 pl-4 data-[size=default]:h-9.5"),
         className
       )}
       {...props}

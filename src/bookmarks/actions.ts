@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import { api, errorText } from "@/api";
 import { queueDelete, UNDO_DELETE_MS } from "@/lib/undo-delete";
 import { reloadBookmarks } from "./store";
-import type { Bookmark, BookmarkBoard, BookmarkNoteChange, BookmarksSnapshot, BookmarkWriteOutcome, NewBookmark } from "./types";
+import type { Bookmark, BookmarkBoard, BookmarkNoteChange, BookmarksSnapshot, BookmarkWriteOutcome } from "./types";
 
 type Changes = (bookmark: Bookmark) => BookmarkNoteChange[];
 type NoteUndo = { id: string; before: BookmarkNoteChange[]; after: BookmarkNoteChange[] };
@@ -207,18 +207,23 @@ export function deleteBookmarkBoard(snapshot: BookmarksSnapshot, id: string) {
   });
 }
 
-export function addBookmark(vault: string, draft: Omit<NewBookmark, "id">) {
-  return run(async () => {
-    const id = crypto.randomUUID();
-    const revision = saved(await api.createBookmark(vault, { ...draft, id }));
-    undoToast("Bookmark added", 0, async () => {
-      const fresh = await activeVault(vault);
-      const note = fresh.bookmarks.find((item) => item.bookmarkId === id);
-      if (!note || note.revision !== revision) throw new Error("The bookmark changed after it was added.");
-      saved(await api.recoverBookmark(vault, target(note)));
-      toast.success("Bookmark add undone");
-    });
-    return id;
+/** "Bookmark saved", with Undo while the note is still as it was saved. */
+export function offerUndoAdd(vault: string, id: string, revision: string, title = "Bookmark added", description?: string) {
+  let used = false;
+  toast(title, {
+    duration: UNDO_DELETE_MS,
+    description,
+    action: { label: "Undo", onClick: () => {
+      if (used) return;
+      used = true;
+      void run(async () => {
+        const fresh = await activeVault(vault);
+        const note = fresh.bookmarks.find((item) => item.bookmarkId === id);
+        if (!note || note.revision !== revision) throw new Error("The bookmark changed after it was added.");
+        saved(await api.recoverBookmark(vault, target(note)));
+        toast.success("Bookmark removed");
+      }).catch((e) => toast.error(errorText(e)));
+    } },
   });
 }
 

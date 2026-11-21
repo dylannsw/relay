@@ -4,6 +4,9 @@ import { cn } from "@/lib/utils"
 import { Slot } from "radix-ui"
 import { wrapLabels } from "@/lib/labels"
 
+/** The frosted-glass button: .menu-glass paints the surface, styles.css the hover (see "Glass buttons"). Also used by SelectTrigger. */
+export const GLASS_BUTTON = "menu-glass text-popover-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ring/60"
+
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-semibold whitespace-nowrap transition-[color,background-color,border-color,box-shadow,opacity,translate] outline-none select-none focus-visible:border-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4.5",
   {
@@ -28,6 +31,8 @@ const buttonVariants = cva(
         // (darker in light mode, lighter in dark) so it reads at ≥ 4.5:1, like tinted chips.
         success:
           "bg-[color-mix(in_srgb,var(--chip-green)_14%,transparent)] text-[oklch(from_var(--chip-green)_min(l,0.5)_c_h)] hover:bg-[color-mix(in_srgb,var(--chip-green)_24%,transparent)] focus-visible:border-(--chip-green)/40 focus-visible:ring-(--chip-green)/20 dark:bg-[color-mix(in_srgb,var(--chip-green)_20%,transparent)] dark:text-[oklch(from_var(--chip-green)_max(l,0.8)_c_h)] dark:hover:bg-[color-mix(in_srgb,var(--chip-green)_30%,transparent)]",
+        // The menus' frosted glass, for a button that floats over content (the Bookmarks board picker).
+        glass: GLASS_BUTTON,
         link: "text-primary underline-offset-4 hover:underline",
       },
       // Optical balance: the side with an icon gets 1px more padding than the text side
@@ -47,6 +52,12 @@ const buttonVariants = cva(
           "size-9.5 rounded-[10px] corner-smooth in-data-[slot=button-group]:rounded-lg",
       },
     },
+    compoundVariants: [
+      // The glass button is the floating action bar's size and corner: a 38px control inside 6px of padding and the
+      // rim, built the same way (content-box) so the two stay equal at any display scale, at rounded-2xl (a plain
+      // round corner; styles.css drops the smoothing for glass).
+      { variant: "glass", size: "default", class: "box-content h-9.5 rounded-2xl px-4 py-1.5 data-icon-end:pr-4 data-icon-start:pl-4" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

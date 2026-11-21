@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { api, errorText } from "@/api";
+import { usePendingDeletes } from "@/lib/undo-delete";
 import type { CalendarEvent } from "@/types";
 import { subscribeCalendarUpdates } from "./store";
 import { forgetSeries } from "./repeat";
@@ -49,10 +50,6 @@ export function patchEventLocal(id: string, patch: Partial<CalendarEvent>) {
   set({ events: state.events.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
 }
 
-export function removeEventLocal(id: string) {
-  set({ events: state.events.filter((e) => e.id !== id) });
-}
-
 export function addEventLocal(e: CalendarEvent) {
   set({ events: [...state.events, e] });
 }
@@ -65,13 +62,22 @@ export function useCalendarEvents(): EventsState {
     // For the life of the app: the sidebar badge always wants fresh numbers.
     subscribeCalendarUpdates(() => void loadEvents());
   }, []);
-  return useSyncExternalStore(
+  const pendingDeletes = usePendingDeletes();
+  const snapshot = useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
     () => state,
   );
+  return useMemo(() => ({
+    ...snapshot,
+    events: snapshot.events.filter((event) =>
+      !pendingDeletes.has(`event:${event.id}`) &&
+      !pendingDeletes.has(`series:${event.calendarId}:${event.recurringEventId}`) &&
+      !pendingDeletes.has(`feed:${event.calendarId}`)
+    ),
+  }), [snapshot, pendingDeletes]);
 }
 
 /** Today's events, minus ones you declined, in start order. */

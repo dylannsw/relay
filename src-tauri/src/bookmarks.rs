@@ -1,5 +1,6 @@
 //! The Obsidian collection is authoritative. Snapshots and media references are rebuilt from disk.
 
+pub mod capture;
 mod edits;
 mod media;
 pub mod oriko;
@@ -29,9 +30,9 @@ const BOARD_FILE: &str = "_Boards.md";
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TileSize {
-    Tiny,
-    Small,
+    // The smallest two sizes were dropped; a config saved with one of them opens as the smallest left.
     #[default]
+    #[serde(alias = "tiny", alias = "small")]
     Medium,
     Large,
     Huge,
@@ -221,6 +222,7 @@ fn standard_field(name: &str) -> bool {
             | "status"
             | "cover"
             | "poster"
+            | "captureKey"
     )
 }
 

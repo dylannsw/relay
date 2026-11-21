@@ -497,6 +497,16 @@
   from { opacity: 0; filter: blur(4px); translate: 0 -6px; }
 }
 
+/* A bookmark tile that was just added to the wall: grows in from slightly smaller (scale, not translate,
+   so it never fights the tile's own positioning transform). */
+@keyframes wall-tile-in {
+  from { opacity: 0; scale: 0.92; }
+}
+/* ...and the same way out for a tile that was just removed. */
+@keyframes wall-tile-out {
+  to { opacity: 0; scale: 0.92; }
+}
+
 /* Light mode: the framed content (main panel, email/compose/settings cards) sits flat, outlined
    by the shadow ring's hairline alone. Unlayered so it beats their smooth-shadow-ring-* utility. */
 :root:not(.dark, .mixed) .frame {
@@ -542,6 +552,12 @@
    cn()'s class merging keeps it. */
 @utility no-scrollbar {
   scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-caret-gliding] {
+    caret-color: transparent !important;
+  }
 }
 
 /* Light corner smoothing: the curve eases into the straight edges a little instead of meeting
@@ -607,7 +623,7 @@
   --done: var(--chip-green);
   --done-ink: oklch(from var(--done) min(l, 0.5) c h);
   --done-shine: var(--foreground);
-  background: color-mix(in srgb, var(--muted) 70%, transparent);
+  background: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--muted) 70%, transparent));
   backdrop-filter: blur(12px) saturate(1.4);
   color: var(--muted-foreground);
   box-shadow: 0 12px 32px rgb(0 0 0 / 10%), inset 0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent);
@@ -615,7 +631,7 @@
   @variant dark {
     --done-ink: oklch(from var(--done) max(l, 0.8) c h);
     --done-shine: #fff;
-    background: color-mix(in srgb, var(--muted) 55%, transparent);
+    background: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--muted) 55%, transparent));
     box-shadow: 0 12px 32px rgb(0 0 0 / 40%), inset 0 0 0 1px rgb(255 255 255 / 7%);
   }
   &[data-active] {
@@ -676,67 +692,36 @@
   pointer-events: none;
 }
 
-/* The floating action bar for selected items (selection-bar.tsx): a white bar with grey chips in
-   Light; near-black with a step-lighter chip in Dark, and in Mixed too, where it floats over the
-   light content. Its own tokens, since inside Mixed's light frame the dark: variant doesn't apply.
-   Unlayered, so these win over utilities. */
-.selection-bar {
-  --sb-bg: oklch(1 0 0);
-  --sb-edge: oklch(0.922 0 0);
-  --sb-chip: oklch(0.965 0 0);
-  --sb-chip-hover: oklch(0.935 0 0);
-  --sb-hover: oklch(0.955 0 0);
-  --sb-pressed: oklch(0.92 0 0);
-  --sb-text: oklch(0.34 0 0);
-  --sb-danger: oklch(0.577 0.245 27.325);
-  --sb-shadow: 0 1px 2px rgb(0 0 0 / 5%), 0 8px 24px rgb(0 0 0 / 8%);
-  background-color: var(--sb-bg);
-  color: var(--sb-text);
-  border: 1px solid var(--sb-edge);
-  box-shadow: var(--sb-shadow);
-}
-:is(.dark, .mixed) .selection-bar {
-  --sb-bg: #0c0c0c;
-  --sb-edge: rgb(255 255 255 / 8%);
-  --sb-chip: #1c1c1c;
-  --sb-chip-hover: #262626;
-  --sb-hover: #1c1c1c;
-  --sb-pressed: #2a2a2a;
-  --sb-text: oklch(0.96 0 0);
-  --sb-danger: oklch(0.704 0.191 22.216);
-  --sb-shadow: 0 0 0 1px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 35%);
-}
+/* The floating action bar for selected items (selection-bar.tsx): the menus' frosted glass (.menu-glass,
+   below) in every theme, with its chips and hover fills in the same translucent foreground tints as the
+   menu hover pill, and the menus' engraved divider stood upright (.menu-divider-upright). */
 .selection-bar .sb-chip {
-  background-color: var(--sb-chip);
+  background-color: color-mix(in srgb, var(--foreground) 9%, transparent);
 }
 .selection-bar .sb-action {
-  color: var(--sb-text);
   transition: background-color 0.15s ease;
 }
 .selection-bar .sb-action:hover {
-  background-color: var(--sb-hover);
+  background-color: color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 .selection-bar .sb-action.sb-chip:hover {
-  background-color: var(--sb-chip-hover);
+  background-color: color-mix(in srgb, var(--foreground) 14%, transparent);
 }
 .selection-bar .sb-action:active {
-  background-color: var(--sb-pressed);
+  background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 .selection-bar .sb-action[data-destructive] {
-  color: var(--sb-danger);
-}
-.selection-bar .sb-separator {
-  background-color: var(--sb-edge);
+  color: var(--destructive);
 }
 
 /* ==== Toasts: frosted like the command bar ====
-   Same recipe as .cmdbar (75% tint, blur 20px, saturate 1.5, hairline border, squircle), tinted
+   Same recipe as .cmdbar (80% tint plus --frost-shade of black, blur 20px, saturate 1.5, hairline border, squircle), tinted
    to the toast's own theme. Keyed to Sonner's data-sonner-theme, so Mixed (dark toasts over a
    light app) gets the dark glass. Unlayered with one more attribute than Sonner's injected rules,
    so these win. --normal-bg stays the solid popover colour: Sonner paints the action button's
    label with it, and a translucent value would let the page show through the label. */
 [data-sonner-toaster] {
-  --toast-bg: rgb(255 255 255 / 75%);
+  --toast-bg: color-mix(in srgb, black var(--frost-shade), rgb(255 255 255 / 75%));
   --toast-edge: rgb(0 0 0 / 8%);
   --toast-title: rgb(10 10 10);
   /* 55% black over the glass: ≈4.7:1 on white */
@@ -746,7 +731,7 @@
   --toast-tile-hover: rgb(0 0 0 / 10%);
 }
 [data-sonner-toaster][data-sonner-theme="dark"] {
-  --toast-bg: rgb(14 14 14 / 75%);
+  --toast-bg: color-mix(in srgb, black var(--frost-shade), rgb(14 14 14 / 80%));
   --toast-edge: rgb(255 255 255 / 10%);
   --toast-title: rgb(250 250 250);
   /* 60% white over the glass: ≈6.5:1 on the dark tint */
@@ -775,6 +760,10 @@
    22px of the row as the icon, so a one-line toast keeps its height. It sits ~8.6px from the toast's top
    and bottom edges; the negative right margin pulls it into the toast's right padding
    to the same ~8.6px from the right edge (measured). Radius: the toast's 24px less that inset. */
+[data-sonner-toaster] [data-sonner-toast][data-visible="true"] [data-action] {
+  pointer-events: auto;
+}
+
 [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button][data-action] {
   height: 30px;
   margin-block: -4px;
@@ -796,14 +785,23 @@
 }
 
 /* ==== Menus: frosted glass (context, dropdown and select menus, and menu-like popover lists marked .menu-glass) ====
-   The sidebar colour at 72% (light) / 75% (dark) over a 12px blur, saturate 1.8: the blur is kept lighter
+   The sidebar colour at 72% (light) / 80% (dark), plus --frost-shade of black, over a 12px blur, saturate 1.8: the blur is kept lighter
    than the command bar's 20px so colour behind still reads as soft shapes rather than a flat tint;
    a hairline rim inside and engraved separators (a dark line over a light one).
    Light glass in Light and Mixed (menus stay light there), dark glass in Dark. Unlayered, so these
    win over the components' bg-popover / smooth-shadow-ring-lg / focus:bg-accent / bg-border. */
-:is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], .menu-glass) {
-  --menu-bg: color-mix(in srgb, var(--sidebar) 72%, transparent);
+:root {
   --menu-rim: rgb(0 0 0 / 8%);
+  /* How much black the frosted surfaces (menus here, the command bar below) have mixed into their tint.
+     The one knob for "how dark is the glass"; it shows on the light glass, while the dark tints are
+     already near-black and get theirs from the higher alpha set on each. */
+  --frost-shade: 5%;
+}
+.dark {
+  --menu-rim: rgb(255 255 255 / 9%);
+}
+:is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], .menu-glass) {
+  --menu-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--sidebar) 72%, transparent));
   --menu-shadow: 0 12px 32px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
   --menu-groove: rgb(0 0 0 / 9%);
   --menu-groove-light: rgb(255 255 255 / 75%);
@@ -813,8 +811,7 @@
   box-shadow: var(--menu-shadow);
 }
 .dark :is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], .menu-glass) {
-  --menu-bg: color-mix(in srgb, var(--sidebar) 75%, transparent);
-  --menu-rim: rgb(255 255 255 / 9%);
+  --menu-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--sidebar) 80%, transparent));
   /* a dark outline just outside the rim, and a deep shadow. No inset top highlight: inside the rim it
      doubled the top edge into a brighter 2px band. */
   --menu-shadow: 0 0 0 1px rgb(0 0 0 / 45%), 0 12px 32px rgb(0 0 0 / 45%);
@@ -835,11 +832,33 @@
   box-shadow: inset 0 0 0 1px var(--border);
 }
 /* Engraved separator: 2px tall, edge to edge (the components' -mx-2 meets the rim). */
-:is([data-slot="context-menu-separator"], [data-slot="dropdown-menu-separator"], [data-slot="select-separator"]) {
+:is([data-slot="context-menu-separator"], [data-slot="dropdown-menu-separator"], [data-slot="select-separator"], .menu-divider) {
   height: 0;
   background: none;
   border-top: 1px solid var(--menu-groove);
   border-bottom: 1px solid var(--menu-groove-light);
+}
+/* Glass buttons (variant="glass" on Button and SelectTrigger): a button wearing the menus' frosted surface.
+   The surface rule above is unlayered, so it would also pin the colour while hovered; this steps the glass
+   toward the foreground instead (8% light, 10% dark), the way the hover pill tints a menu row, and holds
+   that tint while the button's own menu is open. */
+.menu-glass[data-variant="glass"] {
+  /* A plain round corner, like the action bar's (Button and SelectTrigger add corner-smooth). */
+  corner-shape: round;
+  transition: background-color 150ms var(--ease-out-soft);
+}
+.menu-glass[data-variant="glass"]:is(:hover, [aria-expanded="true"]):not(:disabled) {
+  background-color: color-mix(in srgb, var(--foreground) 8%, var(--menu-bg));
+}
+.dark .menu-glass[data-variant="glass"]:is(:hover, [aria-expanded="true"]):not(:disabled) {
+  background-color: color-mix(in srgb, var(--foreground) 10%, var(--menu-bg));
+}
+/* The same engraving stood upright, for dividers between buttons in a row (inside a .menu-glass surface). */
+.menu-divider-upright {
+  width: 0;
+  background: none;
+  border-left: 1px solid var(--menu-groove);
+  border-right: 1px solid var(--menu-groove-light);
 }
 
 /* ==== Command bar: the Zen theme's floating URL bar (my-tweaks.css sections 8, 9, 14, 20, 21, 24) ====
@@ -847,7 +866,7 @@
    win over the Dialog's and cmdk's utility classes. */
 .cmdbar {
   /* Frosted, as Zen's open URL bar (zzz-my-arc urlbar.css: arc-urlbar-bg / -blur / -saturation) */
-  --cb-bg: rgb(14 14 14 / 75%);
+  --cb-bg: color-mix(in srgb, black var(--frost-shade), rgb(14 14 14 / 80%));
   --cb-frost: blur(20px) saturate(1.5);
   --cb-edge: var(--border);
   --cb-outline: rgb(0 0 0 / 45%);

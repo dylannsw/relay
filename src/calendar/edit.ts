@@ -1,11 +1,10 @@
-// Creating, changing, deleting and replying to events. Each asks what it needs first
-// (which occurrences of a repeating event, whether to email the guests), shows the result
-// right away, then saves to Google and reads the events again.
+// Creating, changing, deleting and replying to Google Calendar events.
 
 import { toast } from "sonner";
+import { queueDelete } from "@/lib/undo-delete";
 import { api, errorText } from "@/api";
 import type { CalendarEvent, EditScope, EventChanges, EventTimes, NewEvent } from "@/types";
-import { addEventLocal, loadEvents, patchEventLocal, removeEventLocal } from "./events";
+import { addEventLocal, loadEvents, patchEventLocal } from "./events";
 import { addDays, parseDate } from "./layout";
 import { ask } from "./prompt";
 
@@ -47,7 +46,7 @@ export function shiftTimes(e: CalendarEvent, days: number, minutes: number, endM
 /** People on the event besides you. */
 const hasGuests = (e: { attendees: { isYou: boolean }[] }) => e.attendees.some((a) => !a.isYou);
 
-async function chooseScope(e: CalendarEvent, verb: "Change" | "Delete" | "Reply to"): Promise<EditScope | null> {
+async function chooseScope(e: CalendarEvent, verb: "Change" | "Reply to"): Promise<EditScope | null> {
   if (!e.recurringEventId) return "this";
   const v = await ask(
     `${verb} a repeating event`,
@@ -62,14 +61,12 @@ async function chooseScope(e: CalendarEvent, verb: "Change" | "Delete" | "Reply 
   return v as EditScope | null;
 }
 
-async function chooseNotify(kind: "change" | "new" | "delete"): Promise<boolean | null> {
+async function chooseNotify(kind: "change" | "new"): Promise<boolean | null> {
   const v = await ask(
-    kind === "delete" ? "Let guests know it's cancelled?" : "Send updates to guests?",
+    "Send updates to guests?",
     kind === "new"
       ? "Google can email the guests an invitation."
-      : kind === "delete"
-        ? "Google can email the guests that this event was cancelled."
-        : "Google can email the guests about this change.",
+      : "Google can email the guests about this change.",
     [
       { label: "Don't send", value: "no", variant: "outline" },
       { label: "Send", value: "yes" },
@@ -138,34 +135,12 @@ export async function createEvent(input: NewEvent, onShown?: () => void): Promis
   }
 }
 
-export async function deleteEvent(e: CalendarEvent): Promise<boolean> {
-  const scope = await chooseScope(e, "Delete");
-  if (!scope) return false;
-  let notify = false;
-  if (hasGuests(e)) {
-    const n = await chooseNotify("delete");
-    if (n === null) return false;
-    notify = n;
-  } else if (scope === "this" && !e.recurringEventId) {
-    const ok = await ask(`Delete “${e.title}”?`, "It's removed from your Google calendar.", [
-      { label: "Delete", value: "yes", variant: "destructive" },
-    ]);
-    if (!ok) return false;
-  }
-  removeEventLocal(e.id);
-  try {
-    await api.deleteCalendarEvent(e.id, scope, notify);
-    return true;
-  } catch (err) {
-    toast.error(errorText(err));
-    return false;
-  } finally {
-    void loadEvents();
-  }
+export function deleteEvent(event: CalendarEvent): Promise<boolean> {
+  return deleteMany([event]);
 }
 
 /** For several events: which occurrences, asked once if any of them repeats. */
-async function chooseScopeMany(events: CalendarEvent[], verb: "Change" | "Delete"): Promise<EditScope | null> {
+async function chooseScopeMany(events: CalendarEvent[], verb: "Change"): Promise<EditScope | null> {
   if (!events.some((e) => e.recurringEventId)) return "this";
   const v = await ask(
     `${verb} repeating events`,
@@ -190,7 +165,7 @@ async function eachSaved(events: CalendarEvent[], save: (e: CalendarEvent) => Pr
       lastError = err;
     }
   }
-  void loadEvents();
+  await loadEvents();
   if (failed) toast.error(failed === events.length ? errorText(lastError) : `${failed} of ${events.length} couldn't be saved: ${errorText(lastError)}`);
   return failed === 0;
 }
@@ -211,25 +186,20 @@ export async function saveTimesMany(moves: { event: CalendarEvent; times: EventT
   return eachSaved(events, (e) => api.updateCalendarEvent(e.id, { times: times.get(e.id)! }, scope, notify));
 }
 
-/** Deletes several events at once, after one confirmation. */
-export async function deleteMany(events: CalendarEvent[]): Promise<boolean> {
+/** Delete selected occurrences and tell guests by default. */
+export async function deleteMany(
+  events: CalendarEvent[],
+  scope: EditScope = "this",
+  notify = events.some(hasGuests),
+): Promise<boolean> {
   if (events.length === 0) return true;
-  if (events.length === 1) return deleteEvent(events[0]);
-  const scope = await chooseScopeMany(events, "Delete");
-  if (!scope) return false;
-  let notify = false;
-  if (events.some(hasGuests)) {
-    const n = await chooseNotify("delete");
-    if (n === null) return false;
-    notify = n;
-  } else if (scope === "this") {
-    const ok = await ask(`Delete ${events.length} events?`, "They're removed from your Google calendar.", [
-      { label: "Delete", value: "yes", variant: "destructive" },
-    ]);
-    if (!ok) return false;
-  }
-  for (const e of events) removeEventLocal(e.id);
-  return eachSaved(events, (e) => api.deleteCalendarEvent(e.id, scope, notify));
+  const seriesKey = (e: CalendarEvent) => e.recurringEventId ? `series:${e.calendarId}:${e.recurringEventId}` : null;
+  const targets = new Map(events.map((e) => [scope === "all" ? seriesKey(e) ?? `event:${e.id}` : `event:${e.id}`, e]));
+  const keys = [...new Set([...targets.keys(), ...events.map((e) => `event:${e.id}`)])];
+  return queueDelete(keys, events.length === 1 ? "Event deleted" : `${events.length} events deleted`, () =>
+    eachSaved([...targets.values()], (e) => api.deleteCalendarEvent(e.id, e.recurringEventId ? scope : "this", notify)),
+    scope === "all" ? "Includes recurring series" : undefined,
+  );
 }
 
 export async function reply(e: CalendarEvent, response: Rsvp): Promise<void> {

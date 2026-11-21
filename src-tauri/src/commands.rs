@@ -721,6 +721,20 @@ pub async fn bookmarks_create(
 }
 
 #[tauri::command]
+pub async fn bookmarks_capture(
+    app: AppHandle, state: St<'_>, vault_path: String, capture_id: String, request: bookmarks::capture::CaptureRequest,
+) -> Result<bookmarks::capture::CaptureOutcome> {
+    if vault_path.is_empty() || state.config().tasks.vault_path != vault_path {
+        return Err(msg("The connected vault changed. Refresh Bookmarks and try again."));
+    }
+    let outcome = bookmarks::capture::capture(app.clone(), Arc::clone(&state), vault_path, capture_id, request).await?;
+    if matches!(outcome, bookmarks::capture::CaptureOutcome::Saved { .. }) {
+        let _ = app.emit(bookmarks::CHANGED, ());
+    }
+    Ok(outcome)
+}
+
+#[tauri::command]
 pub async fn bookmarks_recover_note(
     app: AppHandle, state: St<'_>, vault_path: String, target: bookmarks::NoteTarget,
 ) -> Result<WriteOutcome> {

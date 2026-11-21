@@ -5,7 +5,17 @@ import { toast } from "sonner";
 import {
   IconAlertCircle,
   IconArrowDown,
+  IconBold,
   IconCheck,
+  IconClipboard,
+  IconCode,
+  IconEyeOff,
+  IconItalic,
+  IconScissors,
+  IconSelectAll,
+  IconStrikethrough,
+  IconTypography,
+  IconUnderline,
   IconClock,
   IconRefresh,
   IconTrash,
@@ -68,6 +78,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
@@ -78,12 +89,13 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
 import { typingText, useTyping } from "@/telegram/typing";
-import type { TgChat, TgMember, TgMention, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
+import { EMPTY_DOC, FORMATS, clipFormats, entitiesToFormats, type Doc } from "@/telegram/format";
+import type { TgChat, TgFormat, TgFormatKind, TgMember, TgMention, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
 import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
 import { MessageText } from "./message-text";
-import { InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
+import { InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
 import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
-import { GlanceHost, openGlance } from "./glance";
+import { GlanceHost, openGlance, SaveButton } from "./glance";
 import { VoiceMessage } from "./voice-message";
 import { RoundVideo } from "./round-video";
 import { VoiceRecorder, type Recording, type VoiceRecorderHandle } from "./voice-recorder";
@@ -91,7 +103,17 @@ import { StickerArt, useInView, useObjectUrl } from "./sticker-view";
 import { StickerPicker } from "./sticker-picker";
 import { PageHeader } from "@/components/page-header";
 import { ForwardPicker } from "./forward-picker";
-import { MentionPicker, TagBackdrop, matchMembers, mentionTrigger, mentionsFor, tagRanges, tagText, useMembers, type NameTag } from "./mention-picker";
+import { RichBox, type RichBoxHandle } from "./rich-box";
+import { MentionPicker, matchMembers, mentionTrigger, mentionsFor, tagRanges, tagText, useMembers, type NameTag } from "./mention-picker";
+
+const FORMAT_ICONS: Record<TgFormatKind, typeof IconBold> = {
+  bold: IconBold,
+  italic: IconItalic,
+  underline: IconUnderline,
+  strike: IconStrikethrough,
+  spoiler: IconEyeOff,
+  code: IconCode,
+};
 
 const PAGE = 50;
 /** Messages from the same person this close together share one run (one name, one avatar, one tail). */
@@ -100,7 +122,7 @@ const RUN_GAP_MS = 5 * 60_000;
 const BOTTOM_SLACK = 80;
 
 /** What you'd typed in each chat, kept while Relay is open. */
-const drafts = new Map<string, string>();
+const drafts = new Map<string, Doc>();
 /** The people tagged by name in each chat's draft. */
 const draftTags = new Map<string, NameTag[]>();
 
@@ -181,7 +203,7 @@ function subtitle(c: TgChat): string | null {
  * ("sending", with a negative stand-in id) or that didn't go through ("failed").
  */
 /** A message as shown: pending ones carry how sending went, and a file being sent its path (for Try again). */
-type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker; voice?: Recording; mentions?: TgMention[] };
+type Shown = TgMessage & { pending?: "sending" | "failed"; file?: string; sticker?: TgSticker; voice?: Recording; mentions?: TgMention[]; formats?: TgFormat[] };
 
 let tempSeq = 0;
 
@@ -259,7 +281,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
-  const composer = useRef<HTMLTextAreaElement>(null);
+  const composer = useRef<RichBoxHandle>(null);
   /** The message bar floats over the end of the chat; the list leaves room for it. */
   const composerBox = useRef<HTMLDivElement>(null);
   const [composerH, setComposerH] = useState(0);
@@ -542,13 +564,13 @@ export function Conversation({ chat }: { chat: TgChat }) {
   };
 
   /** The new text shows straight away; it goes back if Telegram turns the edit down. */
-  const saveEdit = (text: string) => {
+  const saveEdit = (text: string, formats: TgFormat[]) => {
     const m = editing;
     setEditing(null);
-    if (!m || text === m.text.trimEnd()) return;
+    if (!m || (text === m.text.trimEnd() && !formats.length)) return;
     const put = (x: TgMessage) => setMessages((list) => list?.map((y) => (y.id === m.id ? x : y)) ?? list);
-    put({ ...m, text, entities: [], edited: true });
-    api.telegram.edit(chat.id, m.id, text).then(put, (e) => {
+    put({ ...m, text, entities: formats.map((f) => ({ ...f, url: null })), edited: true });
+    api.telegram.edit(chat.id, m.id, text, formats).then(put, (e) => {
       put(m);
       toast.error(errorText(e));
     });
@@ -585,8 +607,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
    * Sends the way Telegram does: the bubble is there at once with a clock, becomes Telegram's
    * message (ticks) when it's confirmed, or turns red with Try again if it fails.
    */
-  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker; voice?: Recording; mentions?: TgMention[] } = {}, after?: Promise<unknown>): Promise<unknown> => {
-    const { file, sticker, voice, mentions } = what;
+  const send = (text: string, reply: TgMessage | null, retryOf?: number, what: { file?: string; sticker?: TgSticker; voice?: Recording; mentions?: TgMention[]; formats?: TgFormat[] } = {}, after?: Promise<unknown>): Promise<unknown> => {
+    const { file, sticker, voice, mentions, formats } = what;
     const name = file?.split(/[\\/]/).pop() ?? "";
     const temp: Shown = {
       id: -++tempSeq,
@@ -596,7 +618,10 @@ export function Conversation({ chat }: { chat: TgChat }) {
       senderId: null,
       senderName: "You",
       text,
-      entities: (mentions ?? []).filter((x) => x.kind !== "url").map((x) => ({ offset: x.offset, length: x.length, kind: "mention" as const, url: null })),
+      entities: [
+        ...(mentions ?? []).filter((x) => x.kind !== "url").map((x) => ({ offset: x.offset, length: x.length, kind: "mention" as const, url: null })),
+        ...(formats ?? []).map((f) => ({ ...f, url: null })),
+      ],
       media: file
         ? { kind: "file", label: name, width: null, height: null, mime: null }
         : voice
@@ -608,6 +633,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
       sticker,
       voice,
       mentions,
+      formats,
       reply: reply ? { id: reply.id, sender: reply.outgoing ? "You" : reply.senderName, senderId: reply.outgoing ? null : reply.senderId, text: reply.text || reply.media?.label || "Message" } : null,
       forwardedFrom: null,
       edited: false,
@@ -628,8 +654,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
           : voice
             ? api.telegram.sendVoice(chat.id, voice.bytes, voice.duration, voice.waveform, reply?.id)
             : file
-            ? api.telegram.sendFile(chat.id, file, text, reply?.id)
-            : api.telegram.send(chat.id, text, reply?.id, mentions),
+            ? api.telegram.sendFile(chat.id, file, text, reply?.id, formats)
+            : api.telegram.send(chat.id, text, reply?.id, mentions, formats),
       )
       .then(
         (m) => {
@@ -644,17 +670,17 @@ export function Conversation({ chat }: { chat: TgChat }) {
   };
 
   /** The caption (and the reply) go with the first file. */
-  const sendAll = (text: string, files: string[], mentions: TgMention[]) => {
+  const sendAll = (text: string, files: string[], mentions: TgMention[], formats: TgFormat[]) => {
     if (!files.length) {
-      void send(text, replyTo, undefined, { mentions });
+      void send(text, replyTo, undefined, { mentions, formats });
       return;
     }
-    files.reduce<Promise<unknown> | undefined>((prev, f, i) => send(i === 0 ? text : "", i === 0 ? replyTo : null, undefined, { file: f }, prev), undefined);
+    files.reduce<Promise<unknown> | undefined>((prev, f, i) => send(i === 0 ? text : "", i === 0 ? replyTo : null, undefined, { file: f, formats: i === 0 ? formats : undefined }, prev), undefined);
   };
 
   const retry = (m: Shown) => {
     const reply = m.reply ? (messages?.find((x) => x.id === m.reply!.id) ?? null) : null;
-    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker, voice: m.voice, mentions: m.mentions });
+    void send(m.text, reply, m.id, { file: m.file, sticker: m.sticker, voice: m.voice, mentions: m.mentions, formats: m.formats });
   };
   const discard = (m: Shown) => setMessages((list) => list?.filter((x) => x.id !== m.id) ?? list);
 
@@ -1220,7 +1246,7 @@ function RoundBubble({ chatId, m, media }: { chatId: string; m: TgMessage; media
 /** What to do with media Relay can't show yet. */
 function mediaHint(kind: TgMedia["kind"]): string {
   if (kind === "voice" || kind === "video" || kind === "gif" || kind === "audio") return "Play it in Telegram";
-  if (kind === "file") return "Download it in Telegram";
+  if (kind === "file") return "File attachment";
   return "Open Telegram to see it";
 }
 
@@ -1299,7 +1325,7 @@ function Meta({ m, read }: { m: Shown; read: boolean }) {
       ) : m.pending === "failed" ? (
         <IconAlertCircle className="size-4 text-destructive" aria-label="Not sent" />
       ) : (
-        m.outgoing && (read ? <IconChecks className="size-4 text-success" aria-label="Read" /> : <IconCheck className="size-4" aria-label="Sent" />)
+        m.outgoing && (read ? <IconChecks className="size-4 text-success" stroke={2.5} aria-label="Read" /> : <IconCheck className="size-4" stroke={2.5} aria-label="Sent" />)
       )}
       {clockTime(m.date)}
     </span>
@@ -1457,7 +1483,16 @@ function Bubble(props: {
             )}
             {otherMedia && (
               <div className={cn(hasText && "mb-1.5")}>
-                {otherMedia.kind === "voice" ? <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} src={m.voice?.url} /> : <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />}
+                {otherMedia.kind === "voice" ? (
+                  <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} src={m.voice?.url} />
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />
+                    {!m.pending && (otherMedia.kind === "file" || otherMedia.kind === "audio") && (
+                      <SaveButton chatId={chat.id} messageId={m.id} compact />
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {hasText ? (
@@ -1594,7 +1629,7 @@ function Bubble(props: {
 }
 
 function Composer(props: {
-  ref: React.Ref<HTMLTextAreaElement>;
+  ref: React.Ref<RichBoxHandle>;
   /** The bar's outer box, measured so the chat leaves room for it. */
   boxRef: React.Ref<HTMLDivElement>;
   chat: TgChat;
@@ -1603,13 +1638,13 @@ function Composer(props: {
   /** Your message being edited: its text fills the box until it's saved or cancelled. */
   editing: TgMessage | null;
   onCancelEdit: () => void;
-  onSaveEdit: (text: string) => void;
+  onSaveEdit: (text: string, formats: TgFormat[]) => void;
   /** Starts editing your last message; false when there's none to edit. */
   onEditLast: () => boolean;
   /** Whether the latest message is yours (you've answered); false when it's theirs or there's none. */
   lastFromYou: boolean;
-  /** The text (the caption, with files), the files to send, and the people tagged in the text. */
-  onSend: (text: string, files: string[], mentions: TgMention[]) => void;
+  /** The text (the caption, with files), the files to send, the people tagged in the text, and its formatting. */
+  onSend: (text: string, files: string[], mentions: TgMention[], formats: TgFormat[]) => void;
   onSticker: (s: TgSticker) => void;
   onVoice: (r: Recording) => void;
 }) {
@@ -1618,27 +1653,27 @@ function Composer(props: {
   const recorder = useRef<VoiceRecorderHandle>(null);
   // Where the recorder draws its live levels: the right end of the Attach/Stickers row.
   const [waveSlot, setWaveSlot] = useState<HTMLDivElement | null>(null);
-  const [text, setText] = useState(() => drafts.get(chat.id) ?? "");
+  // What's in the box: its text and the formatting on it.
+  const [doc, setDoc] = useState<Doc>(() => drafts.get(chat.id) ?? EMPTY_DOC);
+  const { text, formats } = doc;
   // What you'd typed before editing, put back afterwards.
-  const stash = useRef<string | null>(null);
+  const stash = useRef<Doc | null>(null);
   const editingId = editing?.id;
   useEffect(() => {
     if (editingId !== undefined && editing) {
-      if (stash.current === null) stash.current = drafts.get(chat.id) ?? "";
-      setText(editing.text);
-      requestAnimationFrame(() => {
-        const el = area.current;
-        if (el) el.setSelectionRange(el.value.length, el.value.length);
-      });
+      if (stash.current === null) stash.current = drafts.get(chat.id) ?? EMPTY_DOC;
+      setDoc({ text: editing.text, formats: entitiesToFormats(editing.entities) });
+      requestAnimationFrame(() => area.current?.focus());
+      requestAnimationFrame(() => area.current?.setSelection(editing.text.length));
     } else if (stash.current !== null) {
-      setText(stash.current);
+      setDoc(stash.current);
       stash.current = null;
     }
     // Only when a different message starts (or stops) being edited.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
   const [files, setFiles] = useState<string[]>([]);
-  const area = useRef<HTMLTextAreaElement | null>(null);
+  const area = useRef<RichBoxHandle>(null);
 
   // Tagging: typing @ in a group lists its members to pick from.
   const tags = useRef<NameTag[]>(draftTags.get(chat.id) ?? []);
@@ -1658,83 +1693,58 @@ function Composer(props: {
     // Back to the top whenever what's typed after the @ changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
-  const keepCaret = () => {
-    const el = area.current;
-    if (el) setCaret(el.selectionStart);
-  };
-
   const pickMember = (m: TgMember) => {
     if (!trigger) return;
     const tag = tagText(m);
-    const insert = `${tag} `;
-    const v = text.slice(0, trigger.start) + insert + text.slice(caret);
     if (!tags.current.some((t) => t.text === tag)) {
       tags.current = [...tags.current, { text: tag, userId: m.id, byUsername: !!m.username }];
       draftTags.set(chat.id, tags.current);
     }
-    update(v);
-    const at = trigger.start + insert.length;
-    setCaret(at);
-    pendingCaret.current = at;
+    // Typed in over the "@…" so far, with the caret left after it.
+    area.current?.insert(`${tag} `, trigger.start, caret);
   };
-  /** Where the caret goes once the text a pick put in has rendered (sooner, a frame could undo keys typed meanwhile). */
-  const pendingCaret = useRef<number | null>(null);
   // The chips stay drawn while the row collapses after the last one is removed.
   const lastFiles = useRef<string[]>([]);
   if (files.length) lastFiles.current = files;
   const shownFiles = files.length ? files : lastFiles.current;
 
   useEffect(() => {
-    setText(drafts.get(chat.id) ?? "");
+    setDoc(drafts.get(chat.id) ?? EMPTY_DOC);
     tags.current = draftTags.get(chat.id) ?? [];
     setFiles([]);
     setRecording(false);
   }, [chat.id]);
 
-  // Grow with the text, up to about eight lines.
-  useLayoutEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-    if (pendingCaret.current !== null) {
-      el.focus();
-      el.setSelectionRange(pendingCaret.current, pendingCaret.current);
-      pendingCaret.current = null;
-    }
-    if (backdrop.current) backdrop.current.scrollTop = el.scrollTop;
-  }, [text]);
-
   // Picked tags show in the accent colour in the box too (not while editing: those aren't sent as tags).
-  const backdrop = useRef<HTMLDivElement>(null);
   const ranges = editing ? [] : tagRanges(text, tags.current);
   const boxText = "pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] md:text-title";
 
-  const update = (v: string) => {
-    setText(v);
+  const update = (next: Doc) => {
+    setDoc(next);
     // An edit in progress isn't a draft.
     if (editing) return;
-    if (v) drafts.set(chat.id, v);
+    if (next.text) drafts.set(chat.id, next);
     else drafts.delete(chat.id);
   };
 
   // The box empties straight away and you can keep typing; the bubbles show how sending went.
   const send = () => {
     const body = text.trimEnd();
+    const fmts = clipFormats(formats, body.length);
     if (editing) {
       // A message's text can't be emptied (a caption can).
-      if (body.trim() || editing.media) props.onSaveEdit(body);
+      if (body.trim() || editing.media) props.onSaveEdit(body, fmts);
       area.current?.focus();
       return;
     }
     if (!body.trim() && !files.length) return;
     // Captions go without tags (names stay as plain text there).
-    const mentions = files.length ? [] : mentionsFor(body, tags.current);
-    update("");
+    const mentions = files.length ? [] : mentionsFor(body, tags.current, fmts.length > 0);
+    update(EMPTY_DOC);
     tags.current = [];
     draftTags.delete(chat.id);
     setFiles([]);
-    props.onSend(body, files, mentions);
+    props.onSend(body, files, mentions, fmts);
     area.current?.focus();
   };
 
@@ -1752,7 +1762,7 @@ function Composer(props: {
 
   // Files and pictures on the clipboard are attached. Text still pastes as text, even when the
   // source also put a picture of it there (a spreadsheet's cells, say).
-  const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const paste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const data = e.clipboardData;
     if (editing || !data.types.includes("Files") || data.types.includes("text/plain")) return;
     e.preventDefault();
@@ -1761,6 +1771,32 @@ function Composer(props: {
       .then(addFiles)
       .catch((err) => toast.error(errorText(err)));
   };
+
+  // Right-clicking the box: what was selected when the menu opened.
+  const [sel, setSel] = useState({ from: 0, to: 0 });
+  const picked = text.slice(sel.from, sel.to);
+  const canFormat = picked.trim().length > 0;
+  const pickSel = () => {
+    const s = area.current?.selection();
+    if (s) setSel(s);
+  };
+  const cut = () => {
+    navigator.clipboard.writeText(picked).then(
+      () => area.current?.insert("", sel.from, sel.to),
+      (e) => toast.error(errorText(e)),
+    );
+  };
+  const copy = () => {
+    navigator.clipboard.writeText(picked).catch((e) => toast.error(errorText(e)));
+  };
+  const pasteHere = () => {
+    navigator.clipboard.readText().then(
+      (t) => t && area.current?.insert(t, sel.from, sel.to),
+      (e) => toast.error(errorText(e)),
+    );
+  };
+  const selectAll = () => area.current?.selectAll();
+  const format = (kind: TgFormatKind) => area.current?.format(kind, sel.from, sel.to);
 
   const canSend = editing ? text.trim().length > 0 || !!editing.media : text.trim().length > 0 || files.length > 0;
 
@@ -1843,26 +1879,25 @@ function Composer(props: {
               }}
             />
           ) : (
-          <div className="relative flex min-w-0 flex-1">
-          {ranges.length > 0 && <TagBackdrop ref={backdrop} text={text} ranges={ranges} className={boxText} />}
-          <InputGroupTextarea
-            ref={(el) => {
-              area.current = el;
-              if (typeof props.ref === "function") props.ref(el);
-              else if (props.ref) (props.ref as React.RefObject<HTMLTextAreaElement | null>).current = el;
+          <ContextMenu>
+          <ContextMenuTrigger asChild className="select-text" onContextMenu={pickSel}>
+          <div className="flex min-w-0 flex-1">
+          <RichBox
+            ref={(h) => {
+              area.current = h;
+              if (typeof props.ref === "function") props.ref(h);
+              else if (props.ref) (props.ref as React.RefObject<RichBoxHandle | null>).current = h;
             }}
-            rows={1}
-            value={text}
-            onChange={(e) => {
-              update(e.target.value);
-              setCaret(e.target.selectionStart);
+            data-fast-caret-glide=""
+            doc={doc}
+            tags={ranges.map((r): [number, number] => [r.from, r.to])}
+            onChange={(next, s) => {
+              update(next);
+              setCaret(s.from);
             }}
-            onSelect={keepCaret}
+            onSelect={(s) => setCaret(s.from)}
             onPaste={paste}
-            onScroll={(e) => {
-              if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
-            }}
-            role={isGroup(chat) ? "combobox" : undefined}
+            role={isGroup(chat) ? "combobox" : "textbox"}
             aria-expanded={isGroup(chat) ? picking : undefined}
             aria-controls={picking ? "mention-list" : undefined}
             aria-activedescendant={picking && matches[active] ? `mention-${matches[active].id}` : undefined}
@@ -1907,14 +1942,55 @@ function Composer(props: {
                   : "Write a reply…"
             }
             aria-label="Message"
-            className={cn(
-              "no-scrollbar max-h-50 min-h-0 placeholder:text-muted-foreground/60",
-              boxText,
-              // The backdrop shows the text; the caret and the selection's tint stay the box's own.
-              ranges.length > 0 && "relative text-transparent caret-foreground selection:bg-primary/25 selection:text-transparent",
-            )}
+            className={boxText}
           />
           </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent
+            className="w-auto min-w-44"
+            // Focus goes back to the box (with what was selected still selected) rather than to the menu's trigger.
+            onCloseAutoFocus={(e) => {
+              e.preventDefault();
+              area.current?.focus();
+            }}
+          >
+            <ContextMenuItem disabled={!picked} onSelect={cut}>
+              <IconScissors />
+              Cut
+            </ContextMenuItem>
+            <ContextMenuItem disabled={!picked} onSelect={copy}>
+              <IconCopy />
+              Copy
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={pasteHere}>
+              <IconClipboard />
+              Paste
+            </ContextMenuItem>
+            <ContextMenuItem disabled={!text} onSelect={selectAll}>
+              <IconSelectAll />
+              Select All
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuSub>
+              <ContextMenuSubTrigger disabled={!canFormat}>
+                <IconTypography />
+                Formatting
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {FORMATS.map((f) => {
+                  const Icon = FORMAT_ICONS[f.kind];
+                  return (
+                    <ContextMenuItem key={f.kind} onSelect={() => format(f.kind)}>
+                      <Icon />
+                      {f.label}
+                      <ContextMenuShortcut className="pl-4">{f.shortcut}</ContextMenuShortcut>
+                    </ContextMenuItem>
+                  );
+                })}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          </ContextMenuContent>
+          </ContextMenu>
           )}
           <ComposerSubmit
             ready={canSend || recording}

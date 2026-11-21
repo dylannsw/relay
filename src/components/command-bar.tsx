@@ -50,6 +50,10 @@ import { addTask, lastTask, useTasks } from "@/tasks/store";
 import { sectionKey, splitStatus, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META } from "@/tasks/status";
 import { chooseVault } from "@/components/obsidian-vault";
+import { captureClipboard } from "@/bookmarks/capture";
+import { useBookmarks } from "@/bookmarks/store";
+import { isWebUrl, openBookmarkDialog, showBookmarks } from "@/bookmarks/ui";
+import { BoardIcon } from "@/components/bookmarks/bookmark-editors";
 import type { SettingsSection } from "@/components/settings-dialog";
 import { ColorDot } from "@/components/color-dot";
 import { ChatAvatar } from "@/components/chats/chat-avatar";
@@ -452,6 +456,8 @@ export function CommandBar(p: Props) {
     fn();
   };
 
+  const bookmarks = useBookmarks(p.open).snapshot;
+  const bookmarkVault = bookmarks && !bookmarks.error ? bookmarks.vaultPath : "";
   const actions: Entry[] = useMemo(
     () => [
       { id: "add-task", label: "Add task", keywords: "new todo to-do tick", icon: <IconChecklist />, fixedKey: "Tab", keepOpen: true, run: () => enterTask("") },
@@ -472,9 +478,15 @@ export function CommandBar(p: Props) {
         .map(({ theme, ...t }) => ({ ...t, keywords: "appearance mode", run: () => setTheme(theme) })),
       { id: "sidebar", label: "Toggle sidebar", keywords: "hide show", icon: <IconLayoutSidebar />, fixedKey: "alt+d", run: toggleSidebar },
       { id: "settings", label: "Open settings", keywords: "preferences accounts shortcuts hotkeys keyboard appearance", icon: <IconSettings />, shortcut: "settings", run: p.onSettings },
+      { id: "add-bookmark", label: "Add bookmark", keywords: "save link page picture video bookmarks", icon: <IconBookmark />, run: () => openBookmarkDialog({ kind: "add" }) },
+      {
+        id: "bookmark-clipboard", label: "Save bookmark from clipboard", keywords: "paste link picture bookmarks", icon: <IconBookmark />,
+        run: () => (bookmarkVault ? void captureClipboard(bookmarkVault, null) : openBookmarkDialog({ kind: "add" })),
+      },
+      { id: "new-bookmark-board", label: "New bookmark board", keywords: "create collection bookmarks", icon: <IconBookmark />, run: () => openBookmarkDialog({ kind: "board" }) },
       { id: "bookmark-settings", label: "Bookmark settings", keywords: "bookmarks preferences vault appearance", icon: <IconBookmark />, run: () => p.onSettings("bookmarks") },
     ],
-    [p.onCompose, p.onSync, p.onFilter, p.onSettings, resolvedTheme, setTheme, toggleSidebar],
+    [p.onCompose, p.onSync, p.onFilter, p.onSettings, resolvedTheme, setTheme, toggleSidebar, bookmarkVault],
   );
 
   const destinations: Entry[] = useMemo(() => {
@@ -483,7 +495,14 @@ export function CommandBar(p: Props) {
       { id: "go-home", label: "Home", keywords: "overview dashboard start", icon: <IconSmartHome />, run: () => p.onNavigate({ kind: "home" }) },
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
       { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <CalendarIcon />, run: () => p.onNavigate({ kind: "calendar" }) },
-      { id: "go-bookmarks", label: "Bookmarks", keywords: "saved board collection", icon: <IconBookmark />, run: () => p.onNavigate({ kind: "bookmarks" }) },
+      { id: "go-bookmarks", label: "Bookmarks", keywords: "saved board collection home", icon: <IconBookmark />, run: () => showBookmarks(null) },
+      ...(bookmarks?.boards ?? []).map((board) => ({
+        id: `go-bookmark-board-${board.id}`,
+        label: `Bookmark board · ${board.name}`,
+        keywords: "bookmarks saved collection",
+        icon: <BoardIcon icon={board.icon} />,
+        run: () => showBookmarks(board.id),
+      })),
       { id: "go-cleanup", label: "Clean up", keywords: "senders group bulk delete tidy declutter", icon: <IconSparkles />, run: () => p.onNavigate({ kind: "cleanup" }) },
       { id: "go-all", label: "All inboxes", keywords: "home everything", icon: <IconInbox />, shortcut: "goAll", run: () => p.onNavigate({ kind: "all" }) },
       ...labels.map((label) => ({
@@ -506,7 +525,7 @@ export function CommandBar(p: Props) {
         })),
       ),
     ];
-  }, [p.accounts, p.onNavigate]);
+  }, [p.accounts, p.onNavigate, bookmarks?.boards]);
 
   // Private conversations and groups (not channels or archived chats), once something is typed.
   const tg = useTelegram();
@@ -748,6 +767,15 @@ export function CommandBar(p: Props) {
                     <CommandShortcut className="tracking-normal">
                       <Kbd>Enter</Kbd>
                     </CommandShortcut>
+                  </CommandItem>
+                </CommandGroup>
+              )}
+
+              {!commandsOnly && isWebUrl(q) && (
+                <CommandGroup heading="Bookmark">
+                  <CommandItem value="add-bookmark-url" onSelect={run(() => openBookmarkDialog({ kind: "add", url: q.trim() }))} className={ROW}>
+                    <Tile><IconBookmark /></Tile>
+                    <span data-label className="truncate">Add bookmark for “<span className="font-medium">{q.trim()}</span>”</span>
                   </CommandItem>
                 </CommandGroup>
               )}

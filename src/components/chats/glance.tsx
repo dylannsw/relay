@@ -194,7 +194,11 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
   );
 }
 
-function SaveButton({ chatId, messageId }: { chatId: string; messageId: number }) {
+export function SaveButton({ chatId, messageId, compact = false }: {
+  chatId: string;
+  messageId: number;
+  compact?: boolean;
+}) {
   const [saving, setSaving] = useState(false);
   const save = () => {
     setSaving(true);
@@ -208,11 +212,11 @@ function SaveButton({ chatId, messageId }: { chatId: string; messageId: number }
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="secondary"
-          size="icon"
+          variant={compact ? "ghost" : "secondary"}
+          size={compact ? "icon-sm" : "icon"}
           disabled={saving}
           onClick={save}
-          className="size-10 rounded-full shadow-lg transition-[background-color,scale] duration-50 hover:scale-[1.02] active:scale-[0.98]"
+          className={compact ? "shrink-0" : "size-10 rounded-full shadow-lg transition-[background-color,scale] duration-50 hover:scale-[1.02] active:scale-[0.98]"}
         >
           {saving ? <Spinner /> : <IconDownload />}
           <span className="sr-only">Save to Downloads</span>

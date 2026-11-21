@@ -69,10 +69,12 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-export function useBookmarks() {
-  useEffect(start, []);
+export function useBookmarks(active = true) {
+  useEffect(() => { if (active) start(); }, [active]);
   return useSyncExternalStore(subscribe, () => state);
 }
+
+export const bookmarksSnapshot = () => state.snapshot;
 
 let saveQueue = Promise.resolve();
 let pendingSaves = 0;

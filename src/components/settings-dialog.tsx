@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { queueDelete, usePendingDeletes } from "@/lib/undo-delete";
 import { AnimatePresence, motion } from "motion/react";
 import {
   IconArrowBackUp,
@@ -137,16 +138,14 @@ import {
   useCalendarUpdates,
   useCalendars,
 } from "@/calendar/store";
-import { saveDisplayName, saveTasksConfig, useTasks, useTasksState } from "@/tasks/store";
+import { saveDisplayName, removeBanner, saveTasksConfig, useTasks, useTasksState } from "@/tasks/store";
 import { setQuickAdd, useQuickAdd } from "@/tasks/quick-add";
 import { STATUSES, STATUS_META } from "@/tasks/status";
 import { sectionKey, type TaskStatus } from "@/tasks/tick";
 import { greetingName } from "@/components/home/home-welcome";
 import { VaultPathField } from "@/components/obsidian-vault";
 import { chooseOrikoSource, importOriko, previewOriko, saveBookmarksAppearance, useBookmarks } from "@/bookmarks/store";
-import type { BookmarksConfig, OrikoPreview } from "@/bookmarks/types";
-import { BOOKMARK_SITES } from "@/bookmarks/presentation";
-import type { SocialSite } from "@/bookmarks/types";
+import { BOOKMARK_TILE_SIZES, type BookmarksConfig, type OrikoPreview } from "@/bookmarks/types";
 import { chooseBanner } from "@/components/home/home-banner";
 
 interface Props {
@@ -189,6 +188,9 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
         className="h-[min(90svh,54rem)] sm:max-w-5xl"
         // While a shortcut is being recorded, Escape cancels that rather than closing Settings.
         onEscapeKeyDown={(e) => isRecordingShortcut() && e.preventDefault()}
+        onInteractOutside={(event) => {
+          if (event.target instanceof Element && event.target.closest("[data-sonner-toaster]")) event.preventDefault();
+        }}
         onClose={onClose}
         icon={<IconSettings />}
         title={<DialogTitle data-label className="truncate text-base font-semibold">Settings</DialogTitle>}
@@ -341,7 +343,7 @@ function HomeTab({ accounts }: { accounts: Account[] }) {
             {cfg.bannerImage ? "Change…" : "Choose…"}
           </Button>
           {cfg.bannerImage && (
-            <Button variant="destructive" onClick={() => void save({ bannerImage: "" })}>
+            <Button variant="destructive" onClick={() => void removeBanner(cfg.bannerImage)}>
               Remove
             </Button>
           )}
@@ -507,16 +509,13 @@ function TasksTab() {
   );
 }
 
-const BOOKMARK_TILE_OPTIONS = {
-  tiny: "Tiny", small: "Small", medium: "Medium", large: "Large", huge: "Huge",
-};
+// Stored as medium / large / huge, shown as S / M / L.
 const BOOKMARK_DATE_OPTIONS = {
   none: "None", clippedDate: "Clipped date", publishedDate: "Published date",
 };
 const BOOKMARK_PROPERTY_OPTIONS = {
   none: "None", categories: "Categories", tags: "Tags", status: "Status", author: "Author",
 };
-const SOCIAL_CARD_OPTIONS = { always: "Always", hover: "On hover", never: "Never" };
 
 function BookmarkSelect<K extends string>({ label, value, options, onChange }: {
   label: string;
@@ -557,7 +556,7 @@ function BookmarksTab() {
         {config ? (
           <div className="divide-y">
             <SettingRow title="Tile size" description="Set the size of tiles on the bookmark wall.">
-              <BookmarkSelect label="Tile size" value={config.tileSize} options={BOOKMARK_TILE_OPTIONS} onChange={(tileSize) => update({ tileSize })} />
+              <PillTabs id="bookmark-tile-size" value={config.tileSize} items={BOOKMARK_TILE_SIZES} onChange={(tileSize) => update({ tileSize })} />
             </SettingRow>
             <SettingRow title="Autoplay previews" description="Play visible video previews muted. Reduce Motion disables autoplay.">
               <Switch aria-label="Autoplay previews" checked={config.autoplayPreviews} onCheckedChange={(autoplayPreviews) => update({ autoplayPreviews })} />
@@ -570,17 +569,6 @@ function BookmarksTab() {
             </SettingRow>
             <SettingRow title="Bottom badge" description="Choose the property to show below the title.">
               <BookmarkSelect label="Bottom badge" value={config.bottomBadge} options={BOOKMARK_PROPERTY_OPTIONS} onChange={(bottomBadge) => update({ bottomBadge })} />
-            </SettingRow>
-            <SettingRow title="Social cards" description="Choose when to show saved post details." stacked>
-              <div className="grid grid-cols-2 gap-3">
-                {(Object.entries(BOOKMARK_SITES) as [SocialSite, string][]).map(([site, name]) => (
-                  <div className="flex items-center justify-between gap-2 rounded-lg border p-2.5" key={site}>
-                    <span className="text-sm">{name}</span>
-                    <BookmarkSelect label={`${name} card visibility`} value={config.socialCards?.[site] ?? "hover"} options={SOCIAL_CARD_OPTIONS}
-                      onChange={(value) => update({ socialCards: { ...config.socialCards, [site]: value } })} />
-                  </div>
-                ))}
-              </div>
             </SettingRow>
           </div>
         ) : <Spinner aria-label="Loading bookmark appearance" />}
@@ -669,7 +657,8 @@ function CalendarTab({ accounts, onAccountsChanged }: { accounts: Account[]; onA
 
   const writable = cal.calendars.filter((c) => c.canWrite && !c.hidden);
   const defaultCal = cal.calendars.find((c) => c.isDefault);
-  const feeds = cal.calendars.filter((c) => c.isFeed);
+  const pendingDeletes = usePendingDeletes();
+  const feeds = cal.calendars.filter((c) => c.isFeed && !pendingDeletes.has(`feed:${c.id}`));
   const lastSync = Math.max(0, ...google.map((a) => a.calendarSync ?? 0), ...feeds.map((c) => c.lastSync ?? 0)) || null;
 
   const sync = () => syncCalendars().catch((e) => toast.error(errorText(e)));
@@ -898,8 +887,7 @@ function FeedDialog({ feed, children }: { feed?: CalendarInfo; children: React.R
 }
 
 function FeedActions({ calendar: c }: { calendar: CalendarInfo }) {
-  const remove = () =>
-    removeCalendarFeed(c.id).catch((e) => toast.error(errorText(e)));
+  const remove = () => queueDelete([`feed:${c.id}`], "Calendar unsubscribed", () => removeCalendarFeed(c.id), c.name);
   return (
     <>
       <Tooltip>
@@ -912,32 +900,14 @@ function FeedActions({ calendar: c }: { calendar: CalendarInfo }) {
         </FeedDialog>
         <TooltipContent>Rename or change address</TooltipContent>
       </Tooltip>
-      <AlertDialog>
-        <Tooltip>
-          <AlertDialogTrigger asChild>
-            <TooltipTrigger asChild>
-              <Button variant="destructive" size="icon-sm" aria-label={`Unsubscribe from ${c.name}`}>
-                <IconTrash />
-              </Button>
-            </TooltipTrigger>
-          </AlertDialogTrigger>
-          <TooltipContent>Unsubscribe</TooltipContent>
-        </Tooltip>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Unsubscribe from {c.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Relay forgets the address and its copy of the events. The calendar itself isn't changed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void remove()}>
-              Unsubscribe
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="destructive" size="icon-sm" aria-label={`Unsubscribe from ${c.name}`} onClick={remove}>
+            <IconTrash />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Unsubscribe</TooltipContent>
+      </Tooltip>
     </>
   );
 }

@@ -33,31 +33,6 @@ export function tagRanges(text: string, tags: NameTag[]): { from: number; to: nu
   return out.sort((a, b) => a.from - b.from);
 }
 
-/**
- * The message text drawn behind the box, with picked tags in the accent colour. The box's own
- * text goes see-through while there are any, so these show in its place.
- */
-export function TagBackdrop({ ref, text, ranges, className }: { ref: React.Ref<HTMLDivElement>; text: string; ranges: ReturnType<typeof tagRanges>; className?: string }) {
-  const pieces: ReactNode[] = [];
-  let at = 0;
-  for (const r of ranges) {
-    if (r.from > at) pieces.push(text.slice(at, r.from));
-    pieces.push(
-      <span key={r.from} className="text-mention">
-        {text.slice(r.from, r.to)}
-      </span>,
-    );
-    at = r.to;
-  }
-  // A trailing line break needs something after it to take up its line.
-  pieces.push(`${text.slice(at)}​`);
-  return (
-    <div ref={ref} aria-hidden className={cn("pointer-events-none absolute inset-0 overflow-hidden break-words whitespace-pre-wrap", className)}>
-      {pieces}
-    </div>
-  );
-}
-
 /** The "@…" being typed just before the caret: where its @ is, and what follows it. */
 export function mentionTrigger(text: string, caret: number): { start: number; query: string } | null {
   const m = /(^|\s)@([^\s@]{0,32})$/.exec(text.slice(0, caret));
@@ -72,14 +47,15 @@ export function tagText(m: TgMember): string {
 
 /**
  * The tags to send with `text`: each place a name tagged from the list still appears. Alongside
- * those go the message's @usernames and links, which Telegram stops finding by itself once tags come with it.
+ * those go the message's @usernames and links, which Telegram stops finding by itself once tags come with it
+ * (or, with `formatted`, once formatting does).
  */
-export function mentionsFor(text: string, tags: NameTag[]): TgMention[] {
+export function mentionsFor(text: string, tags: NameTag[], formatted = false): TgMention[] {
   const out: TgMention[] = tagRanges(
     text,
     tags.filter((t) => !t.byUsername),
   ).map((r) => ({ offset: r.from, length: r.to - r.from, kind: "name", userId: r.tag.userId }));
-  if (!out.length) return out;
+  if (!out.length && !formatted) return out;
   for (const u of text.matchAll(/(^|[^\w@])(@[A-Za-z0-9_]{4,32})\b/g)) {
     out.push({ offset: u.index + u[1]!.length, length: u[2]!.length, kind: "username", userId: null });
   }

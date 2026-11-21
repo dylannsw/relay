@@ -5,10 +5,10 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { mockInvoke, mockVaultEvents } from "./mock";
 import type {
   BookmarkBoard, BookmarkMedia, BookmarkNoteChange, BookmarksConfig, BookmarksSnapshot, BookmarkWriteOutcome, OrikoPreview, OrikoResult,
-  BookmarkTarget, NewBookmark, BookmarkHandoff,
+  BookmarkTarget, NewBookmark, BookmarkHandoff, CaptureOutcome, CaptureRequest, CaptureStage,
 } from "./bookmarks/types";
 import { mockTelegramEvents } from "./telegram/mock";
-import type { TgChatList, TgEvent, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet } from "./telegram/types";
+import type { TgChatList, TgEvent, TgFormat, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet } from "./telegram/types";
 import type {
   Account,
   CalendarConfig,
@@ -157,6 +157,20 @@ export const api = {
     call<BookmarkWriteOutcome>("bookmarks_write_note", { vaultPath, id, notePath, expected, changes }),
   createBookmark: (vaultPath: string, bookmark: NewBookmark) =>
     call<BookmarkWriteOutcome>("bookmarks_create", { vaultPath, bookmark }),
+  captureBookmark: (vaultPath: string, captureId: string, request: CaptureRequest) =>
+    call<CaptureOutcome>("bookmarks_capture", { vaultPath, captureId, request }),
+  onBookmarkCaptureProgress: (cb: (progress: { captureId: string; stage: CaptureStage }) => void): Promise<() => void> =>
+    isTauri ? listen<{ captureId: string; stage: CaptureStage }>("bookmark-capture-progress", (e) => cb(e.payload)) : Promise.resolve(() => {}),
+  /** Pictures and videos chosen in Windows' file picker; empty if cancelled. */
+  pickBookmarkFiles: async (): Promise<string[]> => {
+    if (!isTauri) return ["C:\\Users\\you\\Pictures\\Moodboard.jpg"];
+    const picked = await openDialog({
+      multiple: true,
+      title: "Choose pictures or videos",
+      filters: [{ name: "Pictures and videos", extensions: ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "mp4", "m4v", "webm", "mov"] }],
+    });
+    return Array.isArray(picked) ? picked : picked ? [picked] : [];
+  },
   recoverBookmark: (vaultPath: string, target: BookmarkTarget) =>
     call<BookmarkWriteOutcome>("bookmarks_recover_note", { vaultPath, target }),
   openBookmarkNote: (path: string) => call<void>("bookmark_open_note", { path }),
@@ -192,8 +206,8 @@ export const api = {
     /** Oldest first: the latest page, or the page before message `before`. */
     messages: (chatId: string, before?: number, limit?: number) =>
       call<TgMessage[]>("telegram_messages", { chatId, before: before ?? null, limit: limit ?? null }),
-    send: (chatId: string, text: string, replyTo?: number, mentions?: TgMention[]) =>
-      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null, mentions: mentions?.length ? mentions : null }),
+    send: (chatId: string, text: string, replyTo?: number, mentions?: TgMention[], formats?: TgFormat[]) =>
+      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null, mentions: mentions?.length ? mentions : null, formats: formats?.length ? formats : null }),
     /** The people you could tag in a group: the most recently active, or (in a big group) those matching `query`. */
     members: (chatId: string, query?: string) => call<TgMembers>("telegram_members", { chatId, query: query ?? null }),
     markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
@@ -206,7 +220,8 @@ export const api = {
     /** Forwards messages to another chat; resolves to the new messages there, oldest first. */
     forward: (fromChatId: string, toChatId: string, ids: number[]) => call<TgMessage[]>("telegram_forward", { fromChatId, toChatId, ids }),
     /** Changes the text (or caption) of one of your messages; resolves to the message as it now is. */
-    edit: (chatId: string, messageId: number, text: string) => call<TgMessage>("telegram_edit", { chatId, messageId, text }),
+    edit: (chatId: string, messageId: number, text: string, formats?: TgFormat[]) =>
+      call<TgMessage>("telegram_edit", { chatId, messageId, text, formats: formats?.length ? formats : null }),
     /** Deletes messages; `revoke` also deletes them for the other person (one-to-one chats). */
     deleteMessages: (chatId: string, ids: number[], revoke: boolean) => call<void>("telegram_delete_messages", { chatId, ids, revoke }),
     /** Moves a chat into Telegram's archive, or back out of it. */
@@ -226,8 +241,8 @@ export const api = {
       return isTauri ? convertFileSrc(path) : path;
     },
     /** Sends a file from this PC (pictures as photos), with an optional caption. */
-    sendFile: (chatId: string, path: string, caption: string, replyTo?: number) =>
-      call<TgMessage>("telegram_send_file", { chatId, path, caption, replyTo: replyTo ?? null }),
+    sendFile: (chatId: string, path: string, caption: string, replyTo?: number, formats?: TgFormat[]) =>
+      call<TgMessage>("telegram_send_file", { chatId, path, caption, replyTo: replyTo ?? null, formats: formats?.length ? formats : null }),
     /** Sends a voice message recorded in the app: Opus audio, its length in seconds, and 100 levels (0–31). */
     sendVoice: (chatId: string, bytes: Uint8Array, duration: number, waveform: number[], replyTo?: number) =>
       call<TgMessage>("telegram_send_voice", { chatId, bytes: Array.from(bytes), duration, waveform, replyTo: replyTo ?? null }),
