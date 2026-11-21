@@ -7,6 +7,7 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconArrowUp,
+  IconBookmark,
   IconChecklist,
   IconChevronLeft,
   IconChevronRight,
@@ -48,7 +49,8 @@ import { errorText } from "@/api";
 import { addTask, lastTask, useTasks } from "@/tasks/store";
 import { sectionKey, splitStatus, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META } from "@/tasks/status";
-import { chooseVault } from "@/components/tasks/tasks-setup";
+import { chooseVault } from "@/components/obsidian-vault";
+import type { SettingsSection } from "@/components/settings-dialog";
 import { ColorDot } from "@/components/color-dot";
 import { ChatAvatar } from "@/components/chats/chat-avatar";
 import { requestOpenChat, useTelegram } from "@/telegram/store";
@@ -63,6 +65,7 @@ interface Props {
   onSearch: (q: string) => void;
   /** Where "Search … for" applies, e.g. "All inboxes" or "Archived". */
   scopeLabel: string;
+  canFilterMail: boolean;
   searchMessages: (q: string) => Promise<MessageSummary[]>;
   accounts: Account[];
   accountById: Map<string, Account>;
@@ -70,7 +73,7 @@ interface Props {
   onNavigate: (v: View) => void;
   onCompose: () => void;
   onSync: () => void;
-  onSettings: () => void;
+  onSettings: (section?: SettingsSection) => void;
   onFilter: (f: Filter) => void;
   /** A task was added from the bar: send the window-wide glow out from `origin` (the bar's middle). */
   onTaskAdded: (origin?: DOMRect) => void;
@@ -469,6 +472,7 @@ export function CommandBar(p: Props) {
         .map(({ theme, ...t }) => ({ ...t, keywords: "appearance mode", run: () => setTheme(theme) })),
       { id: "sidebar", label: "Toggle sidebar", keywords: "hide show", icon: <IconLayoutSidebar />, fixedKey: "alt+d", run: toggleSidebar },
       { id: "settings", label: "Open settings", keywords: "preferences accounts shortcuts hotkeys keyboard appearance", icon: <IconSettings />, shortcut: "settings", run: p.onSettings },
+      { id: "bookmark-settings", label: "Bookmark settings", keywords: "bookmarks preferences vault appearance", icon: <IconBookmark />, run: () => p.onSettings("bookmarks") },
     ],
     [p.onCompose, p.onSync, p.onFilter, p.onSettings, resolvedTheme, setTheme, toggleSidebar],
   );
@@ -479,6 +483,7 @@ export function CommandBar(p: Props) {
       { id: "go-home", label: "Home", keywords: "overview dashboard start", icon: <IconSmartHome />, run: () => p.onNavigate({ kind: "home" }) },
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
       { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <CalendarIcon />, run: () => p.onNavigate({ kind: "calendar" }) },
+      { id: "go-bookmarks", label: "Bookmarks", keywords: "saved board collection", icon: <IconBookmark />, run: () => p.onNavigate({ kind: "bookmarks" }) },
       { id: "go-cleanup", label: "Clean up", keywords: "senders group bulk delete tidy declutter", icon: <IconSparkles />, run: () => p.onNavigate({ kind: "cleanup" }) },
       { id: "go-all", label: "All inboxes", keywords: "home everything", icon: <IconInbox />, shortcut: "goAll", run: () => p.onNavigate({ kind: "all" }) },
       ...labels.map((label) => ({
@@ -731,7 +736,7 @@ export function CommandBar(p: Props) {
             >
               <CommandEmpty className="cb-muted py-10">Nothing matches “{q}”.</CommandEmpty>
 
-              {q && !commandsOnly && (
+              {q && !commandsOnly && p.canFilterMail && (
                 <CommandGroup heading="Search">
                   <CommandItem value="search" onSelect={run(() => p.onSearch(q))} className={ROW}>
                     <Tile>

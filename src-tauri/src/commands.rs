@@ -9,6 +9,7 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
+use crate::bookmarks::{self, Board, BookmarksConfigPatch, NoteChange, WriteOutcome};
 use crate::calendar::{self, CalendarEvent, CalendarInfo, CALENDAR_UPDATED};
 use crate::calendar_edit::{self, EventChanges, NewEvent, Scope};
 use crate::config::{CalendarConfig, Config, TasksConfig};
@@ -645,6 +646,157 @@ pub fn save_tasks_config(state: St<'_>, tasks: TasksConfig) -> Result<Config> {
         tasks::clear_banner(state.data_dir());
     }
     state.save_tasks_config(tasks)
+}
+
+#[tauri::command]
+pub fn save_obsidian_vault(app: AppHandle, state: St<'_>, vault_path: String) -> Result<Config> {
+    let cfg = state.save_obsidian_vault(vault_path)?;
+    let _ = app.emit(tasks::TASKS_CHANGED, ());
+    let _ = app.emit(bookmarks::CHANGED, ());
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub fn save_bookmarks_config(state: St<'_>, patch: BookmarksConfigPatch) -> Result<Config> {
+    state.save_bookmarks_config(patch)
+}
+
+#[tauri::command]
+pub async fn bookmarks_load(state: St<'_>) -> Result<bookmarks::Snapshot> {
+    let vault = state.config().tasks.vault_path;
+    tauri::async_runtime::spawn_blocking(move || bookmarks::snapshot(vault))
+        .await.map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn bookmarks_preview_oriko(state: St<'_>, vault_path: String, source: String) -> Result<bookmarks::oriko::OrikoPreview> {
+    if vault_path.is_empty() || state.config().tasks.vault_path != vault_path {
+        return Err(msg("Connect the destination vault before previewing the import."));
+    }
+    tauri::async_runtime::spawn_blocking(move || bookmarks::oriko::preview(&vault_path, &source))
+        .await.map_err(|e| msg(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn bookmarks_import_oriko(
+    app: AppHandle, state: St<'_>, vault_path: String, source: String, expected: String,
+) -> Result<bookmarks::oriko::OrikoResult> {
+    let state = Arc::clone(&state);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = state.bookmark_writes.lock().map_err(|_| msg("Bookmark write lock poisoned"))?;
+        if vault_path.is_empty() || state.config().tasks.vault_path != vault_path {
+            return Err(msg("The connected vault changed. Preview the import again."));
+        }
+        let result = bookmarks::oriko::import(&vault_path, &source, &expected);
+        // Completed files may be visible after a partial failure.
+        let _ = app.emit(bookmarks::CHANGED, ());
+        result
+    }).await.map_err(|e| msg(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn bookmarks_write_boards(
+    app: AppHandle, state: St<'_>, vault_path: String, expected: Option<String>, boards: Vec<Board>,
+) -> Result<WriteOutcome> {
+    run_bookmark_write(app, Arc::clone(&state), vault_path, move |vault| {
+        bookmarks::write_boards(vault, expected, boards)
+    }).await
+}
+
+#[tauri::command]
+pub async fn bookmarks_write_note(
+    app: AppHandle, state: St<'_>, vault_path: String, id: String, note_path: String,
+    expected: String, changes: Vec<NoteChange>,
+) -> Result<WriteOutcome> {
+    run_bookmark_write(app, Arc::clone(&state), vault_path, move |vault| {
+        bookmarks::write_note(vault, &id, &note_path, &expected, changes)
+    }).await
+}
+
+#[tauri::command]
+pub async fn bookmarks_create(
+    app: AppHandle, state: St<'_>, vault_path: String, bookmark: bookmarks::NewBookmark,
+) -> Result<WriteOutcome> {
+    run_bookmark_write(app, Arc::clone(&state), vault_path, move |vault| bookmarks::create_note(vault, bookmark)).await
+}
+
+#[tauri::command]
+pub async fn bookmarks_recover_note(
+    app: AppHandle, state: St<'_>, vault_path: String, target: bookmarks::NoteTarget,
+) -> Result<WriteOutcome> {
+    run_bookmark_write(app, Arc::clone(&state), vault_path, move |vault| bookmarks::recover_note(vault, target)).await
+}
+
+#[tauri::command]
+pub fn bookmark_open_note(app: AppHandle, state: St<'_>, path: String) -> Result<()> {
+    let vault = state.config().tasks.vault_path;
+    bookmarks::resolve_note(&vault, &path)?;
+    let absolute = std::path::absolute(std::path::Path::new(&vault).join(path))?;
+    let mut url = url::Url::parse("obsidian://open").expect("valid Obsidian URI");
+    url.query_pairs_mut().append_pair("path", &absolute.to_string_lossy()).append_pair("paneType", "tab");
+    app.opener().open_url(url.as_str(), None::<&str>).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub fn bookmark_reveal_media(app: AppHandle, state: St<'_>, media_path: String) -> Result<()> {
+    let path = bookmarks::attachment_path(&state.config().tasks.vault_path, &media_path)?;
+    app.opener().reveal_item_in_dir(path).map_err(|e| msg(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn bookmark_sample_image(state: St<'_>, media_path: String) -> Result<tauri::ipc::Response> {
+    let vault = state.config().tasks.vault_path;
+    let bytes = tauri::async_runtime::spawn_blocking(move || bookmarks::sample_image(&vault, &media_path))
+        .await.map_err(|e| msg(e.to_string()))??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+#[derive(serde::Serialize)]
+pub struct ExportedBookmarks {
+    exported: Vec<String>,
+    errors: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn bookmarks_export(app: AppHandle, state: St<'_>, media_paths: Vec<String>) -> Result<ExportedBookmarks> {
+    let vault = state.config().tasks.vault_path;
+    let dir = app.path().download_dir().map_err(|e| msg(format!("Couldn't find your Downloads folder: {e}")))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut result = ExportedBookmarks { exported: Vec::new(), errors: Vec::new() };
+        let mut seen = std::collections::HashSet::new();
+        for reference in media_paths.into_iter().filter(|reference| seen.insert(reference.clone())) {
+            let export = (|| -> Result<String> {
+                let source = bookmarks::attachment_path(&vault, &reference)?;
+                let name = source.file_name().and_then(|name| name.to_str()).unwrap_or("bookmark");
+                loop {
+                    let target = unique_path(dir.clone(), name);
+                    if bookmarks::export_media(&source, &target)? { return Ok(target.to_string_lossy().into_owned()); }
+                }
+            })();
+            match export {
+                Ok(path) => result.exported.push(path),
+                Err(e) => result.errors.push(e.to_string()),
+            }
+        }
+        Ok(result)
+    }).await.map_err(|e| msg(e.to_string()))?
+}
+
+async fn run_bookmark_write(
+    app: AppHandle, state: Arc<AppState>, vault_path: String,
+    write: impl FnOnce(&str) -> Result<WriteOutcome> + Send + 'static,
+) -> Result<WriteOutcome> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = state.bookmark_writes.lock().map_err(|_| msg("Bookmark write lock poisoned"))?;
+        if vault_path.is_empty() || state.config().tasks.vault_path != vault_path {
+            return Ok(WriteOutcome::Conflict { message: "The connected vault changed. Refresh Bookmarks and try again." });
+        }
+        let outcome = write(&vault_path)?;
+        if matches!(outcome, WriteOutcome::Saved { .. }) {
+            let _ = app.emit(bookmarks::CHANGED, ());
+        }
+        Ok(outcome)
+    }).await.map_err(|e| msg(e.to_string()))?
 }
 
 /// The vault's to-do note, Completed note and Tick settings, read fresh from disk.

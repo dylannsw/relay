@@ -8,9 +8,31 @@ import type {
 } from "./types";
 import { formatDate } from "./tasks/tick/date";
 import { mockTelegram } from "./telegram/mock";
+import {
+  DEFAULT_BOOKMARKS_CONFIG, type Bookmark, type BookmarkBoard, type BookmarkNoteChange,
+  type BookmarksConfig, type BookmarksSnapshot, type BookmarkWriteOutcome, type OrikoPreview, type OrikoResult,
+} from "./bookmarks/types";
+import relayIcon from "./assets/app-icons/relay.png";
 
 const now = Date.now();
 const h = 3_600_000;
+const mockVault = "C:\\Users\\you\\Documents\\Obsidian\\notes";
+const bookmarkFixture = new URLSearchParams(window.location.search).get("bookmarks");
+const vaultEvents = new EventTarget();
+
+export async function mockVaultEvents(event: "tasks-changed" | "bookmarks-changed", listener: () => void) {
+  vaultEvents.addEventListener(event, listener);
+  return () => vaultEvents.removeEventListener(event, listener);
+}
+
+const bookmarkPrefsKey = "relay.mock.bookmarks";
+function mockBookmarkPrefs(): BookmarksConfig {
+  try {
+    return { ...DEFAULT_BOOKMARKS_CONFIG, ...JSON.parse(localStorage.getItem(bookmarkPrefsKey) ?? "{}") };
+  } catch {
+    return DEFAULT_BOOKMARKS_CONFIG;
+  }
+}
 
 let config: Config = {
   googleClientId: "",
@@ -20,7 +42,7 @@ let config: Config = {
   messagesPerAccount: 100,
   shortcuts: {},
   tasks: {
-    vaultPath: "C:\\Users\\you\\Documents\\Obsidian\\notes",
+    vaultPath: bookmarkFixture === "setup" ? "" : mockVault,
     bannerImage: "mock-banner.png",
     bannerPosition: 40,
     bannerDots: true,
@@ -28,7 +50,59 @@ let config: Config = {
   },
   displayName: "",
   calendar: { hidden: [], colors: {}, defaultCalendar: "" },
+  bookmarks: mockBookmarkPrefs(),
 };
+
+const loadedBookmarks = bookmarkFixture !== "empty";
+let mockBoards: BookmarkBoard[] = loadedBookmarks ? [{ id: "reference", name: "Reference", icon: "bookmark" }] : [];
+let mockBoardsRevision: string | null = loadedBookmarks ? "1" : null;
+let bookmarkRevision = 1;
+const mockBookmarks: Bookmark[] = loadedBookmarks ? [
+  {
+    bookmarkId: "relay-icon", boardId: null, title: "Relay icon", description: null, url: null,
+    author: null, clippedAt: formatDate(new Date(now), "YYYY-MM-DD", false), publishedAt: null,
+    categories: ["Design"], tags: ["Identity"], status: "read", cover: null, migrationId: null,
+    notePath: "Relay/Bookmarks/Notes/relay-icon.md", revision: "1",
+    media: [{ reference: "relay.png", kind: "image", mediaPath: relayIcon, revision: null }],
+  },
+  {
+    bookmarkId: "missing-media", boardId: null, title: "Saved reference", description: null, url: null,
+    author: null, clippedAt: formatDate(new Date(now - 24 * h), "YYYY-MM-DD", false), publishedAt: null,
+    categories: ["Reference"], tags: [], status: "unread", cover: null, migrationId: null,
+    notePath: "Relay/Bookmarks/Notes/saved-reference.md", revision: "1",
+    media: [{ reference: "reference.jpg", kind: null, mediaPath: null, revision: null }],
+  },
+] : [];
+let mockOrikoImport: OrikoResult | null = null;
+
+function mockOrikoPreview(): OrikoPreview {
+  return {
+    noteCount: 6, attachmentCount: 10, attachmentBytes: 1_024, alreadyImported: mockOrikoImport ? 6 : 0,
+    filenameCollisions: 0, urlCollisions: 2, recoveredMedia: 1, token: mockOrikoImport ? "imported" : "initial",
+    unresolved: [{ note: "Saved reference.md", reference: "reference.jpg", reason: "File not found in the Oriko attachment folder" }],
+    warnings: [],
+  };
+}
+
+function mockBookmarkSnapshot(): BookmarksSnapshot {
+  const vaultPath = config.tasks.vaultPath;
+  const available = !!vaultPath && bookmarkFixture !== "unavailable";
+  return {
+    vaultPath,
+    collectionPath: vaultPath ? `${vaultPath}\\Relay\\Bookmarks` : null,
+    boards: available ? mockBoards : [],
+    boardsRevision: available ? mockBoardsRevision : null,
+    bookmarks: available ? mockBookmarks.map((bookmark) => ({
+      ...bookmark,
+      savedBoardId: bookmark.boardId,
+      boardId: mockBoards.some((board) => board.id === bookmark.boardId) ? bookmark.boardId : null,
+    })) : [],
+    issues: [],
+    orikoSource: available ? `${vaultPath}\\oriko` : null,
+    orikoImport: available ? mockOrikoImport : null,
+    error: vaultPath && !available ? "The connected Obsidian vault folder couldn't be opened." : null,
+  };
+}
 
 // ----- a pretend Obsidian vault for the Tasks pages -----
 
@@ -444,14 +518,97 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
     case "get_config":
       return delay(config) as Promise<T>;
     case "save_config":
-      config = { ...(args.config as Config), tasks: config.tasks, displayName: config.displayName, calendar: config.calendar };
+      config = { ...(args.config as Config), tasks: config.tasks, displayName: config.displayName, calendar: config.calendar, bookmarks: config.bookmarks };
       return delay(config) as Promise<T>;
     case "save_display_name":
       config = { ...config, displayName: (args.name as string).trim().replace(/\s+/g, " ") };
       return delay(config) as Promise<T>;
     case "save_tasks_config":
-      config = { ...config, tasks: args.tasks as TasksConfig };
+      config = { ...config, tasks: { ...args.tasks as TasksConfig, vaultPath: config.tasks.vaultPath } };
       return delay(config) as Promise<T>;
+    case "save_obsidian_vault":
+      config = { ...config, tasks: { ...config.tasks, vaultPath: String(args.vaultPath).trim() } };
+      vaultEvents.dispatchEvent(new Event("tasks-changed"));
+      vaultEvents.dispatchEvent(new Event("bookmarks-changed"));
+      return delay(config) as Promise<T>;
+    case "pick_folder":
+      return delay(args.title === "Choose the Oriko folder" ? `${mockVault}\\oriko` : mockVault) as Promise<T>;
+    case "save_bookmarks_config":
+      config = { ...config, bookmarks: { ...config.bookmarks, ...args.patch as Partial<BookmarksConfig> } };
+      try {
+        localStorage.setItem(bookmarkPrefsKey, JSON.stringify(config.bookmarks));
+      } catch {
+        // Mock preferences still apply for this session.
+      }
+      return delay(config) as Promise<T>;
+    case "bookmarks_load":
+      return delay(mockBookmarkSnapshot()) as Promise<T>;
+    case "bookmarks_preview_oriko":
+      return delay(mockOrikoPreview()) as Promise<T>;
+    case "bookmarks_import_oriko": {
+      const preview = mockOrikoPreview();
+      if (args.vaultPath !== config.tasks.vaultPath || args.expected !== preview.token) return Promise.reject("Preview the import again.");
+      const importedNotes = preview.noteCount - preview.alreadyImported;
+      for (let index = 0; index < importedNotes; index++) {
+        const id = `oriko-${index}`;
+        mockBookmarks.push({
+          bookmarkId: id, title: `Imported bookmark ${index + 1}`, boardId: null, description: null,
+          url: null, author: null, clippedAt: null, publishedAt: null, categories: [], tags: [], status: null,
+          cover: null, migrationId: id, notePath: `Relay/Bookmarks/Notes/Imported/Oriko/${id}.md`,
+          revision: "1", media: [{ reference: "relay.png", kind: "image", mediaPath: relayIcon, revision: null }],
+        });
+      }
+      mockOrikoImport = { preview, importedNotes, copiedAttachments: importedNotes ? 10 : 0 };
+      vaultEvents.dispatchEvent(new Event("bookmarks-changed"));
+      return delay(mockOrikoImport) as Promise<T>;
+    }
+    case "bookmarks_write_boards":
+    case "bookmarks_write_note":
+    case "bookmarks_create":
+    case "bookmarks_recover_note": {
+      const conflict: BookmarkWriteOutcome = { status: "conflict", message: "The collection changed while saving. Refresh Bookmarks and try again." };
+      if (!args.vaultPath || args.vaultPath !== config.tasks.vaultPath) return delay(conflict) as Promise<T>;
+      if (cmd === "bookmarks_write_boards") {
+        if (args.expected !== mockBoardsRevision) return delay(conflict) as Promise<T>;
+        mockBoards = args.boards as BookmarkBoard[];
+        mockBoardsRevision = String(++bookmarkRevision);
+      } else if (cmd === "bookmarks_write_note") {
+        const bookmark = mockBookmarks.find((item) => item.bookmarkId === args.id && item.notePath === args.notePath);
+        if (!bookmark || bookmark.revision !== args.expected) return delay(conflict) as Promise<T>;
+        for (const change of args.changes as BookmarkNoteChange[]) {
+          if (change.field === "custom") {
+            const { name, value, remove } = change.value;
+            const properties = { ...bookmark.customProperties };
+            if (remove) delete properties[name];
+            else Object.defineProperty(properties, name, { value, enumerable: true, configurable: true });
+            bookmark.customProperties = properties;
+          } else Object.assign(bookmark, { [change.field]: change.value });
+        }
+        bookmark.revision = String(++bookmarkRevision);
+      } else if (cmd === "bookmarks_create") {
+        const draft = args.bookmark as import("./bookmarks/types").NewBookmark;
+        if (mockBookmarks.some((note) => note.bookmarkId === draft.id)) return delay(conflict) as Promise<T>;
+        mockBookmarks.unshift({
+          bookmarkId: draft.id, notePath: `Relay/Bookmarks/Notes/${draft.id}.md`, revision: String(++bookmarkRevision),
+          title: draft.title, url: draft.url, boardId: draft.boardId, clippedAt: new Date().toISOString(),
+          media: [], cover: null, migrationId: null, description: null, author: null, categories: [], tags: [], publishedAt: null, status: null,
+        });
+      } else {
+        const target = args.target as import("./bookmarks/types").BookmarkTarget;
+        const index = mockBookmarks.findIndex((item) => item.bookmarkId === target.id && item.notePath === target.path && item.revision === target.expected);
+        if (index === -1) return delay(conflict) as Promise<T>;
+        mockBookmarks.splice(index, 1);
+      }
+      vaultEvents.dispatchEvent(new Event("bookmarks-changed"));
+      return delay({ status: "saved", revision: String(bookmarkRevision) }) as Promise<T>;
+    }
+    case "bookmark_open_note":
+    case "bookmark_reveal_media":
+      return delay(undefined) as Promise<T>;
+    case "bookmarks_export": {
+      const exported = Array.from(new Set(args.mediaPaths as string[])).map((path) => `Downloads/${path.split("/").at(-1)}`);
+      return delay({ exported, errors: [] }) as Promise<T>;
+    }
     case "set_task_banner":
       config = { ...config, tasks: { ...config.tasks, bannerImage: "mock-banner.png", bannerPosition: 50 } };
       return delay(config) as Promise<T>;

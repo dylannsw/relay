@@ -10,6 +10,9 @@ import { WindowStrip } from "@/components/title-bar";
 import { AppSidebar, isPageView, stepSidebarView, type View } from "@/components/app-sidebar";
 import { HomePage } from "@/components/home/home-page";
 import { TasksPage } from "@/components/tasks/tasks-page";
+import { BookmarksPage } from "@/components/bookmarks/bookmarks-page";
+import { BookmarkHandoffDialog } from "@/components/bookmarks/bookmark-handoff-dialog";
+import { useBookmarkHandoffs } from "@/bookmarks/handoff";
 import { CalendarPage } from "@/components/calendar/calendar-page";
 import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { MailList, type Filter } from "@/components/mail-list";
@@ -46,6 +49,7 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 export default function App() {
+  const bookmarkHandoff = useBookmarkHandoffs();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [view, setView] = useState<View>({ kind: "home" });
   const [filter, setFilter] = useState<Filter>("all");
@@ -728,6 +732,8 @@ export default function App() {
   const viewTitle =
     view.kind === "cleanup"
       ? "Clean Up"
+      : view.kind === "bookmarks"
+      ? "Bookmarks"
       : view.kind === "all" || pageView
       ? "All Inboxes"
       : view.kind === "label"
@@ -737,7 +743,11 @@ export default function App() {
           : "Drafts";
   const openSettings = (section?: SettingsSection) => {
     closeReader();
-    setSettingsSection(section ?? (view.kind === "home" ? "home" : view.kind === "tasks" ? "tasks" : view.kind === "calendar" ? "calendar" : undefined));
+    const kind = view.kind;
+    const currentSection = kind === "home" || kind === "tasks" || kind === "calendar" || kind === "bookmarks"
+      ? kind
+      : undefined;
+    setSettingsSection(section ?? currentSection);
     setSettingsOpen(true);
   };
   const senders: SendersProps | undefined =
@@ -790,6 +800,7 @@ export default function App() {
               search={search}
               onSearch={setSearch}
               scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
+              canFilterMail={view.kind !== "bookmarks"}
               searchMessages={searchMessages}
               accounts={accounts}
               accountById={accountById}
@@ -800,7 +811,7 @@ export default function App() {
               }}
               onCompose={() => startCompose("new")}
               onSync={() => void syncNow()}
-              onSettings={() => openSettings()}
+              onSettings={openSettings}
               onFilter={setFilter}
               onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
             />
@@ -833,6 +844,8 @@ export default function App() {
             <TasksPage onOpenSettings={() => openSettings("tasks")} />
           ) : view.kind === "calendar" ? (
             <CalendarPage onOpenSettings={() => openSettings("calendar")} />
+          ) : view.kind === "bookmarks" ? (
+            <BookmarksPage onOpenSettings={() => openSettings("bookmarks")} />
           ) : view.kind === "chats" ? (
             <ChatsPage folder={view.folder} />
           ) : view.kind === "drafts" ? (
@@ -915,6 +928,9 @@ export default function App() {
         onMailto={(address) => startCompose("new", undefined, address)}
       />
 
+      {bookmarkHandoff.url && !draft && !settingsOpen && !commandOpen && !signingIn && (
+        <BookmarkHandoffDialog key={bookmarkHandoff.url} url={bookmarkHandoff.url} onClose={bookmarkHandoff.close} />
+      )}
       {draft && (
         <ComposeDialog
           draft={draft}

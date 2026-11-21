@@ -2,7 +2,11 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { mockInvoke } from "./mock";
+import { mockInvoke, mockVaultEvents } from "./mock";
+import type {
+  BookmarkBoard, BookmarkMedia, BookmarkNoteChange, BookmarksConfig, BookmarksSnapshot, BookmarkWriteOutcome, OrikoPreview, OrikoResult,
+  BookmarkTarget, NewBookmark, BookmarkHandoff,
+} from "./bookmarks/types";
 import { mockTelegramEvents } from "./telegram/mock";
 import type { TgChatList, TgEvent, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet } from "./telegram/types";
 import type {
@@ -112,6 +116,7 @@ export const api = {
     isTauri ? listen("calendar-updated", () => cb()) : Promise.resolve(() => {}),
 
   saveTasksConfig: (tasks: TasksConfig) => call<Config>("save_tasks_config", { tasks }),
+  saveObsidianVault: (vaultPath: string) => call<Config>("save_obsidian_vault", { vaultPath }),
   tasksLoad: () => call<TasksSnapshot>("tasks_load"),
   /** Saves a note if it's unchanged since it was read; returns its new stamp. */
   tasksWrite: (note: NoteKind, content: string, expected: string) =>
@@ -121,7 +126,7 @@ export const api = {
 
   /** A folder chosen in Windows' folder picker, or null if cancelled. */
   pickFolder: async (title: string, defaultPath?: string): Promise<string | null> => {
-    if (!isTauri) return Promise.reject("Choosing a folder only works in the desktop app (npm run app).");
+    if (!isTauri) return call<string | null>("pick_folder", { title, defaultPath });
     const picked = await openDialog({ directory: true, title, defaultPath: defaultPath || undefined });
     return typeof picked === "string" ? picked : null;
   },
@@ -137,7 +142,36 @@ export const api = {
   },
 
   onTasksChanged: (cb: () => void): Promise<() => void> =>
-    isTauri ? listen("tasks-changed", () => cb()) : Promise.resolve(() => {}),
+    isTauri ? listen("tasks-changed", () => cb()) : mockVaultEvents("tasks-changed", cb),
+
+  bookmarksLoad: () => call<BookmarksSnapshot>("bookmarks_load"),
+  takeBookmarkHandoffs: () => isTauri ? invoke<BookmarkHandoff[]>("take_bookmark_handoffs") : Promise.resolve([]),
+  onBookmarkHandoffQueued: (cb: () => void): Promise<() => void> =>
+    isTauri ? listen("bookmark-handoff-queued", () => cb()) : Promise.resolve(() => {}),
+  saveBookmarksConfig: (patch: Partial<BookmarksConfig>) => call<Config>("save_bookmarks_config", { patch }),
+  previewOriko: (vaultPath: string, source: string) => call<OrikoPreview>("bookmarks_preview_oriko", { vaultPath, source }),
+  importOriko: (vaultPath: string, source: string, expected: string) => call<OrikoResult>("bookmarks_import_oriko", { vaultPath, source, expected }),
+  bookmarksWriteBoards: (vaultPath: string, expected: string | null, boards: BookmarkBoard[]) =>
+    call<BookmarkWriteOutcome>("bookmarks_write_boards", { vaultPath, expected, boards }),
+  bookmarksWriteNote: (vaultPath: string, id: string, notePath: string, expected: string, changes: BookmarkNoteChange[]) =>
+    call<BookmarkWriteOutcome>("bookmarks_write_note", { vaultPath, id, notePath, expected, changes }),
+  createBookmark: (vaultPath: string, bookmark: NewBookmark) =>
+    call<BookmarkWriteOutcome>("bookmarks_create", { vaultPath, bookmark }),
+  recoverBookmark: (vaultPath: string, target: BookmarkTarget) =>
+    call<BookmarkWriteOutcome>("bookmarks_recover_note", { vaultPath, target }),
+  openBookmarkNote: (path: string) => call<void>("bookmark_open_note", { path }),
+  revealBookmarkMedia: (mediaPath: string) => call<void>("bookmark_reveal_media", { mediaPath }),
+  exportBookmarks: (mediaPaths: string[]) => call<{ exported: string[]; errors: string[] }>("bookmarks_export", { mediaPaths }),
+  sampleBookmarkImage: async (mediaPath: string): Promise<Blob> => {
+    if (!isTauri) return (await fetch(mediaPath)).blob();
+    return new Blob([await call<ArrayBuffer>("bookmark_sample_image", { mediaPath })], { type: "image/png" });
+  },
+  bookmarkMediaUrl: ({ mediaPath, revision }: BookmarkMedia): string | undefined => {
+    if (!mediaPath) return;
+    return isTauri ? `${convertFileSrc(mediaPath, "bookmark-media")}?v=${encodeURIComponent(revision ?? "")}` : mediaPath;
+  },
+  onBookmarksChanged: (cb: () => void): Promise<() => void> =>
+    isTauri ? listen("bookmarks-changed", () => cb()) : mockVaultEvents("bookmarks-changed", cb),
 
   openExternal: (url: string) =>
     isTauri ? openUrl(url) : Promise.resolve(void window.open(url, "_blank", "noopener")),

@@ -443,11 +443,10 @@ export async function completeTask(task: ParsedTask): Promise<UndoComplete> {
 
 // ----- settings -----
 
-export async function saveTasksConfig(patch: Partial<TasksConfig>): Promise<Config> {
+export async function saveTasksConfig(patch: Partial<Omit<TasksConfig, "vaultPath">>): Promise<Config> {
   const current = state.config ?? (await api.getConfig()).tasks;
   const cfg = await api.saveTasksConfig({ ...current, ...patch });
   set({ config: cfg.tasks });
-  if (patch.vaultPath !== undefined) await reloadTasks();
   return cfg;
 }
 

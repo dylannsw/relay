@@ -8,6 +8,7 @@ import {
   IconBrandTelegram,
   IconMilitaryRank,
   IconUsers,
+  IconBookmark,
   IconChecklist,
   IconChevronRight,
   IconSchool,
@@ -57,6 +58,7 @@ export type View =
   | { kind: "home" }
   | { kind: "tasks" }
   | { kind: "calendar" }
+  | { kind: "bookmarks" }
   | { kind: "all" }
   | { kind: "label"; label: string }
   | { kind: "account"; id: string; folder: Folder }
@@ -69,7 +71,7 @@ export type View =
 
 /** Home, Tasks, Calendar, Chats and Drafts: pages without the mail list. */
 export const isPageView = (v: View) =>
-  v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "chats" || v.kind === "drafts";
+  v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "bookmarks" || v.kind === "chats" || v.kind === "drafts";
 
 /** An icon for a Telegram folder, guessed from its name. */
 export function chatFolderIcon(title: string): TablerIcon {
@@ -161,6 +163,7 @@ function sidebarViews(accounts: Account[]): View[] {
     { kind: "home" },
     { kind: "tasks" },
     { kind: "calendar" },
+    { kind: "bookmarks" },
     ...accounts.map((a): View => ({ kind: "account", id: a.id, folder: "inbox" })),
   ];
 }
@@ -292,7 +295,7 @@ function AccountItem({ account: a, view, onView, onReconnect, drafts }: {
   );
 }
 
-/** Home, Tasks and Calendar, at the top of the sidebar, with open tasks and today's events counted. */
+/** The top-level pages, with open tasks and today's events counted. */
 function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) {
   const t = useTasks();
   const open = t.status === "ready" ? t.tasks.length : 0;
@@ -334,6 +337,17 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
           <span>Calendar</span>
         </SidebarMenuButton>
         {today > 0 && <SidebarMenuBadge>{today}</SidebarMenuBadge>}
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={view.kind === "bookmarks"}
+          {...stop({ kind: "bookmarks" })}
+          onClick={() => onView({ kind: "bookmarks" })}
+          className="[--sidebar-icon-active:var(--home)]"
+        >
+          <IconBookmark />
+          <span>Bookmarks</span>
+        </SidebarMenuButton>
       </SidebarMenuItem>
     </>
   );

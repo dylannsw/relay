@@ -69,6 +69,7 @@ export interface Config {
   shortcuts: Record<string, string>;
   /** Saved on its own with `saveTasksConfig`; `saveConfig` leaves it unchanged. */
   tasks: TasksConfig;
+  bookmarks: import("./bookmarks/types").BookmarksConfig;
   /** The name Home greets you by ("" = the first account's name). Saved with `saveDisplayName`. */
   displayName: string;
   /** Saved on its own with `saveCalendarConfig`. */
@@ -86,7 +87,7 @@ export interface CalendarConfig {
 }
 
 export interface TasksConfig {
-  /** The Obsidian vault folder holding Tick's to-do note ("" = not set up). */
+  /** The shared Tasks and Bookmarks vault ("" = not set up). */
   vaultPath: string;
   /** The Home banner: Relay's own copy of the picture ("" = none). Not synced. */
   bannerImage: string;

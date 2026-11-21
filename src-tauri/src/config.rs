@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::bookmarks::BookmarksConfig;
 use crate::error::Result;
 
 /// User settings, stored as JSON in the app config dir
@@ -25,6 +26,7 @@ pub struct Config {
     /// Tasks (the Tick to-do note in an Obsidian vault). Saved on its own with
     /// `save_tasks_config`; `save_config` leaves it as it is.
     pub tasks: TasksConfig,
+    pub bookmarks: BookmarksConfig,
     /// The name Home greets you by ("" = the first account's name). Saved on its own with
     /// `save_display_name`; `save_config` leaves it as it is.
     pub display_name: String,
@@ -48,7 +50,7 @@ pub struct CalendarConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TasksConfig {
-    /// The Obsidian vault folder holding Tick's to-do note ("" = not set up).
+    /// The shared Tasks and Bookmarks vault. Kept here for compatibility with existing settings.
     pub vault_path: String,
     /// The Home banner: Relay's own copy of the picture, in its data folder ("" = none).
     /// Not synced, and separate from the Tick plugin's banner in Obsidian.
@@ -83,6 +85,7 @@ impl Default for Config {
             messages_per_account: 100,
             shortcuts: BTreeMap::new(),
             tasks: TasksConfig::default(),
+            bookmarks: BookmarksConfig::default(),
             display_name: String::new(),
             calendar: CalendarConfig::default(),
         }

@@ -1,6 +1,8 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bookmark_handoff;
+mod bookmarks;
 mod calendar;
 mod calendar_edit;
 mod clipboard;
@@ -36,7 +38,7 @@ fn main() {
     // One Relay at a time: opening it again brings the running window forward instead. Must be
     // the first plugin. Left out of dev builds, which share the identifier and would otherwise
     // just focus the installed Relay.
-    #[cfg(not(debug_assertions))]
+    #[cfg(any(not(debug_assertions), all(windows, not(dev))))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.unminimize();
@@ -44,7 +46,11 @@ fn main() {
             let _ = w.set_focus();
         }
     }));
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
     builder
+        .manage(bookmark_handoff::PendingHandoffs::default())
+        .register_asynchronous_uri_scheme_protocol(bookmarks::MEDIA_SCHEME, bookmarks::respond)
         .plugin(tauri_plugin_opener::init())
         // Self-updates: checks the endpoint in tauri.conf.json, verifies the signature, installs.
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -65,6 +71,8 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
+            #[cfg(windows)]
+            bookmark_handoff::register(app.handle())?;
             let state = Arc::new(state::AppState::init(app.handle())?);
             app.manage(state.clone());
             sync::spawn_background(app.handle().clone(), state.clone());
@@ -73,10 +81,12 @@ fn main() {
             app.manage(tg.clone());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { tg.autostart(&handle).await });
-            tasks::spawn_watcher(app.handle().clone(), state);
+            tasks::spawn_watcher(app.handle().clone(), state.clone());
+            bookmarks::spawn_watcher(app.handle().clone(), state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            bookmark_handoff::take_bookmark_handoffs,
             taskbar::set_taskbar_icon,
             commands::get_config,
             commands::save_config,
@@ -103,6 +113,19 @@ fn main() {
             commands::delete_draft,
             commands::sync_now,
             commands::save_tasks_config,
+            commands::save_obsidian_vault,
+            commands::save_bookmarks_config,
+            commands::bookmarks_load,
+            commands::bookmarks_preview_oriko,
+            commands::bookmarks_import_oriko,
+            commands::bookmarks_write_boards,
+            commands::bookmarks_write_note,
+            commands::bookmarks_create,
+            commands::bookmarks_recover_note,
+            commands::bookmark_open_note,
+            commands::bookmark_reveal_media,
+            commands::bookmark_sample_image,
+            commands::bookmarks_export,
             commands::tasks_load,
             commands::tasks_write,
             commands::set_task_banner,

@@ -16,28 +16,30 @@ export const SELECTION_BAR_ROOM = 86;
  * Its colours are its own (.selection-bar in styles.css): light in Light, dark in Dark and in Mixed,
  * where it floats dark over the light content like the toasts and tooltips.
  */
-export function SelectionBar({ open, label, onClear, children }: {
+export function SelectionBar({ open, label, onClear, children, placement = "floating" }: {
   open: boolean;
   /** "3 selected", "2 of 5 selected"… */
   label: ReactNode;
   /** Shows ✕ (Escape) when given. */
   onClear?: () => void;
   children: ReactNode;
+  placement?: "floating" | "inline";
 }) {
   // Keep the last label while the bar leaves, so it doesn't read "0 selected" on its way out.
   const shown = useRef<ReactNode>(label);
   if (open) shown.current = label;
+  const inline = placement === "inline";
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-5 z-(--z-floating) flex justify-center px-4">
+    <div className={cn("pointer-events-none z-(--z-floating) flex justify-center px-4", inline ? "relative shrink-0" : "absolute inset-x-0 bottom-5")}>
       <AnimatePresence>
         {open && (
           <motion.div
             role="toolbar"
             aria-label="Selection actions"
-            className="selection-bar pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto no-scrollbar rounded-2xl p-1.5"
-            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            className={cn("selection-bar pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto no-scrollbar rounded-2xl p-1.5", inline && "my-2")}
+            initial={{ opacity: 0, y: inline ? -4 : 16, scale: inline ? 1 : 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { type: "spring", duration: 0.35, bounce: 0.25, opacity: { duration: 0.15 } } }}
-            exit={{ opacity: 0, y: 10, scale: 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
+            exit={{ opacity: 0, y: inline ? -4 : 10, scale: inline ? 1 : 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
             // Clicks here mustn't reach the page behind (which clears the selection on empty space).
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}

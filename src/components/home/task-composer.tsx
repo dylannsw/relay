@@ -16,7 +16,7 @@ import { errorText } from "@/api";
 import { addTask, lastTask } from "@/tasks/store";
 import { sectionKey, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
-import { chooseVault } from "@/components/tasks/tasks-setup";
+import { chooseVault } from "@/components/obsidian-vault";
 
 /**
  * Home's add-task box (the shared composer tray), with the section picker, status and note button

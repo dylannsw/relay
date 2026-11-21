@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   IconArrowBackUp,
   IconCheck,
+  IconBookmark,
   IconChecklist,
   IconChevronDown,
   IconChevronUp,
@@ -141,7 +142,11 @@ import { setQuickAdd, useQuickAdd } from "@/tasks/quick-add";
 import { STATUSES, STATUS_META } from "@/tasks/status";
 import { sectionKey, type TaskStatus } from "@/tasks/tick";
 import { greetingName } from "@/components/home/home-welcome";
-import { chooseVault } from "@/components/tasks/tasks-setup";
+import { VaultPathField } from "@/components/obsidian-vault";
+import { chooseOrikoSource, importOriko, previewOriko, saveBookmarksAppearance, useBookmarks } from "@/bookmarks/store";
+import type { BookmarksConfig, OrikoPreview } from "@/bookmarks/types";
+import { BOOKMARK_SITES } from "@/bookmarks/presentation";
+import type { SocialSite } from "@/bookmarks/types";
 import { chooseBanner } from "@/components/home/home-banner";
 
 interface Props {
@@ -166,6 +171,7 @@ const SECTIONS = [
   { id: "mail", group: "Features", label: "Mail", icon: IconMail, note: "Mail settings save automatically." },
   { id: "calendar", group: "Features", label: "Calendar", icon: CalendarIcon, note: "Calendar settings save automatically." },
   { id: "tasks", group: "Features", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
+  { id: "bookmarks", group: "Features", label: "Bookmarks", icon: IconBookmark, note: "Bookmark settings save automatically." },
   { id: "appearance", group: "Relay", label: "Appearance", icon: IconPalette, note: "Appearance changes apply right away." },
   { id: "shortcuts", group: "Relay", label: "Shortcuts", icon: IconKeyboard, note: "Shortcut changes save automatically." },
   { id: "updates", group: "Relay", label: "Updates", icon: IconRefreshDot, note: "Updates download from GitHub Releases." },
@@ -197,14 +203,14 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
           </>
         }
       >
-        <DialogDescription className="sr-only">Accounts; Home, Mail, Calendar and Tasks; appearance, keyboard shortcuts and updates; and sign-in setup.</DialogDescription>
+        <DialogDescription className="sr-only">Manage accounts, features, appearance, keyboard shortcuts, updates, and sign-in setup.</DialogDescription>
         <Tabs
           value={section}
           onValueChange={(v) => setSection(v as Section)}
           orientation="vertical"
           className="min-h-0 flex-1 gap-0"
         >
-          <TabsList className="relative isolate h-full w-48 shrink-0 items-stretch justify-start gap-0.5 rounded-none border-r bg-transparent p-2 group-data-vertical/tabs:h-full">
+          <TabsList className="relative isolate h-full w-48 shrink-0 items-stretch justify-start gap-0.5 overflow-y-auto rounded-none border-r bg-transparent p-2 group-data-vertical/tabs:h-full">
             {/* One hover fill that slides between the sections, like the app sidebar's. */}
             <SidebarHoverPill rows='[data-slot="tabs-trigger"]' active='[aria-selected="true"]' className="rounded-[7px] corner-smooth bg-tint-hover" />
             {SECTIONS.map((x, i) => (
@@ -234,6 +240,10 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
             <TabsContent value="tasks">
               <SectionTitle>{SECTIONS.find((x) => x.id === "tasks")!.label}</SectionTitle>
               <TasksTab />
+            </TabsContent>
+            <TabsContent value="bookmarks">
+              <SectionTitle>Bookmarks</SectionTitle>
+              <BookmarksTab />
             </TabsContent>
             <TabsContent value="calendar">
               <SectionTitle>{SECTIONS.find((x) => x.id === "calendar")!.label}</SectionTitle>
@@ -433,16 +443,10 @@ function TasksTab() {
     <div className="flex flex-col divide-y">
       <SettingRow
         title="Obsidian vault"
-        description="Relay shows and edits the to-do note from the Tick plugin in this vault. The vault syncs between your devices on its own."
+        description="Tasks and Bookmarks share this vault. Relay reads the current task note locations from Tick in Obsidian."
         stacked
       >
-        <div className="flex gap-2">
-          <Input readOnly value={cfg.vaultPath} placeholder="No vault chosen" className="flex-1 font-mono text-xs" />
-          <Button variant="outline" onClick={() => void chooseVault(cfg.vaultPath)}>
-            <IconFolderOpen />
-            {cfg.vaultPath ? "Change…" : "Choose…"}
-          </Button>
-        </div>
+        <VaultPathField vaultPath={cfg.vaultPath} />
         {cfg.vaultPath &&
           (t.status === "error" ? (
             <p className="flex items-start gap-2 text-sm text-destructive">
@@ -498,6 +502,151 @@ function TasksTab() {
             </Select>
           </div>
         </SettingRow>
+      )}
+    </div>
+  );
+}
+
+const BOOKMARK_TILE_OPTIONS = {
+  tiny: "Tiny", small: "Small", medium: "Medium", large: "Large", huge: "Huge",
+};
+const BOOKMARK_DATE_OPTIONS = {
+  none: "None", clippedDate: "Clipped date", publishedDate: "Published date",
+};
+const BOOKMARK_PROPERTY_OPTIONS = {
+  none: "None", categories: "Categories", tags: "Tags", status: "Status", author: "Author",
+};
+const SOCIAL_CARD_OPTIONS = { always: "Always", hover: "On hover", never: "Never" };
+
+function BookmarkSelect<K extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: K;
+  options: Record<K, string>;
+  onChange: (value: K) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={(value) => onChange(value as K)}>
+      <SelectTrigger aria-label={label}><SelectValue /></SelectTrigger>
+      <SelectContent>
+        {Object.entries<string>(options).map(([id, label]) => <SelectItem key={id} value={id}>{label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function BookmarksTab() {
+  const { snapshot, error, config, source: chosen, preview } = useBookmarks();
+  const tasks = useTasksState();
+  const vaultPath = snapshot?.vaultPath ?? tasks.config?.vaultPath ?? "";
+  const source = chosen && chosen.vaultPath === vaultPath ? chosen.path : snapshot?.orikoSource ?? "";
+  const summary = preview?.source === source && preview.vaultPath === vaultPath ? preview : null;
+  const lastImport = snapshot?.orikoImport;
+  const pending = preview?.pending;
+  const update = (patch: Partial<BookmarksConfig>) => saveBookmarksAppearance(patch);
+
+  return (
+    <div className="flex flex-col divide-y">
+      <SettingRow title="Obsidian vault" description="Tasks and Bookmarks share this vault." stacked>
+        <VaultPathField vaultPath={vaultPath} disabled={pending === "import"} />
+        <p className="break-all text-xs text-muted-foreground">
+          {snapshot?.collectionPath ?? "Bookmarks are stored under Relay/Bookmarks in your vault."}
+        </p>
+        {(error ?? snapshot?.error) && <p className="text-sm text-destructive">{error ?? snapshot?.error}</p>}
+      </SettingRow>
+      <Subsection title="Appearance">
+        {config ? (
+          <div className="divide-y">
+            <SettingRow title="Tile size" description="Set the size of tiles on the bookmark wall.">
+              <BookmarkSelect label="Tile size" value={config.tileSize} options={BOOKMARK_TILE_OPTIONS} onChange={(tileSize) => update({ tileSize })} />
+            </SettingRow>
+            <SettingRow title="Autoplay previews" description="Play visible video previews muted. Reduce Motion disables autoplay.">
+              <Switch aria-label="Autoplay previews" checked={config.autoplayPreviews} onCheckedChange={(autoplayPreviews) => update({ autoplayPreviews })} />
+            </SettingRow>
+            <SettingRow title="Open videos muted" description="Start videos with the sound off.">
+              <Switch aria-label="Open videos muted" checked={config.openVideosMuted} onCheckedChange={(openVideosMuted) => update({ openVideosMuted })} />
+            </SettingRow>
+            <SettingRow title="Top badge" description="Choose which date to show on each tile.">
+              <BookmarkSelect label="Top badge" value={config.topBadge} options={BOOKMARK_DATE_OPTIONS} onChange={(topBadge) => update({ topBadge })} />
+            </SettingRow>
+            <SettingRow title="Bottom badge" description="Choose the property to show below the title.">
+              <BookmarkSelect label="Bottom badge" value={config.bottomBadge} options={BOOKMARK_PROPERTY_OPTIONS} onChange={(bottomBadge) => update({ bottomBadge })} />
+            </SettingRow>
+            <SettingRow title="Social cards" description="Choose when to show saved post details." stacked>
+              <div className="grid grid-cols-2 gap-3">
+                {(Object.entries(BOOKMARK_SITES) as [SocialSite, string][]).map(([site, name]) => (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border p-2.5" key={site}>
+                    <span className="text-sm">{name}</span>
+                    <BookmarkSelect label={`${name} card visibility`} value={config.socialCards?.[site] ?? "hover"} options={SOCIAL_CARD_OPTIONS}
+                      onChange={(value) => update({ socialCards: { ...config.socialCards, [site]: value } })} />
+                  </div>
+                ))}
+              </div>
+            </SettingRow>
+          </div>
+        ) : <Spinner aria-label="Loading bookmark appearance" />}
+      </Subsection>
+      <Subsection title="Import from Oriko" description="Copy your collection into this vault’s Bookmarks Home.">
+        <div className="flex gap-2">
+          <Input aria-label="Oriko source folder" className="flex-1 font-mono text-xs" readOnly value={source} placeholder="No Oriko folder detected" />
+          <Button variant="outline" onClick={() => void chooseOrikoSource(vaultPath, source)} disabled={!vaultPath || !!pending}>
+            <IconFolderOpen /> {source ? "Change…" : "Choose…"}
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={!source || !vaultPath || !!pending} onClick={() => void previewOriko(vaultPath, source)}>
+            {pending === "preview" && <Spinner />}
+            Preview import
+          </Button>
+          <Button disabled={!summary?.result || !!pending || !summary.result.noteCount} onClick={() => void importOriko(vaultPath, source)}>
+            {pending === "import" && <Spinner />}
+            {pending === "import" ? "Importing bookmarks…" : "Import bookmarks"}
+          </Button>
+        </div>
+        {summary?.result && (
+          <div className="space-y-2 rounded-lg border p-3" aria-live="polite">
+            <p className="text-sm font-medium">Import preview</p>
+            <p className="text-sm text-muted-foreground">
+              {orikoCount(summary.result.noteCount, "note")} and {orikoCount(summary.result.attachmentCount, "attachment")} found.
+            </p>
+            <OrikoCounts preview={summary.result} />
+          </div>
+        )}
+        {summary?.error && <p role="alert" className="text-sm text-destructive">{summary.error}</p>}
+        {lastImport && (
+          <div className="space-y-2 rounded-lg border p-3" aria-live="polite">
+            <p className="text-sm font-medium">Last import</p>
+            <p className="text-sm text-muted-foreground">
+              Imported {orikoCount(lastImport.importedNotes, "bookmark")} and copied {orikoCount(lastImport.copiedAttachments, "attachment")}.
+            </p>
+            <OrikoCounts preview={lastImport.preview} />
+          </div>
+        )}
+      </Subsection>
+    </div>
+  );
+}
+
+function orikoCount(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function OrikoCounts({ preview }: { preview: OrikoPreview }) {
+  const details = preview.unresolved.length + preview.warnings.length;
+  return (
+    <div className="space-y-2 text-xs text-muted-foreground">
+      <p>
+        {preview.alreadyImported} previously imported · {orikoCount(preview.filenameCollisions, "filename collision")} · {orikoCount(preview.urlCollisions, "matching URL group")} · {preview.recoveredMedia} media recovered · {orikoCount(preview.unresolved.length, "unresolved reference")}
+      </p>
+      {details > 0 && (
+        <details>
+          <summary className="cursor-pointer">View import details</summary>
+          <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto break-all">
+            {preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+            {preview.unresolved.map(({ note, reference, reason }) => (
+              <li key={JSON.stringify([note, reference])}><strong>{note}</strong> · {reference} · {reason}</li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

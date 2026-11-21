@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
 
+use crate::bookmarks::BookmarksConfigPatch;
 use crate::config::{CalendarConfig, Config, TasksConfig};
 use crate::error::{msg, Error, Result};
 use crate::models::Account;
@@ -27,6 +28,7 @@ pub struct AppState {
     refresh_lock: tokio::sync::Mutex<()>,
     pub sync_lock: tokio::sync::Mutex<()>,
     pub calendar_lock: tokio::sync::Mutex<()>,
+    pub bookmark_writes: Mutex<()>,
     pub auth_cancel: Mutex<Option<oneshot::Sender<()>>>,
 }
 
@@ -60,6 +62,7 @@ impl AppState {
             refresh_lock: tokio::sync::Mutex::new(()),
             sync_lock: tokio::sync::Mutex::new(()),
             calendar_lock: tokio::sync::Mutex::new(()),
+            bookmark_writes: Mutex::new(()),
             auth_cancel: Mutex::new(None),
         })
     }
@@ -74,11 +77,11 @@ impl AppState {
         self.config.read().expect("config lock").clone()
     }
 
-    /// Saves the mail settings and shortcuts. The tasks settings and display name are kept as
-    /// they are: they have their own commands, so a stale copy from an open form can't undo them.
+    /// Saves the mail settings and shortcuts, preserving settings owned by other commands.
     pub fn save_config(&self, mut cfg: Config) -> Result<Config> {
         let mut current = self.config.write().expect("config lock");
         cfg.tasks = current.tasks.clone();
+        cfg.bookmarks = current.bookmarks.clone();
         cfg.display_name = current.display_name.clone();
         cfg.calendar = current.calendar.clone();
         let cfg = cfg.normalized();
@@ -91,7 +94,28 @@ impl AppState {
         let mut current = self.config.write().expect("config lock");
         let mut cfg = current.clone();
         cfg.tasks = tasks;
+        cfg.tasks.vault_path.clone_from(&current.tasks.vault_path);
         let cfg = cfg.normalized();
+        cfg.save(&self.config_path)?;
+        *current = cfg.clone();
+        Ok(cfg)
+    }
+
+    pub fn save_obsidian_vault(&self, vault_path: String) -> Result<Config> {
+        let _guard = self.bookmark_writes.lock().map_err(|_| msg("Bookmark write lock poisoned"))?;
+        let mut current = self.config.write().expect("config lock");
+        let mut cfg = current.clone();
+        cfg.tasks.vault_path = vault_path;
+        let cfg = cfg.normalized();
+        cfg.save(&self.config_path)?;
+        *current = cfg.clone();
+        Ok(cfg)
+    }
+
+    pub fn save_bookmarks_config(&self, patch: BookmarksConfigPatch) -> Result<Config> {
+        let mut current = self.config.write().expect("config lock");
+        let mut cfg = current.clone();
+        patch.apply(&mut cfg.bookmarks);
         cfg.save(&self.config_path)?;
         *current = cfg.clone();
         Ok(cfg)
