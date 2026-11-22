@@ -27,7 +27,7 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
   const unread = chat.unread > 0 || chat.markedUnread;
   const last = chat.last;
   const badgeRing = selected
-    ? "ring-[color:color-mix(in_srgb,var(--foreground)_10%,var(--background))] dark:ring-muted"
+    ? "ring-sidebar-accent"
     : "group-hover:ring-[color:color-mix(in_srgb,var(--foreground)_7%,var(--background))] dark:group-hover:ring-[color:color-mix(in_srgb,var(--accent)_60%,var(--background))]";
   const markRead = () => {
     patchChat(chat.id, { unread: 0, mentions: 0, markedUnread: false });
@@ -43,8 +43,7 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
       onClick={onOpen}
       className={cn(
         "group flex w-full cursor-default items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors duration-150 select-none",
-        // Light mode tints with the text colour (the list sits on white, where --muted barely shows).
-        selected && "bg-tint-pressed dark:bg-muted",
+        selected && "bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--sidebar-foreground)_10%,transparent)]",
       )}
     >
       <span className="relative shrink-0 rounded-full border-[1.5px] border-(--menu-rim) p-0.5">

@@ -115,7 +115,7 @@ export function ChatsPage({ folder }: { folder: number | null }) {
         </div>
       </PageHeader>
       <div className="flex min-h-0 flex-1">
-      <aside className="flex w-96 shrink-0 flex-col border-r">
+      <aside className="flex w-1/5 min-w-0 shrink-0 flex-col border-r">
         <ChatList
           chats={list}
           selectedId={selectedId}
