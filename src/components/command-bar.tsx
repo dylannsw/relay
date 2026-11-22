@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Command as CommandPrimitive } from "cmdk";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -61,9 +61,13 @@ import { requestOpenChat, useTelegram } from "@/telegram/store";
 import type { TgChat } from "@/telegram/types";
 import type { Account, MessageSummary } from "@/types";
 
+export type CommandBarMode = "search" | "task";
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode: CommandBarMode;
+  onModeChange: (mode: CommandBarMode) => void;
   /** The search currently filtering the list (shown in the title bar when set). */
   search: string;
   onSearch: (q: string) => void;
@@ -267,7 +271,7 @@ function OptionRow({ row, label, icon, rowRef, onStep, held, value, valueColor }
       <span>{label}</span>
       <span className="ml-auto flex min-w-0 items-center gap-2">
         {arrow(-1, "Previous", IconChevronLeft, "ArrowLeft")}
-        <span ref={valueEl} className="block w-[100px] truncate text-center" title={value} style={{ color: valueColor }}>
+        <span ref={valueEl} className="block w-32 truncate text-center" title={value} style={{ color: valueColor }}>
           {value}
         </span>
         {arrow(1, "Next", IconChevronRight, "ArrowRight")}
@@ -290,7 +294,7 @@ export function CommandBar(p: Props) {
   const seq = useRef(0);
   const t = useTasks();
   /** Search mode finds mail and commands; task mode (Tab) adds a task. The input text is the task's name there. */
-  const [mode, setMode] = useState<"search" | "task">("search");
+  const { mode, onModeChange } = p;
   /** The section picked in task mode (until then, the last one used). */
   const [chosen, setChosen] = useState<string>();
   /** The Status row's value (a trailing #doing / #priority in the name overrides it). */
@@ -309,14 +313,15 @@ export function CommandBar(p: Props) {
   /** Where the shockwave leaves from: the middle of the whole bar (always the window's middle, as it's centred). */
   const barBox = () => panel.current?.getBoundingClientRect();
 
-  // Each time it opens, start from the search that's currently applied.
-  useEffect(() => {
+  // Start with the applied search or a fresh task before painting the newly opened bar.
+  useLayoutEffect(() => {
     if (!p.open) {
       bodyHeight.current = -1;
       return;
     }
-    setQuery(p.search);
-    setMode("search");
+    setQuery(mode === "search" ? p.search : "");
+    setChosen(undefined);
+    setStatus(lastTask.status);
     setSwaps(0);
     setHeld([]);
   }, [p.open]);
@@ -339,12 +344,12 @@ export function CommandBar(p: Props) {
     setQuery(name);
     setChosen(undefined);
     setStatus(lastTask.status);
-    setMode("task");
+    onModeChange("task");
     setSwaps((n) => n + 1);
     press();
   };
   const leaveTask = () => {
-    setMode("search");
+    onModeChange("search");
     setSwaps((n) => n + 1);
     press();
   };
@@ -460,7 +465,7 @@ export function CommandBar(p: Props) {
   const bookmarkVault = bookmarks && !bookmarks.error ? bookmarks.vaultPath : "";
   const actions: Entry[] = useMemo(
     () => [
-      { id: "add-task", label: "Add task", keywords: "new todo to-do tick", icon: <IconChecklist />, fixedKey: "Tab", keepOpen: true, run: () => enterTask("") },
+      { id: "add-task", label: "Add task", keywords: "new todo to-do tick", icon: <IconChecklist />, shortcut: "addTask", keepOpen: true, run: () => enterTask("") },
       { id: "compose", label: "Compose new message", keywords: "write new email", icon: <IconEdit />, shortcut: "compose", run: p.onCompose },
       { id: "sync", label: "Check for new mail", keywords: "sync refresh fetch", icon: <IconRefresh />, shortcut: "sync", run: p.onSync },
       { id: "unread", label: "Show unread only", keywords: "filter", icon: <IconFilter />, run: () => p.onFilter("unread") },
@@ -486,7 +491,7 @@ export function CommandBar(p: Props) {
       { id: "new-bookmark-board", label: "New bookmark board", keywords: "create collection bookmarks", icon: <IconBookmark />, run: () => openBookmarkDialog({ kind: "board" }) },
       { id: "bookmark-settings", label: "Bookmark settings", keywords: "bookmarks preferences vault appearance", icon: <IconBookmark />, run: () => p.onSettings("bookmarks") },
     ],
-    [p.onCompose, p.onSync, p.onFilter, p.onSettings, resolvedTheme, setTheme, toggleSidebar, bookmarkVault],
+    [p.onCompose, p.onSync, p.onFilter, p.onSettings, onModeChange, resolvedTheme, setTheme, toggleSidebar, bookmarkVault],
   );
 
   const destinations: Entry[] = useMemo(() => {
@@ -545,12 +550,17 @@ export function CommandBar(p: Props) {
   // Without a query, list just each account's inbox; typing reveals the other folders.
   const shownDestinations = q ? destinations.filter((e) => matches(e, q)) : destinations.filter((e) => !e.onlyWhenSearching);
 
-  // The command-bar shortcut (e.g. Ctrl+K) closes it again. Plain keys like "/" keep typing.
+  // Modified shortcuts can close the bar or jump to task mode. Plain keys keep typing.
   const onKeyDown = (e: React.KeyboardEvent) => {
     const modified = e.ctrlKey || e.metaKey || e.altKey;
-    if (modified && matchShortcut(e.nativeEvent, "list") === "commandBar") {
+    const action = modified ? matchShortcut(e.nativeEvent, "list") : null;
+    if (action === "commandBar") {
       e.preventDefault();
       close();
+    } else if (action === "addTask") {
+      e.preventDefault();
+      if (mode === "task") focusRow("input");
+      else enterTask("");
     } else if (e.key === "Tab" && mode === "search") {
       // Tab switches to task mode, carrying over what's typed (without the ">" of commands-only).
       e.preventDefault();

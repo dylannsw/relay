@@ -25,6 +25,9 @@ export interface TgPreview {
   /** Who sent it, in groups ("You" for your own). */
   sender: string | null;
   date: number;
+  /** In a group with topics: the topic it was sent in (1 is General), and its name when known. */
+  topicId?: number | null;
+  topic?: string | null;
 }
 
 /** "recently" / "week" / "month": they hide the exact time. */
@@ -53,6 +56,23 @@ export interface TgChat {
   presence: TgPresence | null;
   last: TgPreview | null;
   folders: number[];
+  /** A group with topics: read and sent one topic at a time. */
+  forum?: boolean;
+}
+
+/** One topic in a group with topics. */
+export interface TgTopic {
+  /** The id of the message that started it; 1 is General. */
+  id: number;
+  title: string;
+  /** Its icon colour, "#rrggbb". */
+  color: string;
+  unread: number;
+  mentions: number;
+  muted: boolean;
+  pinned: boolean;
+  closed: boolean;
+  last: TgPreview | null;
 }
 
 export interface TgChatList {
@@ -158,6 +178,8 @@ export interface TgMessage {
   outgoing: boolean;
   senderId: string | null;
   senderName: string | null;
+  /** Whether the sender has a profile picture, shown beside their name in groups. */
+  senderHasPhoto?: boolean;
   text: string;
   entities: TgEntity[];
   media: TgMedia | null;
@@ -170,6 +192,8 @@ export interface TgMessage {
   groupedId: string | null;
   /** Plain-emoji reactions, in Telegram's order. */
   reactions: TgReaction[];
+  /** In a group with topics: the topic it's in (null for General). */
+  topicId?: number | null;
 }
 
 /** One reaction under a message: how many people chose it, and whether you did. */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { quickAddTask } from "@/tasks/quick-add";
 import { toast } from "sonner";
@@ -87,10 +87,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { onTelegramEvent, patchChat } from "@/telegram/store";
+import { loadChatMedia } from "@/telegram/media-cache";
+import { openRecentHistory } from "@/telegram/recent-history";
 import { typingText, useTyping } from "@/telegram/typing";
 import { EMPTY_DOC, FORMATS, clipFormats, entitiesToFormats, type Doc } from "@/telegram/format";
-import type { TgChat, TgFormat, TgFormatKind, TgMember, TgMention, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker } from "@/telegram/types";
+import type { TgChat, TgFormat, TgFormatKind, TgMember, TgMention, TgPresence, TgMedia, TgMessage, TgReaction, TgSticker, TgTopic } from "@/telegram/types";
+import { TOPICS_BAR_ROOM, TopicsBar } from "./topics-bar";
 import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
 import { MessageText } from "./message-text";
 import { InputGroupAddon, InputGroupButton } from "@/components/ui/input-group";
@@ -285,8 +289,10 @@ export function Conversation({ chat }: { chat: TgChat }) {
   /** The message bar floats over the end of the chat; the list leaves room for it. */
   const composerBox = useRef<HTMLDivElement>(null);
   const [composerH, setComposerH] = useState(0);
-  /** Set before older messages are added on top, so the view stays on what you were reading. */
-  const keepFrom = useRef<number | null>(null);
+  const olderRequest = useRef<symbol | null>(null);
+  const refreshing = useRef(false);
+  const committed = useRef<Shown[] | null>(null);
+  useLayoutEffect(() => { committed.current = messages; }, [messages]);
   const stickToBottom = useRef(true);
   /** The first message that was unread when the chat opened; a line marks where it starts. */
   const [unreadFrom, setUnreadFrom] = useState<number | null>(null);
@@ -295,32 +301,87 @@ export function Conversation({ chat }: { chat: TgChat }) {
   const chatRef = useRef(chat);
   chatRef.current = chat;
 
+  // A group with topics shows one topic at a time, picked in the topics bar.
+  const [topics, setTopics] = useState<TgTopic[] | null>(null);
+  /** The open topic, with the chat it belongs to (so a chat switch never loads the old chat's topic). */
+  const [picked, setPicked] = useState<{ chatId: string; id: number } | null>(null);
+  const topic = chat.forum && picked?.chatId === chat.id ? picked.id : null;
+  const topicRef = useRef(topic);
+  topicRef.current = topic;
+  const topicsRef = useRef(topics);
+  topicsRef.current = topics;
+  const latestRef = useRef(0);
+  latestRef.current = useMemo(() => messages?.reduce((n, m) => Math.max(n, m.id), 0) ?? 0, [messages]);
+  const patchTopic = (id: number, f: (t: TgTopic) => TgTopic) => setTopics((list) => list?.map((t) => (t.id === id ? f(t) : t)) ?? list);
+
   const markRead = useCallback(() => {
     const c = chatRef.current;
+    const tid = topicRef.current;
+    if (c.forum && tid !== null) {
+      const t = topicsRef.current?.find((x) => x.id === tid);
+      if (!t || !(t.unread > 0 || t.mentions > 0)) return;
+      const upTo = Math.max(latestRef.current, t.last?.id ?? 0);
+      setTopics((list) => list?.map((x) => (x.id === tid ? { ...x, unread: 0, mentions: 0 } : x)) ?? list);
+      patchChat(c.id, { unread: Math.max(0, c.unread - t.unread), mentions: Math.max(0, c.mentions - t.mentions) });
+      api.telegram.markRead(c.id, tid, upTo).catch((e) => toast.error(errorText(e)));
+      return;
+    }
     if (!(c.unread > 0 || c.mentions > 0 || c.markedUnread)) return;
     patchChat(c.id, { unread: 0, mentions: 0, markedUnread: false });
     api.telegram.markRead(c.id).catch((e) => toast.error(errorText(e)));
   }, []);
 
+  // A group with topics: list them, and open the one with the latest message.
+  useEffect(() => {
+    setTopics(null);
+    if (!chat.forum) return;
+    let live = true;
+    api.telegram.topics(chat.id).then(
+      (list) => {
+        if (!live) return;
+        setTopics(list);
+        const latest = list.reduce<TgTopic | null>((best, t) => ((t.last?.date ?? 0) > (best?.last?.date ?? -1) ? t : best), null);
+        setPicked((p) => (p?.chatId === chat.id ? p : latest ? { chatId: chat.id, id: latest.id } : null));
+      },
+      (e) => live && setError(errorText(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [chat.id, chat.forum]);
+
   // Opening a chat: with unread messages, it opens where you left off (the first unread one) and
   // is marked read once you've scrolled to the end; otherwise at the end, marked read at once.
-  useEffect(() => {
+  useLayoutEffect(() => {
     let live = true;
-    setMessages(null);
     setError(null);
+    olderRequest.current = null;
     setOlder("idle");
+    setAtBottom(true);
     setReplyTo(null);
     setEditing(null);
     setUnseen(0);
     setUnreadFrom(null);
     landOnUnread.current = false;
     stickToBottom.current = true;
-    const unread = chatRef.current.unread;
+    // A group with topics waits for its topic to be picked.
+    if (chat.forum && topic === null) {
+      setMessages(null);
+      return;
+    }
+    const unread = topic !== null ? (topicsRef.current?.find((t) => t.id === topic)?.unread ?? 0) : chatRef.current.unread;
+    const { cached, save } = openRecentHistory(chat.id, topic);
+    // An unread chat needs Telegram's current page to locate its first unread message.
+    const initial = unread === 0 ? cached : null;
+    committed.current = initial;
+    setMessages(initial);
+    refreshing.current = true;
     // Enough to reach the first unread message (up to Telegram's 100 a page).
     const limit = Math.min(Math.max(PAGE, unread + 10), 100);
-    api.telegram.messages(chat.id, undefined, limit).then(
+    api.telegram.messages(chat.id, undefined, limit, topic ?? undefined).then(
       (list) => {
         if (!live) return;
+        refreshing.current = false;
         const first = firstUnread(list, unread);
         if (first !== null) {
           stickToBottom.current = false;
@@ -328,29 +389,70 @@ export function Conversation({ chat }: { chat: TgChat }) {
           setUnreadFrom(first);
           setUnseen(unread);
         }
-        setMessages(list);
+        setMessages((current) => {
+          if (!initial || !current || current === initial) return list;
+          // Preserve edits, deletes and sends made while the cached page was on screen.
+          const before = new Map(initial.map((m) => [m.id, m]));
+          const now = new Map(current.map((m) => [m.id, m]));
+          const freshIds = new Set(list.map((m) => m.id));
+          const refreshed: Shown[] = [];
+          for (const m of list) {
+            const local = now.get(m.id);
+            if (before.has(m.id) && !local) continue;
+            refreshed.push(local && local !== before.get(m.id) ? local : m);
+          }
+          return [...refreshed, ...current.filter((m) => !before.has(m.id) && !freshIds.has(m.id))];
+        });
         if (list.length < limit) setOlder("done");
-        if (first === null) markRead();
+        if (first === null && stickToBottom.current) markRead();
       },
-      (e) => live && setError(errorText(e)),
+      (e) => {
+        if (!live) return;
+        refreshing.current = false;
+        if (initial) toast.error("Couldn't refresh this chat", { description: errorText(e) });
+        else setError(errorText(e));
+      },
     );
     composer.current?.focus();
     return () => {
       live = false;
+      save(committed.current);
+      refreshing.current = false;
+      olderRequest.current = null;
     };
-  }, [chat.id, markRead]);
+  }, [chat.id, chat.forum, topic, markRead]);
 
   // Live updates for this chat.
   useEffect(
     () =>
       onTelegramEvent((e) => {
         const c = chatRef.current;
-        if (e.message && e.message.chatId === c.id) {
+        if (e.message && e.message.chatId === c.id && c.forum) {
+          // In a group with topics, a message elsewhere only moves its topic's chip.
+          const m = e.message;
+          const tid = m.topicId ?? 1;
+          const known = topicsRef.current?.some((t) => t.id === tid);
+          if (!known && !e.edited) {
+            // A new topic: list them again so its chip arrives with its name and colour.
+            api.telegram.topics(c.id).then(setTopics, () => {});
+          } else if (!e.edited) {
+            const away = tid !== topicRef.current || !stickToBottom.current || !document.hasFocus();
+            patchTopic(tid, (t) => ({
+              ...t,
+              last: { id: m.id, text: m.text || m.media?.label || m.service || "Message", outgoing: m.outgoing, sender: m.outgoing ? "You" : m.senderName, date: m.date, topicId: tid, topic: t.title },
+              unread: !m.outgoing && away ? t.unread + 1 : m.outgoing ? 0 : t.unread,
+              mentions: m.outgoing ? 0 : t.mentions,
+            }));
+          }
+        }
+        if (e.message && e.message.chatId === c.id && (!c.forum || (e.message.topicId ?? 1) === topicRef.current)) {
           const m = e.message;
           setMessages((list) => {
             if (!list) return list;
             const i = list.findIndex((x) => x.id === m.id);
-            if (i >= 0) return list.map((x) => (x.id === m.id ? m : x));
+            // An edit keeps the reactions shown: they arrive as their own update (below), since
+            // an edit's copy of the message often leaves them out or doesn't say which are yours.
+            if (i >= 0) return list.map((x) => (x.id === m.id ? (e.edited ? { ...m, reactions: x.reactions } : m) : x));
             if (e.edited) return list;
             // Your message coming back from Telegram before the send call answers: it takes
             // over its stand-in rather than showing twice.
@@ -422,60 +524,74 @@ export function Conversation({ chat }: { chat: TgChat }) {
     return () => ro.disconnect();
   }, []);
 
-  // The bar growing (more lines, a reply) keeps the latest message just above it.
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [composerH]);
+  const typing = typingText(useTyping(chat.id), chat.kind === "user" || chat.kind === "bot");
+  const topInset = chat.forum ? TOPICS_BAR_ROOM : 12;
+  const footerRoom = composerH + 20;
+  const [voiceId, setVoiceId] = useState<number | null>(null);
+  const [videoId, setVideoId] = useState<number | null>(null);
+  // The players own their playback state. Keep them mounted when they scroll away.
+  const pinned = useMemo(() => {
+    const indices: number[] = [];
+    for (const id of [voiceId, videoId, forwarding?.m.id]) {
+      if (id == null) continue;
+      const index = messages?.findIndex((m) => m.id === id) ?? -1;
+      if (index >= 0) indices.push(index);
+    }
+    return indices;
+  }, [messages, voiceId, videoId, forwarding]);
+  const rangeExtractor = useCallback((range: Range) => {
+    const indices = defaultRangeExtractor(range);
+    if (!pinned.length) return indices;
+    return [...new Set([...indices, ...pinned])].sort((a, b) => a - b);
+  }, [pinned]);
+  const rows = useVirtualizer({
+    count: messages?.length ?? 0,
+    getScrollElement: () => scroller.current,
+    getItemKey: useCallback((index: number) => messages![index].id, [messages]),
+    estimateSize: () => 72,
+    overscan: 6,
+    rangeExtractor,
+    anchorTo: "end",
+    scrollEndThreshold: BOTTOM_SLACK,
+    paddingStart: topInset,
+    paddingEnd: footerRoom + (typing ? 24 : 0),
+    scrollPaddingStart: chat.forum ? topInset : 0,
+    scrollPaddingEnd: footerRoom,
+  });
 
-  // So does the chat growing after it's drawn (pictures, voice waveforms or fonts loading in):
-  // at the bottom, the latest message stays in view instead of slipping under the bar.
-  const content = useRef<HTMLDivElement>(null);
-  const hasList = !!messages && !error;
   useLayoutEffect(() => {
-    const el = content.current;
-    const sc = scroller.current;
-    if (!el || !sc) return;
-    const ro = new ResizeObserver(() => {
-      if (stickToBottom.current && keepFrom.current === null) sc.scrollTop = sc.scrollHeight;
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [hasList]);
-
-  // Keep the view where it should be after the list changes.
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el || !messages) return;
+    if (!messages?.length) return;
     if (landOnUnread.current) {
       landOnUnread.current = false;
-      const line = el.querySelector<HTMLElement>("[data-unread-line]");
-      if (line) el.scrollTop += line.getBoundingClientRect().top - el.getBoundingClientRect().top;
-      // Everything unread fits on screen (there's nothing to scroll): it's been seen.
-      if (el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK) {
+      const index = messages.findIndex((m) => m.id === unreadFrom);
+      if (index >= 0) rows.scrollToIndex(index, { align: "start" });
+      // A short conversation can fit without generating a scroll event.
+      if (rows.isAtEnd(BOTTOM_SLACK)) {
         stickToBottom.current = true;
         setUnseen(0);
         markRead();
       }
-    } else if (keepFrom.current !== null) {
-      el.scrollTop += el.scrollHeight - keepFrom.current;
-      keepFrom.current = null;
     } else if (stickToBottom.current) {
-      el.scrollTop = el.scrollHeight;
+      rows.scrollToEnd();
     }
-  }, [messages]);
+  }, [messages, unreadFrom, rows, footerRoom, typing, markRead]);
 
   const loadOlder = async () => {
-    if (!messages?.length || older !== "idle") return;
+    if (!messages?.length || older !== "idle" || olderRequest.current || refreshing.current) return;
+    const request = Symbol();
+    olderRequest.current = request;
     setOlder("loading");
     try {
-      const list = await api.telegram.messages(chat.id, messages[0].id, PAGE);
-      keepFrom.current = scroller.current?.scrollHeight ?? null;
+      const list = await api.telegram.messages(chat.id, messages[0].id, PAGE, topic ?? undefined);
+      if (olderRequest.current !== request) return;
       setMessages((cur) => (cur ? [...list.filter((m) => !cur.some((x) => x.id === m.id)), ...cur] : cur));
       setOlder(list.length < PAGE ? "done" : "idle");
     } catch (e) {
+      if (olderRequest.current !== request) return;
       toast.error(errorText(e));
       setOlder("idle");
+    } finally {
+      if (olderRequest.current === request) olderRequest.current = null;
     }
   };
 
@@ -492,27 +608,24 @@ export function Conversation({ chat }: { chat: TgChat }) {
     if (el.scrollTop < 400) void loadOlder();
   };
 
-  const scrollToEnd = () => {
-    const el = scroller.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  };
+  const scrollToEnd = () => rows.scrollToEnd({ behavior: "smooth" });
 
   const jumpTo = (id: number) => {
-    const node = scroller.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
-    if (!node) return;
-    const sc = scroller.current!;
+    const sc = scroller.current;
+    const index = messages?.findIndex((m) => m.id === id) ?? -1;
+    if (!sc || index < 0) return;
+    const findRow = () => sc.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
     // Once it's in view, the message gives a small quick pop so your eye lands on it.
     const pop = () => {
       if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      node.querySelector<HTMLElement>("[data-bubble]")?.animate(
+      findRow()?.querySelector<HTMLElement>("[data-bubble]")?.animate(
         [{ transform: "scale(1)" }, { transform: "scale(1.04)", offset: 0.4 }, { transform: "scale(1)" }],
         { duration: 260, easing: "cubic-bezier(0.2, 0, 0, 1)" },
       );
     };
-    const r = node.getBoundingClientRect();
+    const r = findRow()?.getBoundingClientRect();
     const view = sc.getBoundingClientRect();
-    if (r.top >= view.top && r.bottom <= view.bottom - composerH) {
+    if (r && r.top >= view.top && r.bottom <= view.bottom - composerH) {
       pop();
       return;
     }
@@ -525,7 +638,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
     };
     sc.addEventListener("scrollend", once);
     setTimeout(once, 800);
-    node.scrollIntoView({ block: "center", behavior: "smooth" });
+    rows.scrollToIndex(index, { align: "center", behavior: "smooth" });
   };
 
   /** Shows your reaction straight away; Telegram's live update then confirms the counts. */
@@ -640,8 +753,10 @@ export function Conversation({ chat }: { chat: TgChat }) {
       service: null,
       groupedId: null,
       reactions: [],
+      topicId: topic !== null && topic !== 1 ? topic : null,
       pending: "sending",
     };
+    const into = topic ?? undefined;
     stickToBottom.current = true;
     setReplyTo(null);
     setMessages((list) => [...(list ?? []).filter((x) => x.id !== retryOf), temp]);
@@ -650,12 +765,12 @@ export function Conversation({ chat }: { chat: TgChat }) {
       .catch(() => {})
       .then(() =>
         sticker
-          ? api.telegram.sendSticker(chat.id, sticker.id, reply?.id)
+          ? api.telegram.sendSticker(chat.id, sticker.id, reply?.id, into)
           : voice
-            ? api.telegram.sendVoice(chat.id, voice.bytes, voice.duration, voice.waveform, reply?.id)
+            ? api.telegram.sendVoice(chat.id, voice.bytes, voice.duration, voice.waveform, reply?.id, into)
             : file
-            ? api.telegram.sendFile(chat.id, file, text, reply?.id, formats)
-            : api.telegram.send(chat.id, text, reply?.id, mentions, formats),
+            ? api.telegram.sendFile(chat.id, file, text, reply?.id, formats, into)
+            : api.telegram.send(chat.id, text, reply?.id, mentions, formats, into),
       )
       .then(
         (m) => {
@@ -686,9 +801,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
 
   const group = isGroup(chat);
   const sub = subtitle(chat);
-  const typing = typingText(useTyping(chat.id), chat.kind === "user" || chat.kind === "bot");
   // Service lines ("Alex joined") don't count; your unsent or failed message does.
-  const lastReal = messages?.filter((x) => !x.service).at(-1);
+  const lastReal = useMemo(() => messages?.filter((x) => !x.service).at(-1), [messages]);
   const lastFromYou = !!lastReal?.outgoing;
 
   return (
@@ -707,24 +821,25 @@ export function Conversation({ chat }: { chat: TgChat }) {
       </PageHeader>
 
       <div className="@container/chat relative min-h-0 flex-1">
+        {chat.forum && (
+          <TopicsBar
+            topics={topics}
+            selected={topic}
+            onSelect={(id) => id !== topic && setPicked({ chatId: chat.id, id })}
+          />
+        )}
         <div
           ref={scroller}
           onScroll={onScroll}
-          style={{ paddingBottom: composerH + 20 }}
-          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 pt-3 @3xl/chat:px-[100px]"
+          style={{ overflowAnchor: "none", paddingTop: messages ? undefined : topInset }}
+          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 @3xl/chat:px-[100px]"
         >
           {error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
           ) : !messages ? (
             <LoadingBubbles />
           ) : (
-            <div ref={content} className="flex flex-col">
-              {older === "loading" && (
-                <div className="flex justify-center py-2">
-                  <Spinner className="text-muted-foreground" />
-                </div>
-              )}
-              {older === "done" && messages.length > 0 && <p className="py-3 text-center text-xs text-muted-foreground">Start of the conversation</p>}
+            <div className="relative" style={{ height: rows.getTotalSize() }}>
               {messages.length === 0 && (
                 <Empty className="mt-10 flex-none p-0">
                   <EmptyHeader>
@@ -732,14 +847,28 @@ export function Conversation({ chat }: { chat: TgChat }) {
                   </EmptyHeader>
                 </Empty>
               )}
-              {messages.map((m, i) => {
+              {rows.getVirtualItems().map((row) => {
+                const i = row.index;
+                const m = messages[i];
                 const prev = messages[i - 1];
                 const next = messages[i + 1];
                 const newDay = !prev || !sameDay(prev.date, m.date);
                 const first = !sameRun(prev, m);
                 const last = !sameRun(m, next);
                 return (
-                  <div key={m.id}>
+                  <div
+                    key={m.id}
+                    data-index={i}
+                    ref={rows.measureElement}
+                    className="absolute inset-x-0 flow-root"
+                    style={{ top: row.start }}
+                  >
+                    {i === 0 && older === "loading" && (
+                      <div className="flex justify-center py-2"><Spinner className="text-muted-foreground" /></div>
+                    )}
+                    {i === 0 && older === "done" && (
+                      <p className="py-3 text-center text-xs text-muted-foreground">Start of the conversation</p>
+                    )}
                     {newDay && <DaySeparator date={m.date} />}
                     {m.id === unreadFrom && <UnreadLine />}
                     {m.service ? (
@@ -755,6 +884,8 @@ export function Conversation({ chat }: { chat: TgChat }) {
                         onReply={() => startReply(m)}
                         onReact={(emoji) => react(m, emoji)}
                         onJump={jumpTo}
+                        onVoicePlay={setVoiceId}
+                        onVideoPlay={setVideoId}
                         onRetry={() => retry(m)}
                         onDiscard={() => discard(m)}
                         onEdit={canEdit(chat, m) ? () => startEdit(m) : undefined}
@@ -767,7 +898,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
                 );
               })}
               {typing && (
-                <p className="mt-1.5 flex min-w-0 items-center gap-1.5 self-start px-1 text-xs text-muted-foreground italic" aria-live="polite">
+                <p style={{ bottom: footerRoom }} className="absolute inset-x-0 flex min-w-0 items-center gap-1.5 self-start px-1 text-xs text-muted-foreground italic" aria-live="polite">
                   <TypingDots />
                   <span className="truncate">{typing}…</span>
                 </p>
@@ -809,6 +940,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
         onSaveEdit={saveEdit}
         onEditLast={editLast}
         lastFromYou={lastFromYou}
+        topicTitle={topics?.find((t) => t.id === topic)?.title}
         onSend={sendAll}
         onSticker={(s) => void send("", replyTo, undefined, { sticker: s })}
         onVoice={(v) => void send("", replyTo, undefined, { voice: v })}
@@ -1084,23 +1216,20 @@ const MEDIA_ICONS: Record<TgMedia["kind"], typeof IconFile> = {
   other: IconFile,
 };
 
-/** Media sent in chats, loaded once while Relay is open. */
-const mediaLoads = new Map<string, Promise<ArrayBuffer>>();
-
 /** The message's media bytes (or null while loading), and whether loading failed. */
 function useMediaBytes(chatId: string, m: TgMessage, kind: "photo" | "sticker" | "thumb") {
   const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const key = `${kind}:${chatId}:${m.id}`;
-    let p = mediaLoads.get(key);
-    if (!p) {
+    const p = loadChatMedia(key, () => {
       // A sticker still being sent loads from the picker's copy.
       const picked = kind === "sticker" ? (m as Shown).sticker : undefined;
-      p = picked ? api.telegram.stickerFile(picked.id) : kind === "photo" ? api.telegram.photo(chatId, m.id) : kind === "thumb" ? api.telegram.thumb(chatId, m.id) : api.telegram.sticker(chatId, m.id);
-      p.catch(() => mediaLoads.delete(key));
-      mediaLoads.set(key, p);
-    }
+      if (picked) return api.telegram.stickerFile(picked.id);
+      if (kind === "photo") return api.telegram.photo(chatId, m.id);
+      if (kind === "thumb") return api.telegram.thumb(chatId, m.id);
+      return api.telegram.sticker(chatId, m.id);
+    });
     let live = true;
     p.then((b) => live && setBytes(b), () => live && setFailed(true));
     return () => {
@@ -1237,10 +1366,10 @@ function VideoThumb({ chatId, m, media }: { chatId: string; m: TgMessage; media:
 }
 
 /** A round video message, played in its circle; its preview picture shows until the video loads. */
-function RoundBubble({ chatId, m, media }: { chatId: string; m: TgMessage; media: TgMedia }) {
+function RoundBubble({ chatId, m, media, onPlay }: { chatId: string; m: TgMessage; media: TgMedia; onPlay: (id: number) => void }) {
   const { bytes } = useMediaBytes(chatId, m, "thumb");
   const poster = useObjectUrl(bytes, "image/jpeg");
-  return <RoundVideo chatId={chatId} messageId={m.id} media={media} poster={poster} />;
+  return <RoundVideo chatId={chatId} messageId={m.id} media={media} poster={poster} onPlay={onPlay} />;
 }
 
 /** What to do with media Relay can't show yet. */
@@ -1343,6 +1472,8 @@ function Bubble(props: {
   onReply: () => void;
   onReact: (emoji: string) => void;
   onJump: (id: number) => void;
+  onVoicePlay: (id: number) => void;
+  onVideoPlay: (id: number) => void;
   onRetry: () => void;
   onDiscard: () => void;
   /** Left out where the message can't be forwarded / edited / deleted. */
@@ -1369,7 +1500,7 @@ function Bubble(props: {
   // Group chats: the sender's picture and name above their run, lined up with the bubble's left edge.
   const nameLine = props.showName && (
     <div className="mb-1 flex max-w-full min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
-      <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} size={24} />
+      <ChatAvatar id={m.senderId ?? chat.id} name={m.senderName ?? "?"} hasPhoto={m.senderHasPhoto} size={24} />
       <span className="truncate">{m.senderName}</span>
     </div>
   );
@@ -1428,7 +1559,7 @@ function Bubble(props: {
                 </div>
               )}
               <div className={cn("relative", out && "self-end")}>
-                {round ? <RoundBubble chatId={chat.id} m={m} media={sticker} /> : <Sticker chatId={chat.id} m={m} media={sticker} />}
+                {round ? <RoundBubble chatId={chat.id} m={m} media={sticker} onPlay={props.onVideoPlay} /> : <Sticker chatId={chat.id} m={m} media={sticker} />}
               </div>
               {reactions && <div className={cn(out && "self-end")}>{reactions}</div>}
             </div>
@@ -1484,7 +1615,7 @@ function Bubble(props: {
             {otherMedia && (
               <div className={cn(hasText && "mb-1.5")}>
                 {otherMedia.kind === "voice" ? (
-                  <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} src={m.voice?.url} />
+                  <VoiceMessage chatId={chat.id} messageId={m.id} media={otherMedia} src={m.voice?.url} onPlay={props.onVoicePlay} />
                 ) : (
                   <div className="flex items-center justify-between gap-2">
                     <MediaChip media={otherMedia} hint={m.file ? (failed ? "Not sent" : "Sending…") : undefined} />
@@ -1643,6 +1774,8 @@ function Composer(props: {
   onEditLast: () => boolean;
   /** Whether the latest message is yours (you've answered); false when it's theirs or there's none. */
   lastFromYou: boolean;
+  /** In a group with topics: the open topic, which the box says it writes into. */
+  topicTitle?: string;
   /** The text (the caption, with files), the files to send, the people tagged in the text, and its formatting. */
   onSend: (text: string, files: string[], mentions: TgMention[], formats: TgFormat[]) => void;
   onSticker: (s: TgSticker) => void;
@@ -1799,6 +1932,13 @@ function Composer(props: {
   const format = (kind: TgFormatKind) => area.current?.format(kind, sel.from, sel.to);
 
   const canSend = editing ? text.trim().length > 0 || !!editing.media : text.trim().length > 0 || files.length > 0;
+  const placeholder = (editing ? editing.media : files.length)
+    ? "Add a caption…"
+    : props.topicTitle
+      ? `Write in ${props.topicTitle}…`
+      : props.lastFromYou
+        ? "Send a follow-up…"
+        : "Write a reply…";
 
   return (
     // Floats over the chat's end, so messages scroll up to the bar's edge. Behind its lower half
@@ -1868,6 +2008,8 @@ function Composer(props: {
             <VoiceRecorder
               ref={recorder}
               waveTarget={waveSlot}
+              placeholder={placeholder}
+              className={boxText}
               onDone={(r) => {
                 setRecording(false);
                 props.onVoice(r);
@@ -1934,13 +2076,7 @@ function Composer(props: {
                 if (props.onEditLast()) e.preventDefault();
               }
             }}
-            placeholder={
-              (editing ? editing.media : files.length)
-                ? "Add a caption…"
-                : props.lastFromYou
-                  ? "Send a follow-up…"
-                  : "Write a reply…"
-            }
+            placeholder={placeholder}
             aria-label="Message"
             className={boxText}
           />
@@ -1998,7 +2134,13 @@ function Composer(props: {
             icon={editing ? <IconCheck /> : undefined}
             onClick={recording ? () => recorder.current?.finish() : send}
             before={
-              !recording && !editing && !text.trim() && !files.length ? (
+              recording ? (
+                // The mic turns into the bin while recording, in the same spot.
+                <InputGroupButton type="button" size="icon-sm" variant="ghost" className="rounded-lg text-muted-foreground" tabIndex={-1} onClick={() => recorder.current?.cancel()}>
+                  <IconTrash />
+                  <span className="sr-only">Discard recording</span>
+                </InputGroupButton>
+              ) : !editing && !text.trim() && !files.length ? (
                 <InputGroupButton type="button" size="icon-sm" variant="ghost" className="rounded-lg text-muted-foreground" tabIndex={-1} onClick={() => setRecording(true)}>
                   <IconMicrophone />
                   <span className="sr-only">Record a voice message</span>

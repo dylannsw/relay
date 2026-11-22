@@ -8,7 +8,7 @@ import type {
   BookmarkTarget, NewBookmark, BookmarkHandoff, CaptureOutcome, CaptureRequest, CaptureStage,
 } from "./bookmarks/types";
 import { mockTelegramEvents } from "./telegram/mock";
-import type { TgChatList, TgEvent, TgFormat, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet } from "./telegram/types";
+import type { TgChatList, TgEvent, TgFormat, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet, TgTopic } from "./telegram/types";
 import type {
   Account,
   CalendarConfig,
@@ -115,6 +115,14 @@ export const api = {
   onCalendarUpdated: (cb: () => void): Promise<() => void> =>
     isTauri ? listen("calendar-updated", () => cb()) : Promise.resolve(() => {}),
 
+  /** Live speech-to-text (Windows' recogniser): what's been heard arrives through `onDictation`. */
+  dictationStart: (session: number) => (isTauri ? invoke<void>("dictation_start", { session }) : mockDictation.start(session)),
+  dictationStop: () => (isTauri ? invoke<void>("dictation_stop") : mockDictation.stop()),
+  onDictation: (cb: (session: number, text: string) => void): Promise<() => void> =>
+    isTauri
+      ? listen<{ session: number; text: string }>("dictation-heard", (e) => cb(e.payload.session, e.payload.text))
+      : Promise.resolve(mockDictation.listen(cb)),
+
   saveTasksConfig: (tasks: TasksConfig) => call<Config>("save_tasks_config", { tasks }),
   saveObsidianVault: (vaultPath: string) => call<Config>("save_obsidian_vault", { vaultPath }),
   tasksLoad: () => call<TasksSnapshot>("tasks_load"),
@@ -180,9 +188,10 @@ export const api = {
     if (!isTauri) return (await fetch(mediaPath)).blob();
     return new Blob([await call<ArrayBuffer>("bookmark_sample_image", { mediaPath })], { type: "image/png" });
   },
-  bookmarkMediaUrl: ({ mediaPath, revision }: BookmarkMedia): string | undefined => {
+  /** `tile`: a picture's smaller copy for the wall (the original when it's already small). */
+  bookmarkMediaUrl: ({ mediaPath, revision }: BookmarkMedia, tile = false): string | undefined => {
     if (!mediaPath) return;
-    return isTauri ? `${convertFileSrc(mediaPath, "bookmark-media")}?v=${encodeURIComponent(revision ?? "")}` : mediaPath;
+    return isTauri ? `${convertFileSrc(mediaPath, "bookmark-media")}?v=${encodeURIComponent(revision ?? "")}${tile ? "&tile" : ""}` : mediaPath;
   },
   onBookmarksChanged: (cb: () => void): Promise<() => void> =>
     isTauri ? listen("bookmarks-changed", () => cb()) : mockVaultEvents("bookmarks-changed", cb),
@@ -204,13 +213,16 @@ export const api = {
     signOut: () => call<TgStatus>("telegram_sign_out"),
     chats: () => call<TgChatList>("telegram_chats"),
     /** Oldest first: the latest page, or the page before message `before`. */
-    messages: (chatId: string, before?: number, limit?: number) =>
-      call<TgMessage[]>("telegram_messages", { chatId, before: before ?? null, limit: limit ?? null }),
-    send: (chatId: string, text: string, replyTo?: number, mentions?: TgMention[], formats?: TgFormat[]) =>
-      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null, mentions: mentions?.length ? mentions : null, formats: formats?.length ? formats : null }),
+    messages: (chatId: string, before?: number, limit?: number, topic?: number) =>
+      call<TgMessage[]>("telegram_messages", { chatId, before: before ?? null, limit: limit ?? null, topic: topic ?? null }),
+    /** A group with topics: its topics, pinned first, then by latest message. */
+    topics: (chatId: string) => call<TgTopic[]>("telegram_topics", { chatId }),
+    send: (chatId: string, text: string, replyTo?: number, mentions?: TgMention[], formats?: TgFormat[], topic?: number) =>
+      call<TgMessage>("telegram_send", { chatId, text, replyTo: replyTo ?? null, mentions: mentions?.length ? mentions : null, formats: formats?.length ? formats : null, topic: topic ?? null }),
     /** The people you could tag in a group: the most recently active, or (in a big group) those matching `query`. */
     members: (chatId: string, query?: string) => call<TgMembers>("telegram_members", { chatId, query: query ?? null }),
-    markRead: (chatId: string) => call<void>("telegram_mark_read", { chatId }),
+    /** Marks a chat read; in a group with topics, `topic` marks that topic read up to message `upTo`. */
+    markRead: (chatId: string, topic?: number, upTo?: number) => call<void>("telegram_mark_read", { chatId, topic: topic ?? null, upTo: upTo ?? null }),
     /** Shows you online to others (and gets their online status pushed) while Relay is focused. */
     setOnline: (online: boolean) => call<void>("telegram_set_online", { online }),
     /** Sets your reactions on a message (an empty list takes yours off). */
@@ -241,11 +253,11 @@ export const api = {
       return isTauri ? convertFileSrc(path) : path;
     },
     /** Sends a file from this PC (pictures as photos), with an optional caption. */
-    sendFile: (chatId: string, path: string, caption: string, replyTo?: number, formats?: TgFormat[]) =>
-      call<TgMessage>("telegram_send_file", { chatId, path, caption, replyTo: replyTo ?? null, formats: formats?.length ? formats : null }),
+    sendFile: (chatId: string, path: string, caption: string, replyTo?: number, formats?: TgFormat[], topic?: number) =>
+      call<TgMessage>("telegram_send_file", { chatId, path, caption, replyTo: replyTo ?? null, formats: formats?.length ? formats : null, topic: topic ?? null }),
     /** Sends a voice message recorded in the app: Opus audio, its length in seconds, and 100 levels (0–31). */
-    sendVoice: (chatId: string, bytes: Uint8Array, duration: number, waveform: number[], replyTo?: number) =>
-      call<TgMessage>("telegram_send_voice", { chatId, bytes: Array.from(bytes), duration, waveform, replyTo: replyTo ?? null }),
+    sendVoice: (chatId: string, bytes: Uint8Array, duration: number, waveform: number[], replyTo?: number, topic?: number) =>
+      call<TgMessage>("telegram_send_voice", { chatId, bytes: Array.from(bytes), duration, waveform, replyTo: replyTo ?? null, topic: topic ?? null }),
     /** Files chosen in Windows' file picker to send; empty if cancelled. */
     pickFiles: async (): Promise<string[]> => {
       if (!isTauri) return ["C:\\Users\\you\\Documents\\Demo-day-schedule.pdf", "C:\\Users\\you\\Pictures\\Team photo.jpg"];
@@ -273,8 +285,8 @@ export const api = {
     stickerSets: () => call<TgStickerSet[]>("telegram_sticker_sets"),
     /** A sticker's file from the picker. */
     stickerFile: (id: string) => call<ArrayBuffer>("telegram_sticker_file", { id }),
-    sendSticker: (chatId: string, id: string, replyTo?: number) =>
-      call<TgMessage>("telegram_send_sticker", { chatId, id, replyTo: replyTo ?? null }),
+    sendSticker: (chatId: string, id: string, replyTo?: number, topic?: number) =>
+      call<TgMessage>("telegram_send_sticker", { chatId, id, replyTo: replyTo ?? null, topic: topic ?? null }),
     /** Saves a message's media to Downloads and shows it in File Explorer; the saved path. */
     saveMedia: (chatId: string, messageId: number) => call<string>("telegram_save_media", { chatId, messageId }),
     onProgress: (cb: (p: TgProgress) => void): Promise<() => void> =>
@@ -296,3 +308,25 @@ export function errorText(e: unknown): string {
   if (e instanceof Error) return e.message;
   return JSON.stringify(e);
 }
+
+/** In the browser preview: words "heard" one at a time, as the real recogniser would send them. */
+const mockDictation = (() => {
+  const words = "Hey, just landed. I'll grab a coffee and head over, should be there in about twenty minutes".split(" ");
+  const subs = new Set<(session: number, text: string) => void>();
+  let timer = 0;
+  return {
+    start: async (session: number) => {
+      clearInterval(timer);
+      let n = 0;
+      timer = window.setInterval(() => {
+        n = Math.min(words.length, n + 1);
+        subs.forEach((cb) => cb(session, words.slice(0, n).join(" ")));
+      }, 280);
+    },
+    stop: async () => clearInterval(timer),
+    listen: (cb: (session: number, text: string) => void) => {
+      subs.add(cb);
+      return () => void subs.delete(cb);
+    },
+  };
+})();

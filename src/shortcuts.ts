@@ -10,6 +10,7 @@ export type ShortcutId =
   | "prev"
   | "open"
   | "commandBar"
+  | "addTask"
   | "goAll"
   | "select"
   | "selectAll"
@@ -42,6 +43,7 @@ export interface ShortcutDef {
 
 export const SHORTCUTS: ShortcutDef[] = [
   { id: "commandBar", label: "Open / close command bar", group: "Navigate", key: "ctrl+k" },
+  { id: "addTask", label: "Open command bar in Add Task mode", group: "Navigate", key: "ctrl+shift+k" },
   { id: "next", label: "Next message", group: "Navigate", key: "j", also: { list: ["ArrowDown"], reader: ["ArrowRight"] } },
   { id: "prev", label: "Previous message", group: "Navigate", key: "k", also: { list: ["ArrowUp"], reader: ["ArrowLeft"] } },
   { id: "open", label: "Open message", group: "Navigate", key: "Enter" },
@@ -173,6 +175,9 @@ export function eventToKey(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" 
 export function matchShortcut(e: KeyboardEvent, ctx: ShortcutContext): ShortcutId | null {
   const key = eventToKey(e);
   if (!key) return null;
+  // An existing custom binding takes precedence if a new default uses the same key.
+  const custom = SHORTCUTS.find((d) => overrides[d.id] === key);
+  if (custom) return custom.id;
   for (const d of SHORTCUTS) {
     if (bindingOf(d.id) === key) return d.id;
     const also = [...(d.also?.any ?? []), ...(d.also?.[ctx] ?? [])];

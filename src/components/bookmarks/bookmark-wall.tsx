@@ -319,8 +319,9 @@ function BookmarkTile({ note, appearance, selected, selecting, tabIndex, onFocus
   onRatio: (width: number, height: number) => void; autoplay: boolean; hoverPlay: boolean; actions: TileActions; blocked: boolean;
 }) {
   const media = primaryMedia(note);
-  const src = media && api.bookmarkMediaUrl(media);
-  const poster = note.videoPoster && api.bookmarkMediaUrl(note.videoPoster);
+  // Pictures load as tile-sized copies; a video plays its original file.
+  const src = media && api.bookmarkMediaUrl(media, media.kind === "image");
+  const poster = note.videoPoster && api.bookmarkMediaUrl(note.videoPoster, true);
   const gif = media?.kind === "image" && /\.gif$/i.test(media.reference);
   const still = useBookmarkStill(media, !!gif);
   const tilt = useTileTilt();

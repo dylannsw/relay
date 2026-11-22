@@ -11,7 +11,7 @@ function Kbd({ className, children, ...props }: React.ComponentProps<"kbd">) {
       data-slot="kbd"
       className={cn(
         keyChip,
-        "pointer-events-none w-fit gap-1 bg-background font-sans in-data-[slot=tooltip-content]:border-transparent in-data-[slot=tooltip-content]:bg-background/20 in-data-[slot=tooltip-content]:shadow-none in-data-[slot=tooltip-content]:text-background dark:in-data-[slot=tooltip-content]:bg-background/10 [&_svg:not([class*='size-'])]:size-3",
+        "pointer-events-none w-fit gap-1 bg-background font-sans in-data-[slot=tooltip-content]:border-transparent in-data-[slot=tooltip-content]:bg-foreground/10 in-data-[slot=tooltip-content]:shadow-none in-data-[slot=tooltip-content]:text-popover-foreground [&_svg:not([class*='size-'])]:size-3",
         className
       )}
       {...props}

@@ -11,6 +11,7 @@ mod commands;
 mod config;
 mod crypt;
 mod db;
+mod dictation;
 mod error;
 mod feeds;
 mod gcal;
@@ -88,6 +89,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             bookmark_handoff::take_bookmark_handoffs,
             taskbar::set_taskbar_icon,
+            dictation::dictation_start,
+            dictation::dictation_stop,
             commands::get_config,
             commands::save_config,
             commands::save_display_name,
@@ -154,6 +157,7 @@ fn main() {
             telegram::telegram_sign_out,
             telegram::telegram_chats,
             telegram::telegram_messages,
+            telegram::telegram_topics,
             telegram::telegram_send,
             telegram::telegram_members,
             telegram::telegram_mark_read,

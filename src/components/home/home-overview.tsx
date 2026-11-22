@@ -274,9 +274,9 @@ function Heatmap({ weeks: all, color, date }: { weeks: HeatmapDay[][]; color: st
         createPortal(
           <div
             role="tooltip"
-            // Same slot as the stock tooltips, so Mixed's dark-tooltip rule (styles.css) covers it too.
+            // Share the tooltip surface and theme with the stock tooltips.
             data-slot="tooltip-content"
-            className="pointer-events-none fixed z-(--z-overlay) rounded-md bg-foreground px-3 py-1.5 text-xs whitespace-nowrap text-background transition-[left,top,opacity] duration-150 ease-(--ease-out-soft)"
+            className="pointer-events-none fixed z-(--z-overlay) rounded-md px-3 py-1.5 text-xs whitespace-nowrap text-popover-foreground transition-[left,top,opacity] duration-150 ease-(--ease-out-soft)"
             style={{ left: tip.x, top: tip.y - 6, transform: "translate(-50%, -100%)", opacity: tip.shown ? 1 : 0 }}
           >
             {tip.text}

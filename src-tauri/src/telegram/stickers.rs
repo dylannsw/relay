@@ -312,7 +312,8 @@ fn sticker_media(doc: &tl::types::Document) -> tl::types::InputMediaDocument {
 
 /// Sends a sticker from the picker.
 #[tauri::command]
-pub async fn telegram_send_sticker(app: AppHandle, tg: Tg<'_>, chat_id: String, id: String, reply_to: Option<i32>) -> Result<TgMessage> {
+pub async fn telegram_send_sticker(app: AppHandle, tg: Tg<'_>, chat_id: String, id: String, reply_to: Option<i32>, topic: Option<i32>) -> Result<TgMessage> {
+    let reply_to = super::in_topic(reply_to, topic);
     let doc = tg.sticker_doc(&id)?;
     let client = Telegram::client(&*tg.inner.lock().await)?;
     let (peer_id, peer) = tg.entry(&chat_id)?;

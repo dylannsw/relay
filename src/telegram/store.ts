@@ -3,6 +3,8 @@
 
 import { useSyncExternalStore } from "react";
 import { api, errorText } from "@/api";
+import { clearChatMedia } from "./media-cache";
+import { clearRecentHistory, invalidateRecentHistory } from "./recent-history";
 import type { TgChat, TgEvent, TgFolder, TgStatus } from "./types";
 
 export interface TelegramState {
@@ -23,6 +25,10 @@ const eventListeners = new Set<(e: TgEvent) => void>();
 let started = false;
 
 function set(patch: Partial<TelegramState>) {
+  if (patch.status && patch.status.stage !== "ready" && state.status?.stage === "ready") {
+    clearChatMedia();
+    clearRecentHistory();
+  }
   state = { ...state, ...patch };
   listeners.forEach((l) => l());
 }
@@ -77,11 +83,13 @@ export function requestOpenChat(id: string | null) {
 
 /** Drops a deleted chat from the list. */
 export function removeChat(id: string) {
+  clearRecentHistory(id);
   changes++;
   set({ chats: state.chats.filter((c) => c.id !== id) });
 }
 
 function onEvent(e: TgEvent) {
+  invalidateRecentHistory(e);
   if (e.reload) {
     // The list changed in the backend: re-read it (local, no trip to Telegram). Status only
     // when not signed in yet (the first load right after connecting).

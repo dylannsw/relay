@@ -13,7 +13,7 @@ export const SELECTION_BAR_ROOM = 86;
  * The floating action bar: what you can do with the selected items, pinned to the bottom centre
  * of the page while anything is selected. Its parent must be `relative`.
  *
- * It wears the menus' frosted glass (.menu-glass) and engraved dividers, so it matches the right-click
+ * It wears the menus' frosted glass (.menu-glass) and a grey pill divider, so it matches the right-click
  * menu in every theme; its chip and hover tints are in .selection-bar in styles.css.
  */
 export function SelectionBar({ open, label, ariaLabel = "Selection actions", onClear, children, placement = "floating", className }: {
@@ -25,7 +25,8 @@ export function SelectionBar({ open, label, ariaLabel = "Selection actions", onC
   /** Shows ✕ (Escape) when given. */
   onClear?: () => void;
   children: ReactNode;
-  placement?: "floating" | "inline";
+  /** "floating" sits at the bottom centre of its parent, "top" at the top centre (the topics bar), "inline" in the flow. */
+  placement?: "floating" | "top" | "inline";
   /** Extra classes for the bar's positioning wrapper, e.g. a different `bottom-*` lift. */
   className?: string;
 }) {
@@ -33,17 +34,19 @@ export function SelectionBar({ open, label, ariaLabel = "Selection actions", onC
   const shown = useRef<ReactNode>(label);
   if (open) shown.current = label;
   const inline = placement === "inline";
+  // Comes in from the edge it sits at.
+  const lift = inline ? -4 : placement === "top" ? -16 : 16;
   return (
-    <div className={cn("pointer-events-none z-(--z-floating) flex justify-center px-4", inline ? "relative shrink-0" : "absolute inset-x-0 bottom-5", className)}>
+    <div className={cn("pointer-events-none z-(--z-floating) flex justify-center px-4", inline ? "relative shrink-0" : placement === "top" ? "absolute inset-x-0 top-3" : "absolute inset-x-0 bottom-5", className)}>
       <AnimatePresence>
         {open && (
           <motion.div
             role="toolbar"
             aria-label={ariaLabel}
             className={cn("selection-bar menu-glass pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto no-scrollbar rounded-2xl p-1.5 text-popover-foreground", inline && "my-2")}
-            initial={{ opacity: 0, y: inline ? -4 : 16, scale: inline ? 1 : 0.96 }}
+            initial={{ opacity: 0, y: lift, scale: inline ? 1 : 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1, transition: { type: "spring", duration: 0.35, bounce: 0.25, opacity: { duration: 0.15 } } }}
-            exit={{ opacity: 0, y: inline ? -4 : 10, scale: inline ? 1 : 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
+            exit={{ opacity: 0, y: inline ? -4 : lift * 0.6, scale: inline ? 1 : 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
             // Clicks here mustn't reach the page behind (which clears the selection on empty space).
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
@@ -67,9 +70,9 @@ export function SelectionBar({ open, label, ariaLabel = "Selection actions", onC
   );
 }
 
-/** A thin upright line between groups of actions. */
+/** A short rounded pill between groups of actions. */
 export function SelectionBarSeparator() {
-  return <div aria-hidden className="menu-divider-upright mx-1 h-6 shrink-0" />;
+  return <div aria-hidden className="selection-bar-divider mx-1 h-5 w-0.5 shrink-0 rounded-full" />;
 }
 
 /**

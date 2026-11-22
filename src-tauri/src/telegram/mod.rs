@@ -27,7 +27,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::crypt;
 use crate::error::{msg, Error, Result};
-use convert::{chat_id, folder_rules, parse_chat_id, ChatEntry, FolderRule, TgChat, TgFolder, TgMessage};
+use convert::{chat_id, folder_rules, parse_chat_id, ChatEntry, FolderRule, TgChat, TgFolder, TgMessage, TgPreview, TgTopic};
 use session::FileSession;
 
 pub const TELEGRAM_UPDATED: &str = "telegram-updated";
@@ -75,6 +75,8 @@ struct Chats {
     folders: Vec<FolderRule>,
     list: HashMap<PeerId, ChatEntry>,
     loaded: bool,
+    /// Topic names in groups with topics, for the chat list's previews.
+    topics: HashMap<PeerId, HashMap<i32, String>>,
 }
 
 pub struct Telegram {
@@ -89,6 +91,16 @@ pub struct Telegram {
     member_hashes: RwLock<HashMap<i64, i64>>,
     /// Names of senders Telegram sent without their details, once looked up (see `fill_senders`).
     sender_names: RwLock<HashMap<PeerId, String>>,
+    /// Group members' profile pictures, by their chat id: the photo and a message of theirs it was
+    /// seen on, so it can be fetched through that message (no access hash needed).
+    sender_photos: RwLock<HashMap<String, SenderPhoto>>,
+}
+
+#[derive(Clone)]
+struct SenderPhoto {
+    photo_id: i64,
+    chat: PeerId,
+    msg_id: i32,
 }
 
 /// Someone in a group you can tag.
@@ -215,6 +227,8 @@ fn tg_error(e: impl std::fmt::Display) -> Error {
         "Relay was signed out of Telegram (the session may have been ended from another device). Sign in again.".into()
     } else if raw.contains("CHAT_WRITE_FORBIDDEN") || raw.contains("CHAT_SEND_PLAIN_FORBIDDEN") {
         "You can't send messages in this chat.".into()
+    } else if raw.contains("TOPIC_CLOSED") {
+        "This topic is closed. Only admins can write in it.".into()
     } else if raw.contains("REACTION_INVALID") || raw.contains("REACTION_EMPTY") {
         "This chat doesn't allow that reaction.".into()
     } else if raw.contains("MESSAGE_EDIT_TIME_EXPIRED") {
@@ -245,6 +259,7 @@ impl Telegram {
             online: Default::default(),
             member_hashes: Default::default(),
             sender_names: Default::default(),
+            sender_photos: Default::default(),
         }
     }
 
@@ -335,6 +350,9 @@ impl Telegram {
             }
             let _ = session.flush();
             let _ = app.emit(TELEGRAM_UPDATED, TgEvent { reload: true, ..Default::default() });
+            if me.prime_topics(&client).await {
+                let _ = app.emit(TELEGRAM_UPDATED, TgEvent { reload: true, ..Default::default() });
+            }
             let mut stream = match client.stream_updates(rx, UpdatesConfiguration { catch_up: true }).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -396,11 +414,76 @@ impl Telegram {
                 e.chat.marked_unread = old.chat.marked_unread;
             }
         }
+        for (id, e) in list.iter_mut() {
+            if let Some(last) = e.chat.last.as_mut() {
+                last.topic = last.topic_id.and_then(|t| chats.topics.get(id)?.get(&t).cloned());
+            }
+        }
         chats.me = Some(me);
         chats.folders = folder_rules(filters, Some(me));
         chats.list = list;
         chats.loaded = true;
         Ok(())
+    }
+
+    /// Fetches the topics of a group with topics (up to 100, as Telegram orders them: pinned first,
+    /// then by latest message), remembering their names for the chat list.
+    async fn fetch_topics(&self, client: &Client, id: PeerId, peer: PeerRef) -> Result<Vec<TgTopic>> {
+        let request = tl::functions::messages::GetForumTopics { peer: peer.into(), q: None, offset_date: 0, offset_id: 0, offset_topic: 0, limit: 100 };
+        let tl::enums::messages::ForumTopics::Topics(res) = client.invoke(&request).await.map_err(tg_error)?;
+        let topics: Vec<tl::types::ForumTopic> = res
+            .topics
+            .into_iter()
+            .filter_map(|t| match t {
+                tl::enums::ForumTopic::Topic(t) => Some(t),
+                tl::enums::ForumTopic::Deleted(_) => None,
+            })
+            .collect();
+        // The latest messages come back raw; fetched again by id for their senders' names.
+        let ids: Vec<i32> = topics.iter().map(|t| t.top_message).filter(|&m| m > 0).collect();
+        let mut latest: HashMap<i32, Message> = HashMap::new();
+        if !ids.is_empty() {
+            if let Ok(found) = client.get_messages_by_id(peer, &ids).await {
+                latest.extend(found.into_iter().flatten().map(|m| (m.id(), m)));
+            }
+        }
+        let names: HashMap<i32, String> = topics.iter().map(|t| (t.id, t.title.clone())).collect();
+        self.patch(id, |e| {
+            if let Some(last) = e.chat.last.as_mut() {
+                last.topic = last.topic_id.and_then(|t| names.get(&t).cloned());
+            }
+        });
+        self.chats.write().expect("chats lock").topics.insert(id, names);
+        Ok(topics.iter().map(|t| convert::topic(t, latest.get(&t.top_message))).collect())
+    }
+
+    /// Learns the topic names of every group with topics, so their previews can say which topic
+    /// the latest message is in. Returns whether there were any.
+    async fn prime_topics(&self, client: &Client) -> bool {
+        let forums: Vec<(PeerId, PeerRef)> = {
+            let chats = self.chats.read().expect("chats lock");
+            chats.list.values().filter(|e| e.chat.forum).filter_map(|e| Some((e.peer.id(), e.peer.to_ref_cached()?))).collect()
+        };
+        for (id, peer) in &forums {
+            if let Err(e) = self.fetch_topics(client, *id, *peer).await {
+                eprintln!("telegram: topics unavailable: {e}");
+            }
+        }
+        !forums.is_empty()
+    }
+
+    /// A preview of a chat's new latest message, with its topic in a group with topics.
+    fn chat_preview(&self, id: PeerId, m: &Message) -> TgPreview {
+        let chats = self.chats.read().expect("chats lock");
+        let e = chats.list.get(&id);
+        let group = !matches!(m.peer(), Some(Peer::User(_))) || e.is_some_and(|e| e.chat.kind == "group" || e.chat.kind == "channel");
+        let mut p = convert::preview(m, group);
+        if e.is_some_and(|e| e.chat.forum) {
+            let t = convert::topic_of(m);
+            p.topic_id = Some(t);
+            p.topic = chats.topics.get(&id).and_then(|names| names.get(&t).cloned());
+        }
+        p
     }
 
     /// Re-reads people's online status (one request per 100 people), which goes stale while
@@ -484,9 +567,13 @@ impl Telegram {
                     let _ = self.load_chats(client).await;
                     TgEvent { reload: true, ..Default::default() }
                 } else {
-                    let group = !matches!(m.peer(), Some(Peer::User(_)));
+                    if let Some(tl::enums::MessageAction::TopicCreate(t)) = m.action() {
+                        let title = t.title.clone();
+                        self.chats.write().expect("chats lock").topics.entry(id).or_default().insert(m.id(), title);
+                    }
+                    let preview = self.chat_preview(id, &m);
                     let chat = self.patch(id, |e| {
-                        e.chat.last = Some(convert::preview(&m, group || e.chat.kind == "group" || e.chat.kind == "channel"));
+                        e.chat.last = Some(preview);
                         if m.outgoing() {
                             // Sending from another device reads the chat there.
                             e.chat.unread = 0;
@@ -504,8 +591,24 @@ impl Telegram {
                 }
             }
             Update::MessageEdited(m) => {
-                let message = self.with_replies(client, vec![m.into_inner()]).await.pop();
-                TgEvent { message, edited: true, ..Default::default() }
+                let raw = m.into_inner();
+                // An edit's copy of the message often leaves its reactions out, or marks them
+                // `min` (not saying which are yours). So reactions ride along as their own event,
+                // only when Telegram sent them, and the UI keeps what it shows otherwise.
+                let reactions = match &raw.raw {
+                    tl::enums::Message::Message(r) => r.reactions.as_ref().map(|rs| {
+                        let tl::enums::MessageReactions::Reactions(x) = rs;
+                        TgReactionsEvent {
+                            chat_id: chat_id(raw.peer_id()),
+                            message_id: raw.id(),
+                            reactions: convert::reactions_of(rs),
+                            min: x.min,
+                        }
+                    }),
+                    _ => None,
+                };
+                let message = self.with_replies(client, vec![raw]).await.pop();
+                TgEvent { message, edited: true, reactions, ..Default::default() }
             }
             Update::MessageDeleted(d) => TgEvent {
                 deleted_chat_id: d.channel_id().and_then(PeerId::channel).map(chat_id),
@@ -592,7 +695,7 @@ impl Telegram {
     /// Converts messages for the UI, looking up the ones they reply to that aren't among them.
     async fn with_replies(&self, client: &Client, list: Vec<Message>) -> Vec<TgMessage> {
         let mut by_id: HashMap<i32, Message> = list.iter().map(|m| (m.id(), m.clone())).collect();
-        let missing: Vec<i32> = list.iter().filter_map(|m| m.reply_to_message_id()).filter(|id| !by_id.contains_key(id)).collect();
+        let missing: Vec<i32> = list.iter().filter_map(convert::reply_id).filter(|id| !by_id.contains_key(id)).collect();
         if let (false, Some(first)) = (missing.is_empty(), list.first()) {
             if let Some(peer) = self.peer_ref(first.peer_id()) {
                 if let Ok(found) = client.get_messages_by_id(peer, &missing).await {
@@ -604,7 +707,37 @@ impl Telegram {
         }
         let mut out: Vec<TgMessage> = list.iter().map(|m| convert::message(m, &by_id)).collect();
         self.fill_senders(client, &list, &mut out).await;
+        self.note_sender_photos(&list, &mut out);
         out
+    }
+
+    /// Remembers which senders have a profile picture, so their avatar can load. An anonymous
+    /// admin's message shows the group's own picture.
+    fn note_sender_photos(&self, list: &[Message], out: &mut [TgMessage]) {
+        let mut photos = self.sender_photos.write().expect("sender photos lock");
+        for (m, t) in list.iter().zip(out.iter_mut()) {
+            let Some(id) = t.sender_id.clone() else { continue };
+            if m.sender_id() == Some(m.peer_id()) || m.sender_id().is_none() {
+                t.sender_has_photo = self.chats.read().expect("chats lock").list.get(&m.peer_id()).is_some_and(|e| e.chat.has_photo);
+                continue;
+            }
+            let photo_id = match m.sender() {
+                Some(Peer::User(u)) => u.photo().map(|p| p.photo_id),
+                Some(Peer::Channel(c)) => c.photo().map(|p| p.photo_id),
+                Some(Peer::Group(g)) => g.photo().map(|p| p.photo_id),
+                Some(Peer::Community(c)) => c.photo().map(|p| p.photo_id),
+                None => None,
+            };
+            match photo_id {
+                Some(photo_id) => {
+                    photos.insert(id, SenderPhoto { photo_id, chat: m.peer_id(), msg_id: m.id() });
+                    t.sender_has_photo = true;
+                }
+                // Their details didn't come with this message: go by an earlier one that had them.
+                None if m.sender().is_none() => t.sender_has_photo = photos.contains_key(&id),
+                None => {}
+            }
+        }
     }
 
     /// Names the senders Telegram left unnamed. An anonymous admin's message comes from the group
@@ -893,12 +1026,53 @@ pub fn telegram_chats(tg: Tg<'_>) -> Result<TgChatList> {
     Ok(TgChatList { folders: chats.folders.iter().map(|f| f.folder.clone()).collect(), chats: list, loaded: chats.loaded })
 }
 
-/// A page of a chat's messages, oldest first: the latest ones, or those before `before`.
+/// The topics of a group with topics: pinned first, then by latest message.
 #[tauri::command]
-pub async fn telegram_messages(tg: Tg<'_>, chat_id: String, before: Option<i32>, limit: Option<usize>) -> Result<Vec<TgMessage>> {
+pub async fn telegram_topics(tg: Tg<'_>, chat_id: String) -> Result<Vec<TgTopic>> {
+    let client = Telegram::client(&*tg.inner.lock().await)?;
+    let (id, peer) = tg.entry(&chat_id)?;
+    tg.fetch_topics(&client, id, peer).await
+}
+
+/// A page of a chat's messages, oldest first: the latest ones, or those before `before`. In a
+/// group with topics, `topic` picks the topic (1 is General).
+#[tauri::command]
+pub async fn telegram_messages(tg: Tg<'_>, chat_id: String, before: Option<i32>, limit: Option<usize>, topic: Option<i32>) -> Result<Vec<TgMessage>> {
     let client = Telegram::client(&*tg.inner.lock().await)?;
     let (_, peer) = tg.entry(&chat_id)?;
-    let mut iter = client.iter_messages(peer).limit(limit.unwrap_or(50).clamp(1, 100));
+    let limit = limit.unwrap_or(50).clamp(1, 100);
+    if let Some(topic) = topic {
+        // A topic's messages are the "replies" to its first message. They come back raw, so
+        // they're fetched again by id for their senders' names (one more request per page).
+        let request = tl::functions::messages::GetReplies {
+            peer: peer.into(),
+            msg_id: topic,
+            offset_id: before.unwrap_or(0),
+            offset_date: 0,
+            add_offset: 0,
+            limit: limit as i32,
+            max_id: 0,
+            min_id: 0,
+            hash: 0,
+        };
+        let ids: Vec<i32> = match client.invoke(&request).await.map_err(tg_error)? {
+            tl::enums::messages::Messages::Messages(m) => m.messages,
+            tl::enums::messages::Messages::Slice(m) => m.messages,
+            tl::enums::messages::Messages::ChannelMessages(m) => m.messages,
+            tl::enums::messages::Messages::NotModified(_) => Vec::new(),
+        }
+        .iter()
+        .filter_map(|m| match m {
+            tl::enums::Message::Message(m) => Some(m.id),
+            tl::enums::Message::Service(m) => Some(m.id),
+            tl::enums::Message::Empty(_) => None,
+        })
+        .collect();
+        let mut list: Vec<Message> = if ids.is_empty() { Vec::new() } else { client.get_messages_by_id(peer, &ids).await.map_err(tg_error)?.into_iter().flatten().collect() };
+        list.sort_by_key(|m| m.id());
+        return Ok(tg.with_replies(&client, list).await);
+    }
+    let mut iter = client.iter_messages(peer).limit(limit);
     if let Some(b) = before {
         iter = iter.offset_id(b);
     }
@@ -1016,6 +1190,12 @@ fn format_entities(formats: &[TgFormat], text: &str) -> Vec<tl::enums::MessageEn
         .collect()
 }
 
+/// What a message sent into a topic replies to: a reply stays in its message's topic by itself,
+/// and anything else "replies" to the topic's first message. General (1) takes neither.
+pub(crate) fn in_topic(reply_to: Option<i32>, topic: Option<i32>) -> Option<i32> {
+    reply_to.or(topic.filter(|&t| t > 1))
+}
+
 /// Sends a text message, with the people tagged in it and its formatting.
 #[tauri::command]
 pub async fn telegram_send(
@@ -1026,7 +1206,9 @@ pub async fn telegram_send(
     reply_to: Option<i32>,
     mentions: Option<Vec<TgMention>>,
     formats: Option<Vec<TgFormat>>,
+    topic: Option<i32>,
 ) -> Result<TgMessage> {
+    let reply_to = in_topic(reply_to, topic);
     if text.trim().is_empty() {
         return Err(msg("Type a message first."));
     }
@@ -1057,7 +1239,9 @@ pub async fn telegram_send_file(
     caption: String,
     reply_to: Option<i32>,
     formats: Option<Vec<TgFormat>>,
+    topic: Option<i32>,
 ) -> Result<TgMessage> {
+    let reply_to = in_topic(reply_to, topic);
     let file = Path::new(&path);
     let size = std::fs::metadata(file).map_err(|_| msg("That file can't be read."))?.len();
     if size == 0 {
@@ -1099,7 +1283,9 @@ pub async fn telegram_send_voice(
     duration: f64,
     waveform: Vec<u8>,
     reply_to: Option<i32>,
+    topic: Option<i32>,
 ) -> Result<TgMessage> {
+    let reply_to = in_topic(reply_to, topic);
     let ogg = voice::to_ogg(&bytes).map_err(msg)?;
     let (client, media) = {
         let inner = tg.inner.lock().await;
@@ -1141,9 +1327,9 @@ pub async fn telegram_send_voice(
 
 /// After sending: the chat moves up with its new last message, and the message comes back for the bubble.
 async fn sent_message(app: &AppHandle, tg: &Telegram, client: &Client, id: PeerId, sent: Message) -> Result<TgMessage> {
-    let group = tg.chats.read().expect("chats lock").list.get(&id).is_some_and(|e| e.chat.kind == "group" || e.chat.kind == "channel");
+    let preview = tg.chat_preview(id, &sent);
     let chat = tg.patch(id, |e| {
-        e.chat.last = Some(convert::preview(&sent, group));
+        e.chat.last = Some(preview);
         e.chat.unread = 0;
         e.chat.mentions = 0;
         e.chat.marked_unread = false;
@@ -1248,8 +1434,7 @@ pub async fn telegram_forward(app: AppHandle, tg: Tg<'_>, from_chat_id: String, 
     let Some(newest) = sent.last() else {
         return Err(msg("Telegram didn't forward that message."));
     };
-    let group = tg.chats.read().expect("chats lock").list.get(&to_id).is_some_and(|e| e.chat.kind == "group" || e.chat.kind == "channel");
-    let preview = convert::preview(newest, group);
+    let preview = tg.chat_preview(to_id, newest);
     let chat = tg.patch(to_id, |e| {
         e.chat.last = Some(preview);
         e.chat.unread = 0;
@@ -1350,11 +1535,30 @@ pub async fn telegram_set_online(app: AppHandle, tg: Tg<'_>, online: bool) -> Re
     Ok(())
 }
 
-/// Marks everything in a chat as read (on every device, as in Telegram).
+/// Marks everything in a chat as read (on every device, as in Telegram). In a group with topics,
+/// `topic` marks just that topic, up to `up_to` (its latest message); the group's count becomes
+/// what's left in its other topics.
 #[tauri::command]
-pub async fn telegram_mark_read(app: AppHandle, tg: Tg<'_>, chat_id: String) -> Result<()> {
+pub async fn telegram_mark_read(app: AppHandle, tg: Tg<'_>, chat_id: String, topic: Option<i32>, up_to: Option<i32>) -> Result<()> {
     let client = Telegram::client(&*tg.inner.lock().await)?;
     let (id, peer) = tg.entry(&chat_id)?;
+    if let (Some(topic), Some(up_to)) = (topic, up_to) {
+        client
+            .invoke(&tl::functions::messages::ReadDiscussion { peer: peer.into(), msg_id: topic, read_max_id: up_to })
+            .await
+            .map_err(tg_error)?;
+        let topics = tg.fetch_topics(&client, id, peer).await?;
+        let (unread, mentions) = topics.iter().filter(|t| t.id != topic).fold((0, 0), |(u, m), t| (u + t.unread, m + t.mentions));
+        let chat = tg.patch(id, |e| {
+            e.chat.unread = unread;
+            e.chat.mentions = mentions;
+            if unread == 0 {
+                e.chat.marked_unread = false;
+            }
+        });
+        let _ = app.emit(TELEGRAM_UPDATED, TgEvent { chat, ..Default::default() });
+        return Ok(());
+    }
     let (mentions, marked) = tg.chats.read().expect("chats lock").list.get(&id).map_or((0, false), |e| (e.chat.mentions, e.chat.marked_unread));
     client.mark_as_read(peer).await.map_err(tg_error)?;
     if mentions > 0 {
@@ -1447,7 +1651,7 @@ pub async fn telegram_chat_photo(tg: Tg<'_>, chat_id: String) -> Result<tauri::i
     let media = Telegram::media_client(&*tg.inner.lock().await)?;
     let id = parse_chat_id(&chat_id).ok_or_else(|| msg("That chat id isn't valid."))?;
     let peer = tg.chats.read().expect("chats lock").list.get(&id).map(|e| e.peer.clone());
-    let Some(peer) = peer else { return Ok(tauri::ipc::Response::new(Vec::new())) };
+    let Some(peer) = peer else { return tg.sender_photo(&media, &chat_id, id).await };
     let photo_id = match &peer {
         Peer::User(u) => u.photo().map(|p| p.photo_id),
         Peer::Group(g) => g.photo().map(|p| p.photo_id),
@@ -1465,10 +1669,15 @@ pub async fn telegram_chat_photo(tg: Tg<'_>, chat_id: String) -> Result<tauri::i
     download(&media, &photo, &path).await
 }
 
-/// A photo sent in a chat (cached on disk).
+/// The longest side of the photo a chat bubble shows. A bubble is at most about 400 points wide, so
+/// this stays sharp at 200% display scaling and costs a fraction of the memory of the original
+/// (which the photo viewer loads).
+const BUBBLE_PHOTO_SIDE: i32 = 1280;
+
+/// A photo sent in a chat, at the size a bubble shows (cached on disk).
 #[tauri::command]
 pub async fn telegram_photo(tg: Tg<'_>, chat_id: String, message_id: i32) -> Result<tauri::ipc::Response> {
-    let path = tg.dir.join("media").join(format!("photo_{chat_id}_{message_id}.jpg"));
+    let path = tg.dir.join("media").join(format!("preview_{chat_id}_{message_id}.jpg"));
     if let Some(r) = cached(&path) {
         return Ok(r);
     }
@@ -1487,7 +1696,24 @@ pub async fn telegram_photo(tg: Tg<'_>, chat_id: String, message_id: i32) -> Res
         .next()
         .ok_or(Error::NotFound)?;
     let photo = m.photo().ok_or_else(|| msg("That message has no photo."))?;
-    download(&media, &photo, &path).await
+    use grammers_client::media::PhotoSize;
+    let side = |t: &PhotoSize| match t {
+        PhotoSize::Size(s) => Some(s.width.max(s.height)),
+        PhotoSize::Progressive(s) => Some(s.width.max(s.height)),
+        _ => None,
+    };
+    let thumbs = photo.thumbs();
+    // The largest size that fits a bubble; the original when Telegram has nothing smaller.
+    let fits = thumbs
+        .iter()
+        .filter_map(|t| side(t).map(|s| (s, t)))
+        .filter(|(s, _)| *s <= BUBBLE_PHOTO_SIDE)
+        .max_by_key(|(s, _)| *s)
+        .map(|(_, t)| t);
+    match fits {
+        Some(size) => download(&media, size, &path).await,
+        None => download(&media, &photo, &path).await,
+    }
 }
 
 /// A sticker or GIF sent in a chat (cached on disk).
@@ -1569,6 +1795,28 @@ impl Telegram {
             .next()
             .ok_or(Error::NotFound)?;
         Ok((media, m))
+    }
+
+    /// A group member's profile picture (someone who isn't in your chat list), fetched by way of a
+    /// message of theirs; empty when they have none or haven't been seen.
+    async fn sender_photo(&self, media: &Client, chat_id: &str, id: PeerId) -> Result<tauri::ipc::Response> {
+        let empty = || Ok(tauri::ipc::Response::new(Vec::new()));
+        let Some(seen) = self.sender_photos.read().expect("sender photos lock").get(chat_id).cloned() else { return empty() };
+        let path = self.dir.join("media").join(format!("avatar_{chat_id}_{}.jpg", seen.photo_id));
+        if let Some(r) = cached(&path) {
+            return Ok(r);
+        }
+        let (Some(group), Some(bare)) = (self.peer_ref(seen.chat), id.bare_id()) else { return empty() };
+        let group: tl::enums::InputPeer = group.into();
+        let peer: tl::enums::InputPeer = match id.kind() {
+            PeerKind::User => tl::types::InputPeerUserFromMessage { peer: group, msg_id: seen.msg_id, user_id: bare }.into(),
+            PeerKind::Channel => tl::types::InputPeerChannelFromMessage { peer: group, msg_id: seen.msg_id, channel_id: bare }.into(),
+            PeerKind::Chat => return empty(),
+        };
+        let photo = grammers_client::media::ChatPhoto {
+            raw: tl::types::InputPeerPhotoFileLocation { big: false, peer, photo_id: seen.photo_id }.into(),
+        };
+        download(media, &photo, &path).await
     }
 
     /// Where a message's photo or file is cached, if it's been downloaded.

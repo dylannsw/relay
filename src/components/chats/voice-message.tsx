@@ -31,7 +31,7 @@ function bars(levels: number[] | null | undefined): number[] {
 }
 
 /** `src`: a recording still being sent plays from its local copy. */
-export function VoiceMessage({ chatId, messageId, media, src }: { chatId: string; messageId: number; media: TgMedia; src?: string }) {
+export function VoiceMessage({ chatId, messageId, media, src, onPlay }: { chatId: string; messageId: number; media: TgMedia; src?: string; onPlay: (id: number) => void }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [pos, setPos] = useState(0);
@@ -60,6 +60,7 @@ export function VoiceMessage({ chatId, messageId, media, src }: { chatId: string
   }, [state]);
 
   const load = async (): Promise<HTMLAudioElement | null> => {
+    onPlay(messageId);
     if (audio.current) return audio.current;
     setState("loading");
     try {

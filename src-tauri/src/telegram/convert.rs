@@ -41,6 +41,9 @@ pub struct TgPreview {
     /// Who sent it, in groups ("You" for your own); none in one-to-one chats.
     pub sender: Option<String>,
     pub date: i64,
+    /// In a group with topics: the topic it was sent in (1 is General), and its name when known.
+    pub topic_id: Option<i32>,
+    pub topic: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -65,6 +68,25 @@ pub struct TgChat {
     pub last: Option<TgPreview>,
     /// The folders it's in.
     pub folders: Vec<i32>,
+    /// A group with topics: its messages are read and sent one topic at a time.
+    pub forum: bool,
+}
+
+/// One topic in a group with topics.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TgTopic {
+    /// The topic's id (the id of the message that started it; 1 is General).
+    pub id: i32,
+    pub title: String,
+    /// Its icon colour, as "#rrggbb".
+    pub color: String,
+    pub unread: i32,
+    pub mentions: i32,
+    pub muted: bool,
+    pub pinned: bool,
+    pub closed: bool,
+    pub last: Option<TgPreview>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +151,8 @@ pub struct TgMessage {
     pub outgoing: bool,
     pub sender_id: Option<String>,
     pub sender_name: Option<String>,
+    /// Whether the sender has a profile picture to show beside their name in a group.
+    pub sender_has_photo: bool,
     pub text: String,
     pub entities: Vec<TgEntity>,
     pub media: Option<TgMedia>,
@@ -140,6 +164,8 @@ pub struct TgMessage {
     /// Photos sent together as an album share this.
     pub grouped_id: Option<String>,
     pub reactions: Vec<TgReaction>,
+    /// In a group with topics: the topic it's in (None for General).
+    pub topic_id: Option<i32>,
 }
 
 /// What Relay keeps about a chat between list loads.
@@ -252,7 +278,11 @@ pub fn chat_from_dialog(dialog: &grammers_client::peer::Dialog) -> Option<ChatEn
         }
     }
     let contact = matches!(&peer, Peer::User(u) if u.contact() || u.is_self());
-    let last = dialog.last_message.as_ref().map(|m| preview(m, !matches!(peer, Peer::User(_))));
+    let forum = is_forum(&peer);
+    let last = dialog.last_message.as_ref().map(|m| TgPreview {
+        topic_id: forum.then(|| topic_of(m)),
+        ..preview(m, !matches!(peer, Peer::User(_)))
+    });
     Some(ChatEntry {
         chat: TgChat {
             id: chat_id(peer.id()),
@@ -269,10 +299,51 @@ pub fn chat_from_dialog(dialog: &grammers_client::peer::Dialog) -> Option<ChatEn
             presence: peer_presence(&peer),
             last,
             folders: Vec::new(),
+            forum,
         },
         peer,
         contact,
     })
+}
+
+/// Whether a chat is a group with topics.
+pub fn is_forum(peer: &Peer) -> bool {
+    matches!(peer, Peer::Group(g) if matches!(&g.raw, tl::enums::Chat::Channel(c) if c.forum))
+}
+
+fn reply_header(m: &Message) -> Option<&tl::types::MessageReplyHeader> {
+    let header = match &m.raw {
+        tl::enums::Message::Message(raw) => raw.reply_to.as_ref(),
+        tl::enums::Message::Service(raw) => raw.reply_to.as_ref(),
+        tl::enums::Message::Empty(_) => None,
+    };
+    match header? {
+        tl::enums::MessageReplyHeader::Header(h) => Some(h),
+        _ => None,
+    }
+}
+
+/// The topic a message is in, in a group with topics (1 for General). A message in a topic
+/// "replies" to the topic's first message, or carries it as the top id when it replies to another
+/// message; the message that started a topic is its own id.
+pub fn topic_of(m: &Message) -> i32 {
+    if matches!(m.action(), Some(tl::enums::MessageAction::TopicCreate(_))) {
+        return m.id();
+    }
+    match reply_header(m) {
+        Some(h) if h.forum_topic => h.reply_to_top_id.or(h.reply_to_msg_id).unwrap_or(1),
+        _ => 1,
+    }
+}
+
+/// The message this one really replies to: in a topic, pointing at the topic's first message only
+/// says which topic it's in.
+pub fn reply_id(m: &Message) -> Option<i32> {
+    let id = m.reply_to_message_id()?;
+    match reply_header(m) {
+        Some(h) if h.forum_topic && h.reply_to_top_id.is_none() => None,
+        _ => Some(id),
+    }
 }
 
 /// The one-line preview of a message, as the chat list shows it.
@@ -293,6 +364,8 @@ pub fn preview(m: &Message, with_sender: bool) -> TgPreview {
         outgoing: m.outgoing(),
         sender: (with_sender && service_text(m).is_none()).then(|| sender_name(m)).flatten(),
         date: m.date().as_millisecond(),
+        topic_id: None,
+        topic: None,
     }
 }
 
@@ -468,6 +541,13 @@ pub fn service_text(m: &Message) -> Option<String> {
         A::ContactSignUp => joined("joined Telegram"),
         A::ChatMigrateTo(_) | A::ChannelMigrateFrom(_) => "The group was upgraded".into(),
         A::HistoryClear => "History cleared".into(),
+        A::TopicCreate(t) => format!("{who} created the topic “{}”", t.title),
+        A::TopicEdit(t) => match (&t.title, t.closed) {
+            (Some(title), _) => format!("{who} renamed the topic to “{title}”"),
+            (None, Some(true)) => joined("closed the topic"),
+            (None, Some(false)) => joined("reopened the topic"),
+            _ => joined("changed the topic"),
+        },
         A::Empty => return None,
         _ => "Service message".into(),
     })
@@ -520,7 +600,7 @@ pub fn reactions_of(r: &tl::enums::MessageReactions) -> Vec<TgReaction> {
 
 /// A message for the conversation view.`replies` holds the messages it may be replying to.
 pub fn message(m: &Message, replies: &HashMap<i32, Message>) -> TgMessage {
-    let reply = m.reply_to_message_id().map(|id| match replies.get(&id) {
+    let reply = reply_id(m).map(|id| match replies.get(&id) {
         Some(r) => TgReply {
             id,
             sender: full_sender_name(r),
@@ -536,6 +616,7 @@ pub fn message(m: &Message, replies: &HashMap<i32, Message>) -> TgMessage {
         // Your own messages need no sender id (the UI goes by `outgoing`).
         sender_id: m.sender_id().filter(|id| id.bot_api_dialog_id().is_some()).map(chat_id),
         sender_name: full_sender_name(m),
+        sender_has_photo: false,
         text: if m.action().is_some() { String::new() } else { m.text().to_string() },
         entities: entities_of(m),
         media: media_of(m),
@@ -548,6 +629,22 @@ pub fn message(m: &Message, replies: &HashMap<i32, Message>) -> TgMessage {
             tl::enums::Message::Message(raw) => raw.reactions.as_ref().map(reactions_of).unwrap_or_default(),
             _ => Vec::new(),
         },
+        topic_id: Some(topic_of(m)).filter(|&t| t != 1),
+    }
+}
+
+/// A topic for the topics bar. `last` is its latest message, when it came back.
+pub fn topic(t: &tl::types::ForumTopic, last: Option<&Message>) -> TgTopic {
+    TgTopic {
+        id: t.id,
+        title: t.title.clone(),
+        color: format!("#{:06x}", t.icon_color & 0xff_ffff),
+        unread: t.unread_count,
+        mentions: t.unread_mentions_count,
+        muted: is_muted(&t.notify_settings),
+        pinned: t.pinned,
+        closed: t.closed,
+        last: last.map(|m| TgPreview { topic_id: Some(t.id), topic: Some(t.title.clone()), ..preview(m, true) }),
     }
 }
 

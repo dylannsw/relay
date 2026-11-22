@@ -9,7 +9,7 @@
 /* Dark covers the whole app in Dark, and everything outside the frames in Mixed (the framed
    content, marked .frame, stays light there, and so do dialogs, menus and popovers: keep the
    popup list here in step with the three .mixed rules below). The command bar (.cmdbar) is the exception: always dark. */
-@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *, .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar), .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) *));
+@custom-variant dark (&:is(.dark *, .mixed *):not(.mixed .frame, .mixed .frame *, .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"]):not(.cmdbar), .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"]):not(.cmdbar) *));
 
 /* The one red for "down" and "now": Home's falling-delta badge and the calendar's current-time line. */
 :root {
@@ -143,9 +143,9 @@
 
 :root,
 /* Mixed theme: the framed content (main panel, email/compose/settings cards) keeps the light
-   colours, and so do the popups (dialogs, sheets, popovers, menus, selects), wherever they open. */
+   colours, and so do the popups (dialogs, sheets, popovers, menus, selects, tooltips), wherever they open. */
 .mixed .frame,
-.mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) {
+.mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"]):not(.cmdbar) {
     color-scheme: light;
     --smooth-ring-color: rgba(0, 0, 0, 0.05);
     /* Relay's accent: the logo blue. Filled buttons, checked boxes, links and unread dots.
@@ -359,7 +359,7 @@
   /* Mixed theme: text inherits body's colour already resolved to the dark theme's near-white,
      so the light frames restate it from their own (light) variables. */
   .mixed .frame,
-  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) {
+  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"]):not(.cmdbar) {
     @apply text-foreground;
     }
   html {
@@ -426,7 +426,7 @@
      white icons on filled buttons) are already above the floor and stay as they are. */
   :root:not(.dark, .mixed) :is(.tabler-icon, .ph-icon),
   .mixed .frame :is(.tabler-icon, .ph-icon),
-  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"]):not(.cmdbar) :is(.tabler-icon, .ph-icon) {
+  .mixed :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"]):not(.cmdbar) :is(.tabler-icon, .ph-icon) {
     color: oklch(from currentColor max(l, 0.5) c h);
   }
   /* Native scrollbars match the thin ScrollArea ones. */
@@ -528,16 +528,6 @@
     box-shadow: inset 0 0 0 1px var(--card-highlight);
     pointer-events: none;
   }
-}
-
-/* Mixed theme: tooltips are the dark ones (Light's dark grey box with white text) everywhere,
-   over the light panel and the dark sidebar alike. They're portalled outside the frames, so
-   they'd otherwise take Dark's colours and come out off-white. A faint edge keeps the box
-   distinct over the near-black sidebar. */
-.mixed [data-slot="tooltip-content"] {
-  --foreground: oklch(0.34 0 0);
-  --background: oklch(1 0 0);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
 }
 
 /* Your own chat bubble: the colours its text, links and tags take inside it. */
@@ -694,7 +684,7 @@
 
 /* The floating action bar for selected items (selection-bar.tsx): the menus' frosted glass (.menu-glass,
    below) in every theme, with its chips and hover fills in the same translucent foreground tints as the
-   menu hover pill, and the menus' engraved divider stood upright (.menu-divider-upright). */
+   menu hover pill, and its own grey pill divider (.selection-bar-divider). */
 .selection-bar .sb-chip {
   background-color: color-mix(in srgb, var(--foreground) 9%, transparent);
 }
@@ -709,6 +699,13 @@
 }
 .selection-bar .sb-action:active {
   background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+/* The divider between action groups: a plain 2px grey pill, light grey on the light glass, darker on the dark. */
+.selection-bar-divider {
+  background-color: #cdcdcd;
+}
+.dark .selection-bar-divider {
+  background-color: #2c2c2c;
 }
 .selection-bar .sb-action[data-destructive] {
   color: var(--destructive);
@@ -731,7 +728,7 @@
   --toast-tile-hover: rgb(0 0 0 / 10%);
 }
 [data-sonner-toaster][data-sonner-theme="dark"] {
-  --toast-bg: color-mix(in srgb, black var(--frost-shade), rgb(14 14 14 / 80%));
+  --toast-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--frost-dark) 80%, transparent));
   --toast-edge: rgb(255 255 255 / 10%);
   --toast-title: rgb(250 250 250);
   /* 60% white over the glass: ≈6.5:1 on the dark tint */
@@ -784,7 +781,7 @@
   box-shadow: 0 0 0 2px var(--toast-description);
 }
 
-/* ==== Menus: frosted glass (context, dropdown and select menus, and menu-like popover lists marked .menu-glass) ====
+/* ==== Frosted glass for menus, tooltips and surfaces marked .menu-glass ====
    The sidebar colour at 72% (light) / 80% (dark), plus --frost-shade of black, over a 12px blur, saturate 1.8: the blur is kept lighter
    than the command bar's 20px so colour behind still reads as soft shapes rather than a flat tint;
    a hairline rim inside and engraved separators (a dark line over a light one).
@@ -796,11 +793,14 @@
      The one knob for "how dark is the glass"; it shows on the light glass, while the dark tints are
      already near-black and get theirs from the higher alpha set on each. */
   --frost-shade: 5%;
+  /* The dark glass's tint (menus, command bar, dark toasts): a lifted charcoal rather than the near-black
+     sidebar (#0c0c0c), so the dark glass reads as grey frost, not black. */
+  --frost-dark: rgb(22 22 22);
 }
 .dark {
   --menu-rim: rgb(255 255 255 / 9%);
 }
-:is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], .menu-glass) {
+:is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"], .menu-glass) {
   --menu-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--sidebar) 72%, transparent));
   --menu-shadow: 0 12px 32px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
   --menu-groove: rgb(0 0 0 / 9%);
@@ -810,8 +810,8 @@
   border: 1px solid var(--menu-rim);
   box-shadow: var(--menu-shadow);
 }
-.dark :is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], .menu-glass) {
-  --menu-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--sidebar) 80%, transparent));
+.dark :is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"], .menu-glass) {
+  --menu-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--frost-dark) 80%, transparent));
   /* a dark outline just outside the rim, and a deep shadow. No inset top highlight: inside the rim it
      doubled the top edge into a brighter 2px band. */
   --menu-shadow: 0 0 0 1px rgb(0 0 0 / 45%), 0 12px 32px rgb(0 0 0 / 45%);
@@ -861,12 +861,43 @@
   border-right: 1px solid var(--menu-groove-light);
 }
 
+/* ==== Chat hover cards (chat-hover-card.tsx): the Zen theme's tab cards (zia-cards.css) ====
+   A fresh card pops in from the list's side with a slight overshoot; one already up slides to the next
+   row (data-snap) instead of popping again; closing shrinks it away. */
+.chat-hover-card {
+  transform-origin: left center;
+}
+.chat-hover-card[data-state="open"] {
+  animation: chat-card-in 250ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.chat-hover-card[data-snap] {
+  animation: none;
+  transition: top 140ms cubic-bezier(0.2, 0.9, 0.3, 1), left 140ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.chat-hover-card[data-state="closing"] {
+  animation: chat-card-out 120ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes chat-card-in {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes chat-card-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.85); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-hover-card[data-snap] { transition: none; }
+  @keyframes chat-card-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes chat-card-out { from { opacity: 1; } to { opacity: 0; } }
+}
+
 /* ==== Command bar: the Zen theme's floating URL bar (my-tweaks.css sections 8, 9, 14, 20, 21, 24) ====
    Dark in every theme (the panel carries .dark, so these tokens are Relay's dark ones). Unlayered, so these
    win over the Dialog's and cmdk's utility classes. */
 .cmdbar {
   /* Frosted, as Zen's open URL bar (zzz-my-arc urlbar.css: arc-urlbar-bg / -blur / -saturation) */
-  --cb-bg: color-mix(in srgb, black var(--frost-shade), rgb(14 14 14 / 80%));
+  --cb-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--frost-dark) 80%, transparent));
   --cb-frost: blur(20px) saturate(1.5);
   --cb-edge: var(--border);
   --cb-outline: rgb(0 0 0 / 45%);

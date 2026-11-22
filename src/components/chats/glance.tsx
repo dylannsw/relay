@@ -161,7 +161,7 @@ function Glance({ item, onDone }: { item: GlanceItem; onDone: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         {item.kind === "photo" ? (
-          item.preview ? <img src={item.preview} alt="" draggable={false} className="size-full object-contain" /> : null
+          <GlancePhoto item={item} />
         ) : (
           <GlanceVideo item={item} closing={closing} />
         )}
@@ -224,6 +224,34 @@ export function SaveButton({ chatId, messageId, compact = false }: {
       </TooltipTrigger>
       <TooltipContent side="bottom">Save to Downloads</TooltipContent>
     </Tooltip>
+  );
+}
+
+/** The bubble's smaller copy straight away, then the original over it once it has loaded. */
+function GlancePhoto({ item }: { item: GlanceItem }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let live = true;
+    // If the original can't load, the smaller copy stays up.
+    api.telegram.mediaUrl(item.chatId, item.messageId).then((u) => live && setUrl(u), () => {});
+    return () => {
+      live = false;
+    };
+  }, [item.chatId, item.messageId]);
+  return (
+    <div className="relative size-full">
+      {item.preview && <img src={item.preview} alt="" draggable={false} className="absolute inset-0 size-full object-contain" />}
+      {url && (
+        <img
+          src={url}
+          alt=""
+          draggable={false}
+          onLoad={() => setReady(true)}
+          className={ready ? "absolute inset-0 size-full object-contain" : "absolute inset-0 size-full object-contain opacity-0"}
+        />
+      )}
+    </div>
   );
 }
 

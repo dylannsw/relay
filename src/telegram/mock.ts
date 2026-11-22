@@ -2,7 +2,7 @@
 // Sign-in walks through every step: any API ID and 32-character hash, any phone number, then any
 // code ("22222" asks for a password too). Open the preview with ?tg=ready to skip sign-in.
 
-import type { TgChat, TgEntityKind, TgEvent, TgFolder, TgMember, TgMessage, TgPreview, TgStatus } from "./types";
+import type { TgChat, TgEntityKind, TgEvent, TgFolder, TgMember, TgMessage, TgPreview, TgStatus, TgTopic } from "./types";
 
 const now = Date.now();
 const min = 60_000;
@@ -43,6 +43,16 @@ const chats: TgChat[] = [
   chat({ id: "100", name: "Saved Messages", kind: "saved", last: { text: "https://example.com/onboarding-notes", outgoing: true, sender: null, date: now - 3 * day } }),
   chat({ id: "105", name: "Relay Bot", kind: "bot", last: { text: "Your weekly summary is ready", outgoing: false, sender: null, date: now - 6 * day } }),
   chat({ id: "-1005", name: "Old Flatmates", kind: "group", archived: true, folders: [4], last: { text: "bin night is Thursday", outgoing: false, sender: "Dee", date: now - 12 * day } }),
+  chat({ id: "-1006", name: "Intern Cohort Housing", kind: "group", forum: true, unread: 7, folders: [2], last: { text: "Anyone still need a room?", outgoing: false, sender: "Sam", date: now - 12 * min, topicId: 20, topic: "Housing" } }),
+];
+
+/** The sample group with topics (?tg=ready, then Intern Cohort Housing). */
+const mockTopics: TgTopic[] = [
+  { id: 1, title: "General", color: "#6fb9f0", unread: 0, mentions: 0, muted: false, pinned: false, closed: false, last: { id: 610, text: "Welcome everyone!", outgoing: false, sender: "Priya", date: now - 2 * day } },
+  { id: 20, title: "Housing", color: "#ffd67e", unread: 5, mentions: 0, muted: false, pinned: true, closed: false, last: { id: 622, text: "Anyone still need a room?", outgoing: false, sender: "Sam", date: now - 12 * min } },
+  { id: 30, title: "Events", color: "#ff93b2", unread: 2, mentions: 1, muted: false, pinned: false, closed: false, last: { id: 631, text: "Bowling on Friday at 7", outgoing: false, sender: "Jo", date: now - 3 * hr } },
+  { id: 40, title: "Questions", color: "#8eee98", unread: 0, mentions: 0, muted: true, pinned: false, closed: false, last: { id: 641, text: "Thanks, that worked", outgoing: true, sender: "You", date: now - 1 * day } },
+  { id: 50, title: "Carpool", color: "#cb86db", unread: 0, mentions: 0, muted: false, pinned: false, closed: true, last: { id: 651, text: "Last run was Thursday", outgoing: false, sender: "Ben", date: now - 4 * day } },
 ];
 
 let nextId = 500;
@@ -97,6 +107,18 @@ const history: Record<string, TgMessage[]> = {
     msg({ chatId: "-1001", text: "", senderName: "Priya Nair", senderId: "202", date: now - 1.4 * hr, media: { kind: "sticker", label: "🎉 Sticker", width: 512, height: 512, mime: "application/x-tgsticker" } }),
     msg({ chatId: "-1001", text: "Who's presenting for our squad?", senderName: "Jun Hao", senderId: "201", date: now - 30 * min }),
     msg({ chatId: "-1001", text: "@you can you take the demo on Friday?", senderName: "Jun Hao", senderId: "201", date: now - 22 * min, entities: [{ offset: 0, length: 4, kind: "mention", url: null }], reply: { id: 0, sender: "Jun Hao", senderId: "201", text: "Who's presenting for our squad?" } }),
+  ],
+  "-1006": [
+    msg({ chatId: "-1006", text: "Welcome everyone! Use the topics to keep things tidy", senderName: "Priya Raman", senderId: "202", senderHasPhoto: true, date: now - 2 * day }),
+    msg({ chatId: "-1006", text: "Lease on the Clementi flat ends in March, two rooms free", senderName: "Priya Raman", senderId: "202", senderHasPhoto: true, date: now - 5 * hr, topicId: 20 }),
+    msg({ chatId: "-1006", text: "How far is it from the MRT?", outgoing: true, senderName: "You", date: now - 4 * hr, topicId: 20 }),
+    msg({ chatId: "-1006", text: "About 8 minutes on foot", senderName: "Priya Raman", senderId: "202", senderHasPhoto: true, date: now - 3.5 * hr, topicId: 20 }),
+    msg({ chatId: "-1006", text: "Anyone still need a room? Mine opens up next month", senderName: "Sam", senderId: "203", senderHasPhoto: true, date: now - 12 * min, topicId: 20 }),
+    msg({ chatId: "-1006", text: "Bowling on Friday at 7, who's in?", senderName: "Jo", senderId: "201", date: now - 3 * hr, topicId: 30 }),
+    msg({ chatId: "-1006", text: "@you you coming?", senderName: "Jo", senderId: "201", date: now - 2.9 * hr, topicId: 30, entities: [{ offset: 0, length: 4, kind: "mention", url: null }] }),
+    msg({ chatId: "-1006", text: "Where do I get my building pass?", outgoing: true, senderName: "You", date: now - 1.1 * day, topicId: 40 }),
+    msg({ chatId: "-1006", text: "Thanks, that worked", outgoing: true, senderName: "You", date: now - 1 * day, topicId: 40 }),
+    msg({ chatId: "-1006", text: "Last run was Thursday", senderName: "Ben", senderId: "204", date: now - 4 * day, topicId: 50 }),
   ],
   "103": [
     msg({ chatId: "103", text: "dinner sat?", senderName: "Aisha", senderId: "103", date: now - 10 * hr }),
@@ -260,8 +282,11 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       if (!c || c.kind !== "group") return r({ members: [], more: false }, 150);
       return r({ members: mockMembers, more: false }, 300);
     }
+    case "telegram_topics":
+      return r(mockTopics, 250);
     case "telegram_messages": {
-      const list = history[String(args.chatId)] ?? [];
+      const topic = args.topic as number | null;
+      const list = (history[String(args.chatId)] ?? []).filter((m) => topic === null || (m.topicId ?? 1) === topic);
       const before = args.before as number | null;
       return r(before ? [] : list, 250);
     }
@@ -275,7 +300,8 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       // Telegram finds @usernames itself when no tags come with the message.
       if (!mentions.length) for (const u of text.matchAll(/(^|\s)(@[A-Za-z0-9_]{4,32})/g)) tagged.push({ offset: u.index + u[1]!.length, length: u[2]!.length, kind: "mention", url: null });
       const formatted = ((args.formats as { offset: number; length: number; kind: TgEntityKind }[] | null) ?? []).map((f) => ({ ...f, url: null }));
-      const m = msg({ chatId: id, text, outgoing: true, senderName: "You", date: Date.now(), entities: [...tagged, ...formatted] });
+      const topic = args.topic as number | null;
+      const m = msg({ chatId: id, text, outgoing: true, senderName: "You", date: Date.now(), entities: [...tagged, ...formatted], topicId: topic && topic !== 1 ? topic : null });
       const replyTo = args.replyTo as number | null;
       if (replyTo) {
         const o = history[id]?.find((x) => x.id === replyTo);
@@ -413,7 +439,14 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
     }
     case "telegram_mark_read": {
       const c = chats.find((x) => x.id === String(args.chatId));
-      if (c) {
+      const t = mockTopics.find((x) => x.id === args.topic);
+      if (c && t) {
+        t.unread = 0;
+        t.mentions = 0;
+        c.unread = mockTopics.reduce((n, x) => n + x.unread, 0);
+        c.mentions = mockTopics.reduce((n, x) => n + x.mentions, 0);
+        listener?.({ reload: false, chat: structuredClone(c), message: null, edited: false, deleted: [], deletedChatId: null });
+      } else if (c) {
         c.unread = 0;
         c.mentions = 0;
         c.markedUnread = false;
@@ -435,6 +468,7 @@ export async function mockTelegram<T>(cmd: string, args: Record<string, unknown>
       return r(undefined, 200);
     }
     case "telegram_chat_photo":
+      if (["202", "203"].includes(String(args.chatId))) return mockJpeg(96, 96, 50) as Promise<T>;
       return r(new ArrayBuffer(0), 50);
     case "telegram_photo":
       return mockJpeg(1280, 853, 200) as Promise<T>;

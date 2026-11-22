@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { useTasksState } from "@/tasks/store";
 import { IconArchive, IconArchiveOff, IconAt, IconChecks, IconCopy, IconPin, IconTrash, IconRobot, IconSpeakerphone, IconUsers, IconVolumeOff } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import type { TgChat } from "@/telegram/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { ChatAvatar } from "./chat-avatar";
+import { ChatHoverCards } from "./chat-hover-card";
 
 function KindIcon({ chat }: { chat: TgChat }) {
   const cls = "size-3.5 shrink-0 text-muted-foreground";
@@ -78,16 +79,17 @@ function Row({ chat, selected, onOpen, onArchive, onDelete }: { chat: TgChat; se
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <KindIcon chat={chat} />
-          <span className={cn("min-w-0 truncate text-sm", selected ? "font-medium" : "font-normal")}>
+          <span className={cn("min-w-0 truncate text-sm leading-6", selected ? "font-medium" : "font-normal")}>
             {chat.name}
           </span>
           {chat.muted && <IconVolumeOff className="size-3.5 shrink-0 text-muted-foreground" aria-label="Muted" />}
-          <span className="ml-auto shrink-0 pl-2 text-meta text-muted-foreground dark:text-[color:color-mix(in_oklab,var(--muted-foreground)_80%,var(--background))]">
+          <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground dark:text-[color:color-mix(in_oklab,var(--muted-foreground)_80%,var(--background))]">
             {last && listDate(last.date)}
           </span>
         </div>
         <div className="mt-0.75 flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate text-meta text-muted-foreground dark:text-[color:color-mix(in_oklab,var(--muted-foreground)_80%,var(--background))]">
+          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground dark:text-[color:color-mix(in_oklab,var(--muted-foreground)_80%,var(--background))]">
+            {last?.topic && <span className="text-foreground/80">{last.topic} · </span>}
             {last?.sender && <span className="text-foreground/80">{last.sender}: </span>}
             {last?.text || "No messages yet"}
           </p>
@@ -147,9 +149,11 @@ export function ChatList(props: {
   animateKey?: string;
 }) {
   const heat = useTasksState().settings.heatmapColor || "var(--primary)";
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   return (
     <div className="flex min-h-0 flex-1 flex-col" style={{ "--heat": heat } as CSSProperties}>
-      <div key={props.animateKey} className="no-scrollbar min-h-0 flex-1 animate-in overflow-y-auto px-1.5 py-2 duration-200 fade-in-0 slide-in-from-bottom-1">
+      <ChatHoverCards host={props.loaded ? scroller : null} chats={props.chats} onOpen={props.onOpen} />
+      <div key={props.animateKey} ref={setScroller} className="no-scrollbar min-h-0 flex-1 animate-in overflow-y-auto px-1.5 py-2 duration-200 fade-in-0 slide-in-from-bottom-1">
         {!props.loaded ? (
           <div className="flex flex-col gap-1 px-1">
             {Array.from({ length: 8 }, (_, i) => (

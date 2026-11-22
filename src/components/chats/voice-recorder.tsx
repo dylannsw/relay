@@ -1,9 +1,8 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { IconTrash } from "@tabler/icons-react";
-import { errorText } from "@/api";
-import { Button } from "@/components/ui/button";
+import { api, errorText } from "@/api";
+import { cn } from "@/lib/utils";
 
 /** A finished recording, ready to send. */
 export interface Recording {
@@ -19,7 +18,14 @@ export interface Recording {
 export interface VoiceRecorderHandle {
   /** Stops and hands the recording to `onDone`. */
   finish: () => void;
+  /** Stops and throws the recording away. */
+  cancel: () => void;
 }
+
+/** Each recording's transcript is told apart by this, so a late word from the last one can't show. */
+let dictationSession = 0;
+/** Why speech recognition can't run, said once per launch rather than on every recording. */
+let dictationWarned = false;
 
 /** Bars shown while recording: the latest stretch, newest on the right. */
 const LIVE_BARS = 48;
@@ -47,22 +53,30 @@ function telegramWaveform(levels: number[]): number[] {
 }
 
 /**
- * Records from the microphone as soon as it appears, in place of the message box: a red dot
- * and the time, with a bin to throw it away. The live levels are drawn into `waveTarget` (the
+ * Records from the microphone as soon as it appears. The message box stays, showing its
+ * placeholder until you speak and then the words as they're heard (only shown; the voice is
+ * what's sent). The red dot, the time and the live levels are drawn into `waveTarget` (the
  * composer's options row), so they update without redrawing the whole composer. The composer's
- * send button calls `finish`; Escape cancels.
+ * send button calls `finish` and its bin `cancel`; Escape cancels too.
  */
 export function VoiceRecorder({
   ref,
   onDone,
   onCancel,
   waveTarget,
+  placeholder,
+  className,
 }: {
   ref: Ref<VoiceRecorderHandle>;
   onDone: (r: Recording) => void;
   onCancel: () => void;
   waveTarget: HTMLElement | null;
+  /** The message box's placeholder, kept while nothing's been heard. */
+  placeholder: string;
+  /** The message box's text classes, so the transcript sits exactly where typing would. */
+  className?: string;
 }) {
+  const [heard, setHeard] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [live, setLive] = useState<number[]>([]);
   const [ready, setReady] = useState(false);
@@ -168,7 +182,25 @@ export function VoiceRecorder({
     if (!keep.current) callbacks.current.onCancel();
   };
 
-  useImperativeHandle(ref, () => ({ finish: () => stop(true) }));
+  useImperativeHandle(ref, () => ({ finish: () => stop(true), cancel: () => stop(false) }));
+
+  // The words, once the microphone's on (Windows listens alongside the recording).
+  useEffect(() => {
+    if (!ready) return;
+    const session = ++dictationSession;
+    let gone = false;
+    const unlisten = api.onDictation((s, text) => s === session && !gone && setHeard(text));
+    api.dictationStart(session).catch((e) => {
+      if (gone || dictationWarned) return;
+      dictationWarned = true;
+      toast(errorText(e));
+    });
+    return () => {
+      gone = true;
+      void unlisten.then((f) => f());
+      void api.dictationStop().catch(() => {});
+    };
+  }, [ready]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -188,20 +220,29 @@ export function VoiceRecorder({
 
   const bars = [...Array.from({ length: LIVE_BARS - live.length }, () => 0), ...live];
   return (
-    <div role="status" aria-label="Recording a voice message" className="flex h-[52px] items-center gap-3 pr-1 pl-2">
-      <Button type="button" variant="ghost" size="icon-sm" className="shrink-0 text-muted-foreground" aria-label="Discard recording" onClick={() => stop(false)}>
-        <IconTrash />
-      </Button>
-      <span className="flex shrink-0 items-center gap-2 text-sm text-foreground tabular-nums">
-        <span className="size-2.5 animate-pulse rounded-full bg-destructive" />
-        {clock(ready ? elapsed : 0)}
-      </span>
+    <div role="status" aria-label="Recording a voice message" className="relative flex min-w-0 flex-1">
+      <div
+        aria-live="polite"
+        className={cn(
+          "no-scrollbar max-h-50 min-h-[calc(1.4em+16px)] min-w-0 flex-1 overflow-y-auto",
+          heard ? "break-words whitespace-pre-wrap text-foreground" : "truncate text-muted-foreground/60",
+          className,
+        )}
+      >
+        {heard || placeholder}
+      </div>
       {waveTarget &&
         createPortal(
-          <div aria-hidden className="flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden text-muted-foreground">
-            {bars.map((v, i) => (
-              <span key={i} style={{ height: `${Math.max(12, Math.round(v * 100))}%` }} className="w-[2px] shrink-0 rounded-full bg-current" />
-            ))}
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+            <span className="flex shrink-0 items-center gap-2 text-sm text-foreground tabular-nums">
+              <span className="size-2 animate-pulse rounded-full bg-destructive" />
+              {clock(ready ? elapsed : 0)}
+            </span>
+            <div aria-hidden className="flex h-6 min-w-0 items-center justify-end gap-[2px] overflow-hidden text-muted-foreground">
+              {bars.map((v, i) => (
+                <span key={i} style={{ height: `${Math.max(12, Math.round(v * 100))}%` }} className="w-[2px] shrink-0 rounded-full bg-current" />
+              ))}
+            </div>
           </div>,
           waveTarget,
         )}

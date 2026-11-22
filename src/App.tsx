@@ -20,7 +20,7 @@ import { Shockwave, type ShockwaveHandle } from "@/components/home/shockwave";
 import { MailList, type Filter } from "@/components/mail-list";
 import type { SendersProps } from "@/components/sender-list";
 import { MailReader } from "@/components/mail-reader";
-import { CommandBar } from "@/components/command-bar";
+import { CommandBar, type CommandBarMode } from "@/components/command-bar";
 import { ComposeDialog, type Draft } from "@/components/compose-dialog";
 import { DraftsList } from "@/components/drafts-list";
 import { SettingsDialog, type SettingsSection } from "@/components/settings-dialog";
@@ -39,7 +39,7 @@ const windowCorners = () => {
   return Array<number>(4).fill(full ? 0 : WINDOW_RADIUS);
 };
 
-const APP_WIDE = new Set<ShortcutId>(["commandBar", "goAll", "compose", "sync", "settings"]);
+const APP_WIDE = new Set<ShortcutId>(["commandBar", "addTask", "goAll", "compose", "sync", "settings"]);
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -81,6 +81,7 @@ export default function App() {
   const [syncing, setSyncing] = useState(false);
   const [signingIn, setSigningIn] = useState<Provider | null>(null);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [commandMode, setCommandMode] = useState<CommandBarMode>("search");
   /** Clean up: the account being tidied (null = every account) and which folder's senders. */
   const [cleanupAccount, setCleanupAccount] = useState<string | null>(null);
   const [cleanupFolder, setCleanupFolder] = useState<"inbox" | "archive">("inbox");
@@ -607,8 +608,9 @@ export default function App() {
 
   // ----- command bar & context menu -----
 
-  const openCommandBar = () => {
+  const openCommandBar = (mode: CommandBarMode = "search") => {
     closeReader();
+    setCommandMode(mode);
     setCommandOpen(true);
   };
 
@@ -665,10 +667,9 @@ export default function App() {
       if (bySenders && !pageView && e.key === "Escape" && checkedGroups.size) setCheckedGroups(new Set());
       return;
     }
-    // While typing, only a modified command-bar shortcut (Ctrl+K) works: plain keys like "/"
-    // must type, and Ctrl+A etc. keep their usual meaning in text fields.
+    // While typing, opening the command bar requires a modifier. Plain keys and text field shortcuts still work.
     const typing = !!t.closest("input, textarea, select, [contenteditable], [role=menu], [role=listbox]");
-    if (typing && !(action === "commandBar" && (e.ctrlKey || e.metaKey || e.altKey))) return;
+    if (typing && !((action === "commandBar" || action === "addTask") && (e.ctrlKey || e.metaKey || e.altKey))) return;
 
     // Escape is built in: in the list it clears the selection, then the highlight.
     // (The email card closes itself on Escape.)
@@ -705,6 +706,7 @@ export default function App() {
       prev: () => go(idx - 1),
       open: () => !readerOpen && current && void openMessage(current),
       commandBar: openCommandBar,
+      addTask: () => openCommandBar("task"),
       goAll: () => {
         setView({ kind: "all" });
         clearSelection();
@@ -818,7 +820,9 @@ export default function App() {
           search={
             <CommandBar
               open={commandOpen}
-              onOpenChange={setCommandOpen}
+              onOpenChange={(open) => open ? openCommandBar() : setCommandOpen(false)}
+              mode={commandMode}
+              onModeChange={setCommandMode}
               search={search}
               onSearch={setSearch}
               scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}

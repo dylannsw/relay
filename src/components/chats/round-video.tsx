@@ -24,7 +24,7 @@ function clock(s: number) {
  * silently; a click plays it from the start with sound (a little bigger, with a ring for
  * progress), another click pauses, and when it ends it goes back to the silent loop.
  */
-export function RoundVideo({ chatId, messageId, media, poster }: { chatId: string; messageId: number; media: TgMedia; poster: string | null }) {
+export function RoundVideo({ chatId, messageId, media, poster, onPlay }: { chatId: string; messageId: number; media: TgMedia; poster: string | null; onPlay: (id: number) => void }) {
   const [box, inView] = useInView<HTMLButtonElement>({ rootMargin: "200px" });
   const video = useRef<HTMLVideoElement>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -92,6 +92,7 @@ export function RoundVideo({ chatId, messageId, media, poster }: { chatId: strin
   );
 
   const toggle = async () => {
+    onPlay(messageId);
     if (mode === "playing") {
       video.current?.pause();
       setMode("paused");

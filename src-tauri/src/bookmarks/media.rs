@@ -321,18 +321,102 @@ pub fn sample_image(vault: &str, reference: &str) -> Result<Vec<u8>> {
     Ok(bytes.into_inner())
 }
 
+/// The most a wall tile's picture keeps: wide enough for the largest tile at 150% display scaling,
+/// and tall enough for the tallest tile shape (the wall stops narrowing tiles at 0.46 wide to 1 tall).
+const TILE_WIDTH: u32 = 1200;
+const TILE_HEIGHT: u32 = 2600;
+
+/// Making a tile decodes the whole picture: a few at a time, so a first visit to a big wall
+/// doesn't decode them all at once.
+static TILE_SLOTS: LazyLock<(std::sync::Mutex<usize>, std::sync::Condvar)> = LazyLock::new(Default::default);
+
+struct TileSlot;
+
+impl TileSlot {
+    fn take() -> Self {
+        let (count, freed) = &*TILE_SLOTS;
+        let mut n = count.lock().unwrap_or_else(|e| e.into_inner());
+        while *n >= 3 {
+            n = freed.wait(n).unwrap_or_else(|e| e.into_inner());
+        }
+        *n += 1;
+        TileSlot
+    }
+}
+
+impl Drop for TileSlot {
+    fn drop(&mut self) {
+        let (count, freed) = &*TILE_SLOTS;
+        *count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        freed.notify_one();
+    }
+}
+
+/// A smaller copy of a picture for its wall tile, made once and kept in `dir`. None when the
+/// picture is already small enough (or can't be read here), and the original is served instead.
+fn tile_for(path: &Path, dir: &Path) -> Option<(Vec<u8>, &'static str)> {
+    // GIFs show a still on the wall already.
+    if !matches!(mime(path), Some((Kind::Image, m)) if m != "image/gif") {
+        return None;
+    }
+    let meta = fs::metadata(path).ok()?;
+    let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_nanos();
+    let (width, height) = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.into_dimensions().ok()?;
+    if width <= TILE_WIDTH && height <= TILE_HEIGHT {
+        return None;
+    }
+    use sha2::{Digest, Sha256};
+    // A changed or replaced picture gets a new tile.
+    let hash = Sha256::digest(format!("{}|{}|{modified}|{TILE_WIDTH}x{TILE_HEIGHT}", path.display(), meta.len()).as_bytes());
+    let name: String = hash.iter().take(16).map(|b| format!("{b:02x}")).collect();
+    let saved = |ext: &str| fs::read(dir.join(format!("{name}.{ext}"))).ok().filter(|b| !b.is_empty());
+    if let Some(bytes) = saved("jpg") {
+        return Some((bytes, "image/jpeg"));
+    }
+    if let Some(bytes) = saved("png") {
+        return Some((bytes, "image/png"));
+    }
+
+    let _slot = TileSlot::take();
+    let mut reader = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(16_384);
+    limits.max_image_height = Some(16_384);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let tile = reader.decode().ok()?.thumbnail(TILE_WIDTH, TILE_HEIGHT);
+    let mut bytes = Cursor::new(Vec::new());
+    // Pictures with see-through parts stay PNG; everything else is a JPEG.
+    let (ext, mime) = if tile.color().has_alpha() {
+        tile.write_to(&mut bytes, image::ImageFormat::Png).ok()?;
+        ("png", "image/png")
+    } else {
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 88).encode_image(&tile.to_rgb8()).ok()?;
+        ("jpg", "image/jpeg")
+    };
+    let bytes = bytes.into_inner();
+    // Saving is a nicety: if it fails, the tile is still served and made again next time.
+    if fs::create_dir_all(dir).is_ok() {
+        let target = dir.join(format!("{name}.{ext}"));
+        let part = dir.join(format!("{name}.{ext}.part{}", std::process::id()));
+        if fs::write(&part, &bytes).is_ok() && fs::rename(&part, &target).is_err() {
+            let _ = fs::remove_file(&part);
+        }
+    }
+    Some((bytes, mime))
+}
+
 pub fn respond(
     ctx: UriSchemeContext<'_, Wry>,
     request: Request<Vec<u8>>,
     responder: UriSchemeResponder,
 ) {
-    let state = ctx
-        .app_handle()
-        .try_state::<Arc<AppState>>()
-        .map(|s| Arc::clone(&s));
+    let app = ctx.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.try_state::<Arc<AppState>>().map(|s| Arc::clone(&s));
         let vault = state.map_or_else(String::new, |state| state.config().tasks.vault_path);
-        let response = serve(&vault, &request).unwrap_or_else(|_| {
+        let tiles = app.path().app_cache_dir().ok().map(|dir| dir.join("bookmark-tiles"));
+        let response = serve(&vault, &request, tiles.as_deref()).unwrap_or_else(|_| {
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Vec::new())
@@ -342,7 +426,7 @@ pub fn respond(
     });
 }
 
-fn serve(vault: &str, request: &Request<Vec<u8>>) -> std::io::Result<Response<Vec<u8>>> {
+fn serve(vault: &str, request: &Request<Vec<u8>>, tiles: Option<&Path>) -> std::io::Result<Response<Vec<u8>>> {
     let response = Response::builder()
         .header(header::CACHE_CONTROL, "no-store")
         .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
@@ -362,6 +446,15 @@ fn serve(vault: &str, request: &Request<Vec<u8>>) -> std::io::Result<Response<Ve
             .body(Vec::new())
             .unwrap());
     };
+    // The wall asks with `tile`: a copy small enough for a tile, so it isn't held in memory at full size.
+    let wants_tile = request.uri().query().is_some_and(|q| q.split('&').any(|p| p == "tile" || p.starts_with("tile=")));
+    if let Some((bytes, mime)) = wants_tile.then(|| tiles.and_then(|dir| tile_for(&path, dir))).flatten() {
+        return Ok(response
+            .header(header::CONTENT_TYPE, mime)
+            .header(header::CONTENT_LENGTH, bytes.len())
+            .body(if request.method() == Method::GET { bytes } else { Vec::new() })
+            .unwrap());
+    }
     let mut file = File::open(path)?;
     let len = file.metadata()?.len();
     let mut response = response
@@ -417,6 +510,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn large_pictures_get_a_saved_tile_and_small_ones_keep_their_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let tiles = dir.path().join("tiles");
+        let big = dir.path().join("big.png");
+        let small = dir.path().join("small.png");
+        image::RgbImage::new(3000, 1500).save(&big).unwrap();
+        image::RgbImage::new(800, 600).save(&small).unwrap();
+
+        let (bytes, mime) = tile_for(&big, &tiles).unwrap();
+        assert_eq!(mime, "image/jpeg");
+        let tile = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((tile.width(), tile.height()), (TILE_WIDTH, TILE_WIDTH / 2));
+        assert_eq!(fs::read_dir(&tiles).unwrap().count(), 1);
+        // The second ask reads the saved copy.
+        assert_eq!(tile_for(&big, &tiles).unwrap().0, bytes);
+        assert!(tile_for(&small, &tiles).is_none());
+    }
+
+    #[test]
     fn serves_only_active_attachments_and_supports_seeking() {
         let vault = tempfile::tempdir().unwrap();
         let path = vault.path().to_str().unwrap();
@@ -430,21 +542,21 @@ mod tests {
                 .body(Vec::new())
                 .unwrap()
         };
-        let response = serve(path, &request("clip%20one.mp4", "bytes=7-")).unwrap();
+        let response = serve(path, &request("clip%20one.mp4", "bytes=7-"), None).unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 7-9/10");
         assert_eq!(response.body(), b"789");
-        let response = serve(path, &request("clip%20one.mp4", "bytes=10-")).unwrap();
+        let response = serve(path, &request("clip%20one.mp4", "bytes=10-"), None).unwrap();
         assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
         assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
         assert_eq!(
-            serve(path, &request("..%2FNotes%2Fsecret.mp4", "bytes=0-2"))
+            serve(path, &request("..%2FNotes%2Fsecret.mp4", "bytes=0-2"), None)
                 .unwrap()
                 .status(),
             StatusCode::NOT_FOUND
         );
         assert_eq!(
-            serve("", &request("clip%20one.mp4", "bytes=0-2"))
+            serve("", &request("clip%20one.mp4", "bytes=0-2"), None)
                 .unwrap()
                 .status(),
             StatusCode::NOT_FOUND

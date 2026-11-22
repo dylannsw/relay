@@ -1130,7 +1130,7 @@ export function CalendarPage({ onOpenSettings }: { onOpenSettings: () => void })
             // Floats over the grid (rather than squeezing it), like a card laid on top.
             <motion.aside
               key="panel"
-              className="absolute top-2 right-2 bottom-2 z-(--z-floating) w-[392px] overflow-hidden rounded-xl bg-popover text-popover-foreground smooth-shadow-ring-xl"
+              className="menu-glass absolute top-2 right-2 bottom-2 z-(--z-floating) w-[392px] overflow-hidden rounded-[14px] corner-smooth text-popover-foreground"
               initial={{ opacity: 0, x: 24 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 24 }}

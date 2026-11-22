@@ -41,7 +41,7 @@ export function EventPanel(props: {
           <IconX />
         </IconButton>
       </div>
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1" hideScrollbar={!!e}>
         <div className="flex flex-col gap-5 px-5 pb-6">
           {props.draft ? (
             <EventEditor mode="new" draft={props.draft} onDraftChange={props.onDraftChange} calendars={calendars} onDone={onClose} />

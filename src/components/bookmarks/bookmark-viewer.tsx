@@ -12,6 +12,7 @@ import { SelectionBar, SelectionBarAction, SelectionBarSeparator } from "@/compo
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogOverlay, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import { useBookmarkStill, useBookmarkSwatches } from "./bookmark-art";
+import { BookmarkVideo } from "./bookmark-video";
 import { useBookmarkGesture, useBookmarkViewport } from "./bookmark-gestures";
 
 interface ViewerProps {
@@ -132,11 +133,8 @@ function AssetViewer({ bookmark, media, muted, onMuted, onDimensions }: {
   if (src && !failed && media?.kind === "image") return <ImageStage src={src} alt={bookmarkTitle(bookmark)} onError={() => setFailed(true)} onDimensions={onDimensions} />;
   if (src && !failed && media?.kind === "video") {
     return (
-      <div className="relative grid min-h-0 flex-1 place-items-center">
-        <video src={src} poster={poster} muted={muted} onVolumeChange={(event) => onMuted(event.currentTarget.muted)}
-          onLoadedMetadata={(event) => onDimensions(event.currentTarget.videoWidth, event.currentTarget.videoHeight)}
-          controls playsInline preload="metadata" aria-label={bookmarkTitle(bookmark)} onError={() => setFailed(true)} className="absolute inset-0 size-full object-contain" />
-      </div>
+      <BookmarkVideo src={src} poster={poster} label={bookmarkTitle(bookmark)} muted={muted} onMuted={onMuted}
+        onDimensions={onDimensions} onError={() => setFailed(true)} />
     );
   }
   if (src && !failed && media?.kind === "audio") {
