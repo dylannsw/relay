@@ -32,7 +32,7 @@ import { ChatAvatar, nameColorClass, peerColor } from "./chat-avatar";
  */
 
 /** How long the pointer must rest on a chat, without moving, before the first card shows. */
-const SHOW_DELAY = 2000;
+const SHOW_DELAY = 500;
 /** Movement within this many pixels still counts as resting. */
 const REST_JITTER = 3;
 /** On the way to the card, how long the pointer must stop on another chat to switch to it. */
