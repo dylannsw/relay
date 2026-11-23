@@ -20,7 +20,7 @@ tempfile = "3"
 percent-encoding = "2"
 http-range = "0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
-tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros", "io-util", "process"] }
 reqwest = { version = "0.13", features = ["json", "form", "query"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 sha2 = "0.11"

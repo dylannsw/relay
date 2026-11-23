@@ -8,6 +8,8 @@ import type {
   BookmarkTarget, NewBookmark, BookmarkHandoff, CaptureOutcome, CaptureRequest, CaptureStage,
 } from "./bookmarks/types";
 import { mockTelegramEvents } from "./telegram/mock";
+import { mockAgentEvents } from "./agent/mock";
+import type { AgentAnswer, AgentCliStatus, AgentItem, AgentMode, AgentProject, AgentSession } from "./agent/types";
 import type { TgChatList, TgEvent, TgFormat, TgMembers, TgMention, TgMessage, TgProgress, TgReactor, TgStatus, TgStickerSet, TgTopic } from "./telegram/types";
 import type {
   Account,
@@ -294,7 +296,42 @@ export const api = {
     onUpdated: (cb: (e: TgEvent) => void): Promise<() => void> =>
       isTauri ? listen<TgEvent>("telegram-updated", (e) => cb(e.payload)) : mockTelegramEvents(cb),
   },
+  /** The Code page: Claude Code sessions run by the CLI installed on this PC. */
+  agent: {
+    cliStatus: () => call<AgentCliStatus>("agent_cli_status"),
+    projects: () => call<AgentProject[]>("agent_projects"),
+    addProject: (path: string) => call<AgentProject>("agent_add_project", { path }),
+    /** Removes it from Relay; the folder is untouched. */
+    removeProject: (id: string) => call<void>("agent_remove_project", { id }),
+    sessions: () => call<AgentSession[]>("agent_sessions"),
+    newSession: (projectId: string, mode: AgentMode, plan: boolean) =>
+      call<AgentSession>("agent_new_session", { projectId, mode, plan }),
+    items: (sessionId: string) => call<AgentItem[]>("agent_items", { sessionId }),
+    send: (sessionId: string, text: string) => call<void>("agent_send", { sessionId, text }),
+    stop: (sessionId: string) => call<void>("agent_stop", { sessionId }),
+    answer: (sessionId: string, requestId: string, answer: AgentAnswer) =>
+      call<void>("agent_answer", { sessionId, requestId, answer }),
+    setMode: (sessionId: string, mode: AgentMode, plan: boolean) =>
+      call<AgentSession>("agent_set_mode", { sessionId, mode, plan }),
+    rename: (sessionId: string, title: string) => call<void>("agent_rename_session", { sessionId, title }),
+    deleteSession: (sessionId: string) => call<void>("agent_delete_session", { sessionId }),
+    /** Session changes, new or changed items, and streamed text. */
+    onEvent: (cb: (e: AgentEvent) => void): Promise<() => void> => {
+      if (!isTauri) return Promise.resolve(mockAgentEvents(cb));
+      const subs = [
+        listen<AgentSession>("agent-session", (e) => cb({ type: "session", session: e.payload })),
+        listen<{ sessionId: string; item: AgentItem }>("agent-item", (e) => cb({ type: "item", ...e.payload })),
+        listen<{ sessionId: string; itemId: string; text: string }>("agent-delta", (e) => cb({ type: "delta", ...e.payload })),
+      ];
+      return Promise.all(subs).then((offs) => () => offs.forEach((off) => off()));
+    },
+  },
 };
+
+export type AgentEvent =
+  | { type: "session"; session: AgentSession }
+  | { type: "item"; sessionId: string; item: AgentItem }
+  | { type: "delta"; sessionId: string; itemId: string; text: string };
 
 /** "2026-11-15 14.32.10", for naming a pasted picture. */
 function pastedStamp(): string {

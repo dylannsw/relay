@@ -1,6 +1,6 @@
 # Plan: Claude Code inside Relay
 
-Status: phase 0 done, phase 1 next
+Status: phase 1 built, waiting for a check on Windows
 
 ## Goal
 
@@ -92,7 +92,8 @@ Not tested: Windows. Phase 1 handles it with the lookup rules above and gets che
 ## Phase 1: Sessions and approvals (about a week)
 
 - **Code page** in the sidebar (`View` kind `"code"` in `src/components/app-sidebar.tsx`).
-- **Projects:** folders added through the folder picker (`tauri-plugin-dialog`), saved in config.
+- **Projects:** folders added through the folder picker (`tauri-plugin-dialog`), stored with the
+  sessions.
   Sessions are grouped under their project.
 - **Session list** per project: title (first message), last updated, a running or "needs you"
   indicator.
@@ -110,10 +111,37 @@ Not tested: Windows. Phase 1 handles it with the lookup rules above and gets che
   `events.rs` (`AgentEvent`), and SQLite tables for sessions and their events. Events reach the UI
   via `app.emit`, as mail and tasks already do.
 - **Frontend store** `src/agent/store.ts`, following the Telegram store's pattern.
-- Adapter unit tests against fixtures recorded from a real run, in `src-tauri/src/agent/fixtures/`.
+- Adapter unit tests, and live tests against the real CLI (opt-in, they spend a little usage).
 
 Done when: I can open Relay, pick a project, start a session, chat, approve a command, answer a
 question, stop, close Relay, reopen, see the history and continue the same session.
+
+### Phase 1 as built
+
+- **Backend** `src-tauri/src/agent/`: `claude.rs` (CLI lookup, arguments, the adapter: one stdout
+  line in, a list of actions out), `mod.rs` (session manager and commands), `store.rs`
+  (`agent.db`, its own SQLite file so agent writes never wait on mail sync), `types.rs`.
+- **Frontend** `src/agent/` (types, store, browser-preview mock) and `src/components/code/` (page,
+  conversation, items, Markdown). A **Code** entry in the sidebar with a count of sessions waiting
+  for you, and in the command bar.
+- **Markdown** with `react-markdown` and `remark-gfm`. Raw HTML in replies is shown as text, not
+  rendered. Links open in the browser.
+- **Tests.** Adapter unit tests run with `cargo test`. Two opt-in live tests drive the real CLI with
+  Haiku: `cargo test agent:: -- --include-ignored`. They cover plan mode then approving the plan,
+  answering a question, approving a command, a stored reply, resuming after the process ends, and
+  the idle shutdown.
+- **Found by the live tests:** Tauri runs plain commands on the main thread, outside Tokio, and
+  spawning the CLI needs a Tokio runtime. The manager enters Tauri's runtime before spawning.
+- **Known gap:** opening a conversation while a reply is streaming shows only the text from that
+  point; the full text replaces it when the reply ends.
+
+### To check on Windows
+
+1. The Code page finds `claude` (the version shows top right).
+2. No console window flashes when a session starts.
+3. Send, approve, answer a question, approve a plan, Stop.
+4. Close Relay mid-session: no `claude.exe` left in Task Manager.
+5. Reopen Relay: the history is there and the next message continues the conversation.
 
 ## Phase 2: Usage and polish
 

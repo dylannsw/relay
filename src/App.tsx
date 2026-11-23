@@ -28,6 +28,7 @@ import { startAutoCheck } from "@/updater";
 import { cn } from "@/lib/utils";
 import { SignInDialog } from "@/components/sign-in-dialog";
 import { ChatsPage } from "@/components/chats/chats-page";
+import { CodePage } from "@/components/code/code-page";
 
 const PAGE = 200;
 
@@ -872,6 +873,8 @@ export default function App() {
             <CalendarPage onOpenSettings={() => openSettings("calendar")} />
           ) : view.kind === "bookmarks" ? (
             <BookmarksPage onOpenSettings={() => openSettings("bookmarks")} />
+          ) : view.kind === "code" ? (
+            <CodePage />
           ) : view.kind === "chats" ? (
             <ChatsPage folder={view.folder} />
           ) : view.kind === "drafts" ? (

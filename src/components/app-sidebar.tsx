@@ -10,6 +10,7 @@ import {
   IconUsers,
   IconBookmark,
   IconChecklist,
+  IconTerminal2,
   IconChevronRight,
   IconSchool,
   IconInbox,
@@ -49,6 +50,7 @@ import { FOLDERS } from "@/folders";
 import { useTasks } from "@/tasks/store";
 import { useTodayEvents } from "@/calendar/events";
 import { unreadChats, useTelegram } from "@/telegram/store";
+import { startAgent, useAgent, waitingSessions } from "@/agent/store";
 
 /**
  * Home, or the Tasks list (optionally filtered to a section). Mail: all inboxes and groups show
@@ -59,6 +61,8 @@ export type View =
   | { kind: "tasks" }
   | { kind: "calendar" }
   | { kind: "bookmarks" }
+  /** Claude Code sessions. */
+  | { kind: "code" }
   | { kind: "all" }
   | { kind: "label"; label: string }
   | { kind: "account"; id: string; folder: Folder }
@@ -71,7 +75,7 @@ export type View =
 
 /** Home, Tasks, Calendar, Chats and Drafts: pages without the mail list. */
 export const isPageView = (v: View) =>
-  v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "bookmarks" || v.kind === "chats" || v.kind === "drafts";
+  v.kind === "home" || v.kind === "tasks" || v.kind === "calendar" || v.kind === "bookmarks" || v.kind === "code" || v.kind === "chats" || v.kind === "drafts";
 
 /** An icon for a Telegram folder, guessed from its name. */
 export function chatFolderIcon(title: string): TablerIcon {
@@ -164,6 +168,7 @@ function sidebarViews(accounts: Account[]): View[] {
     { kind: "tasks" },
     { kind: "calendar" },
     { kind: "bookmarks" },
+    { kind: "code" },
     ...accounts.map((a): View => ({ kind: "account", id: a.id, folder: "inbox" })),
   ];
 }
@@ -300,6 +305,9 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   const t = useTasks();
   const open = t.status === "ready" ? t.tasks.length : 0;
   const today = useTodayEvents().length;
+  // Code: sessions with an approval, question or plan waiting for you.
+  const waiting = waitingSessions(useAgent());
+  useEffect(startAgent, []);
   return (
     <>
       <SidebarMenuItem>
@@ -348,6 +356,18 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
           <IconBookmark />
           <span>Bookmarks</span>
         </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={view.kind === "code"}
+          {...stop({ kind: "code" })}
+          onClick={() => onView({ kind: "code" })}
+          className="[--sidebar-icon-active:var(--home)]"
+        >
+          <IconTerminal2 />
+          <span>Code</span>
+        </SidebarMenuButton>
+        {waiting > 0 && <SidebarMenuBadge>{waiting}</SidebarMenuBadge>}
       </SidebarMenuItem>
     </>
   );
