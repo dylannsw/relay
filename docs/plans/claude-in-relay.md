@@ -1,6 +1,41 @@
 # Plan: Claude Code inside Relay
 
-Status: phase 1 built, waiting for a check on Windows
+Status: phase 1 and the Claude app import built, waiting for a check on Windows. Phase 2 next.
+
+## Progress log
+
+Work is on branch `claude/gracious-feynman-pbx6c1` (not merged into `main`).
+
+| Date | Done |
+| --- | --- |
+| 2026-11-22 | Plan written. |
+| 2026-11-23 | Phase 0 spike: driving the `claude` CLI over stream-json from Rust works (streaming, resume, interrupt, approvals, usage limits). Spike deleted afterwards and squashed out of history; findings kept below. Reviewed T3 Code and updated the plan from it. |
+| 2026-11-23 | Phase 1 built: the Code page (projects, sessions, streamed replies, tool cards, approvals, questions, plan approval, permission modes, Stop, history kept across restarts, idle processes stopped after 2 minutes). |
+| 2026-11-24 | Conversations from the Claude app: listed under their project, history read from Claude Code's saved files, continued in Relay on the first message. |
+| 2026-11-24 | First run on Windows: the Code page loads and finds Claude Code (2.1.299, older than the 2.1.330 tested here). Nothing beyond that tried yet. |
+
+### Where to pick up
+
+1. **Windows check** (list under "To check on Windows" below). Before it, on the PC: pull the
+   branch, `npm install` (new packages: `react-markdown`, `remark-gfm`), and `claude update`, since
+   2.1.299 may lack options Relay uses. Fix whatever it turns up first.
+2. **Then phase 2:** usage meter, "Always allow" on approvals, model menu and slash-command picker,
+   subagent activity in the Agent card.
+3. **Open questions to settle on Windows:**
+   - Does the Claude app write `"entrypoint"` containing "desktop"? If not, its conversations
+     are labeled "Claude Code" instead of "Claude app" (`scan_transcript` in
+     `src-tauri/src/agent/claude.rs`).
+   - Is anything left in Task Manager (`claude.exe`) after quitting Relay mid-session?
+
+### How to test
+
+- `cd src-tauri && cargo test agent::` runs the adapter and transcript unit tests.
+- `cargo test agent:: -- --include-ignored` adds the live tests. They drive the real `claude` CLI
+  with Haiku (a little usage), cover approvals, questions, plan mode, resume, idle shutdown and
+  continuing a conversation started outside Relay, and clean up Claude Code's files for their
+  temporary folders.
+- `npm run dev` shows the Code page with sample sessions (`src/agent/mock.ts`).
+- `crypt::tests::round_trip` fails off Windows by design; it isn't related.
 
 ## Goal
 
