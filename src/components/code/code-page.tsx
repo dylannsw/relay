@@ -23,7 +23,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { relativeTime } from "@/format";
 import { cn } from "@/lib/utils";
-import { addProject, newSession, recheckCli, removeProject, startAgent, useAgent } from "@/agent/store";
+import { addProject, newSession, recheckCli, refresh, removeProject, startAgent, useAgent } from "@/agent/store";
 import type { AgentProject, AgentSession } from "@/agent/types";
 import { Conversation } from "./conversation";
 
@@ -49,6 +49,7 @@ function SessionRow({ s, selected, onOpen }: { s: AgentSession; selected: boolea
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           {s.plan && <IconListCheck className="size-3" />}
           {s.waiting > 0 ? "Waiting for you" : s.running ? "Working" : relativeTime(s.updatedAt)}
+          {s.fromClaude && !s.running && !s.waiting && <span className="truncate">· {s.origin ?? "Claude app"}</span>}
         </span>
       </span>
       <SessionDot s={s} />
@@ -135,7 +136,11 @@ function Setup({ error }: { error: string | null }) {
 export function CodePage() {
   const agent = useAgent();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  useEffect(startAgent, []);
+  // The list again each time the page opens: new conversations may have started in the Claude app.
+  useEffect(() => {
+    startAgent();
+    void refresh();
+  }, []);
 
   const byProject = useMemo(() => {
     const m = new Map<string, AgentSession[]>();

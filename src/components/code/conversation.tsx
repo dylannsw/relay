@@ -134,7 +134,8 @@ export function Conversation({ session, project }: { session: AgentSession; proj
   const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
-    void loadItems(session.id).catch((e) => toast.error(errorText(e)));
+    // One from the Claude app is read again each time: it may have moved on there.
+    void loadItems(session.id, session.fromClaude && !session.live).catch((e) => toast.error(errorText(e)));
     stick.current = true;
   }, [session.id]);
 
@@ -181,17 +182,20 @@ export function Conversation({ session, project }: { session: AgentSession; proj
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => setRenaming(true)}>
+            <DropdownMenuItem disabled={session.external} onSelect={() => setRenaming(true)}>
               <IconPencil />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => deleteSession(session.id).catch((e) => toast.error(errorText(e)))}
-            >
-              <IconTrash />
-              Delete session
-            </DropdownMenuItem>
+            {/* One from the Claude app would only come back: its file stays where Claude Code keeps it. */}
+            {!session.fromClaude && (
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => deleteSession(session.id).catch((e) => toast.error(errorText(e)))}
+              >
+                <IconTrash />
+                Delete session
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
@@ -227,7 +231,23 @@ export function Conversation({ session, project }: { session: AgentSession; proj
         </div>
       </div>
 
+      {session.fromClaude && !session.live && <FromClaudeNote session={session} />}
       <Composer session={session} />
     </div>
+  );
+}
+
+/** Above the composer, for a conversation started outside Relay. */
+function FromClaudeNote({ session }: { session: AgentSession }) {
+  const app = session.origin ?? "Claude app";
+  const recent = Date.now() - session.updatedAt < 2 * 60_000;
+  return (
+    <p className={cn("mx-auto w-full max-w-3xl px-5 pb-2 text-xs", recent ? "text-star" : "text-muted-foreground")}>
+      {recent
+        ? `This was active in the ${app} in the last 2 minutes. If it's still open there, finish it there first: using it in both at once mixes them up.`
+        : session.external
+          ? `Started in the ${app}. Sending a message continues it here.`
+          : `Started in the ${app}. Anything said in it there since shows here too.`}
+    </p>
   );
 }

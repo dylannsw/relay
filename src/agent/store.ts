@@ -29,8 +29,10 @@ function set(patch: Partial<AgentState>) {
 const byRecent = (a: AgentSession, b: AgentSession) => b.updatedAt - a.updatedAt;
 
 function upsertSession(s: AgentSession) {
+  const old = state.sessions.find((x) => x.id === s.id);
   const rest = state.sessions.filter((x) => x.id !== s.id);
-  set({ sessions: [...rest, s].sort(byRecent) });
+  // Live updates don't carry where a session came from; keep what the list said.
+  set({ sessions: [...rest, { ...s, origin: s.origin ?? old?.origin ?? null }].sort(byRecent) });
 }
 
 function upsertItem(sessionId: string, item: AgentItem) {
@@ -84,9 +86,12 @@ export async function recheckCli() {
   set({ cli: await api.agent.cliStatus() });
 }
 
-/** Loads a conversation the first time it's opened. Later changes arrive as events. */
-export async function loadItems(sessionId: string) {
-  if (state.items[sessionId] || loading.has(sessionId)) return;
+/**
+ * Loads a conversation the first time it's opened; later changes arrive as events. `fresh` loads it
+ * again: one from the Claude app may have changed there since.
+ */
+export async function loadItems(sessionId: string, fresh = false) {
+  if ((state.items[sessionId] && !fresh) || loading.has(sessionId)) return;
   loading.set(sessionId, []);
   try {
     const list = await api.agent.items(sessionId);

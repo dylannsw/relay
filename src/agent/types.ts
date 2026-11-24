@@ -28,6 +28,12 @@ export interface AgentSession {
   running: boolean;
   /** Requests waiting for your answer. */
   waiting: number;
+  /** Started outside Relay (the Claude app or the CLI); its history is read from Claude Code's saved file. */
+  fromClaude: boolean;
+  /** Found in Claude Code's files but not used in Relay yet. Sending a message brings it in. */
+  external: boolean;
+  /** "Claude app" or "Claude Code", for one started outside Relay. */
+  origin: string | null;
 }
 
 export type ApprovalState = "pending" | "allowed" | "denied" | "cancelled";

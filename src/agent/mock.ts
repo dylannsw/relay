@@ -14,7 +14,8 @@ const projects: AgentProject[] = [
 
 const session = (id: string, projectId: string, title: string, ago: number, extra: Partial<AgentSession> = {}): AgentSession => ({
   id, projectId, title, mode: "supervised", plan: false, started: true, model: "claude-opus-5-5",
-  createdAt: now - ago - 10 * min, updatedAt: now - ago, live: false, running: false, waiting: 0, ...extra,
+  createdAt: now - ago - 10 * min, updatedAt: now - ago, live: false, running: false, waiting: 0,
+  fromClaude: false, external: false, origin: null, ...extra,
 });
 
 const sessions: AgentSession[] = [
@@ -22,6 +23,7 @@ const sessions: AgentSession[] = [
   session("s2", "p1", "Fix calendar sync skipping recurring events", 12 * min, { live: true, waiting: 1 }),
   session("s3", "p2", "Pick an accent colour for the sidebar", 50 * min, { live: true, waiting: 1, mode: "acceptEdits" }),
   session("s4", "p1", "Plan worktree support", 3 * 60 * min, { live: true, waiting: 1, plan: true }),
+  session("s5", "p1", "Bookmark video player controls", 26 * 60 * min, { fromClaude: true, external: true, origin: "Claude app", model: null }),
 ];
 
 let seq = 0;
@@ -63,6 +65,10 @@ const items: Record<string, AgentItem[]> = {
         ],
       }],
     }, "Which direction should the accent go?", null, { requestId: "r3", state: "pending", answers: null, message: null }),
+  ],
+  s5: [
+    item("s5", { kind: "user", text: "The video player in Bookmarks needs a floating control bar." }),
+    item("s5", { kind: "text", streaming: false, text: "Added a control bar that fades in on hover, with play, scrub and mute." }),
   ],
   s4: [
     item("s4", { kind: "user", text: "Plan how sessions could each run in their own git worktree." }),
@@ -160,6 +166,7 @@ export async function mockAgent<T>(cmd: string, args: Record<string, unknown>): 
       const text = String(args.text);
       push(sid, { kind: "user", text });
       const s = find(sid);
+      if (s.external) patch(sid, { external: false });
       if (!s.title) patch(sid, { title: text.split("\n")[0].slice(0, 60) });
       reply(sid, "This is the browser preview, so no Claude is running here. In the desktop app (`npm run app`) this message goes to Claude Code on your PC, and its reply streams in **just like this**.");
       return delay(undefined) as Promise<T>;

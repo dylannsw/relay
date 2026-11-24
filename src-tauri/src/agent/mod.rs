@@ -10,12 +10,12 @@ mod claude;
 mod store;
 mod types;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use rusqlite::Connection;
 use serde::Serialize;
@@ -25,7 +25,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use crate::error::{msg, Result};
-use claude::{Action, Adapter};
+use claude::{Action, Adapter, TranscriptInfo};
 use types::{Answer, CliStatus, Item, ItemBody, Mode, Project, Session};
 
 pub const SESSION_EVENT: &str = "agent-session";
@@ -51,6 +51,8 @@ pub struct Agent {
     db: Mutex<Connection>,
     live: Mutex<HashMap<String, Arc<Live>>>,
     generations: AtomicU64,
+    /// Saved conversations already read, by file, with the modified time and size they had then.
+    transcripts: Mutex<HashMap<PathBuf, (SystemTime, u64, Option<TranscriptInfo>)>>,
 }
 
 /// A running Claude process for one session.
@@ -103,6 +105,7 @@ impl Agent {
             db: Mutex::new(store::open(&data_dir.join("agent.db"))?),
             live: Mutex::new(HashMap::new()),
             generations: AtomicU64::new(0),
+            transcripts: Mutex::new(HashMap::new()),
         })
     }
 
@@ -337,12 +340,143 @@ impl Agent {
         });
     }
 
+
+    // -----------------------------------------------------------------------------------------
+    // Conversations from the Claude app (or the CLI), read from the files Claude Code saves
+
+    fn transcript_dir(project: &Project) -> Option<PathBuf> {
+        Some(claude::projects_dir()?.join(claude::project_slug(&project.path)))
+    }
+
+    /// A saved conversation's title and origin, read again only when the file changed.
+    fn transcript_info(&self, path: &Path) -> Option<(TranscriptInfo, i64)> {
+        let meta = std::fs::metadata(path).ok()?;
+        let modified = meta.modified().ok()?;
+        let updated = modified.duration_since(SystemTime::UNIX_EPOCH).ok()?.as_millis() as i64;
+        let mut cache = self.transcripts.lock().unwrap();
+        if let Some((m, len, info)) = cache.get(path) {
+            if *m == modified && *len == meta.len() {
+                return info.clone().map(|i| (i, updated));
+            }
+        }
+        let info = claude::scan_transcript(path);
+        cache.insert(path.to_path_buf(), (modified, meta.len(), info.clone()));
+        info.map(|i| (i, updated))
+    }
+
+    /// The project and file of a saved conversation.
+    fn find_transcript(&self, session_id: &str) -> Option<(Project, PathBuf)> {
+        let projects = self.db(store::projects).ok()?;
+        projects.into_iter().find_map(|p| {
+            let path = Self::transcript_dir(&p)?.join(format!("{session_id}.jsonl"));
+            path.is_file().then_some((p, path))
+        })
+    }
+
+    /// Every session: Relay's own, then each project's saved conversations Relay hasn't used yet.
+    fn all_sessions(&self) -> Result<Vec<Session>> {
+        let mut out: Vec<Session> = self.db(store::sessions)?.into_iter().map(|s| self.view(s)).collect();
+        let known: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
+        // A new session from the Claude app starts in the mode Relay used last.
+        let mode = out.first().map(|s| s.mode).unwrap_or(Mode::Supervised);
+        let mut origins: HashMap<String, String> = HashMap::new();
+        for project in self.db(store::projects)? {
+            let Some(dir) = Self::transcript_dir(&project) else { continue };
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                let Some((info, updated)) = self.transcript_info(&path) else { continue };
+                origins.insert(info.id.clone(), info.origin.clone());
+                if known.contains(&info.id) {
+                    continue;
+                }
+                out.push(Session {
+                    id: info.id,
+                    project_id: project.id.clone(),
+                    title: info.title,
+                    mode,
+                    plan: false,
+                    started: true,
+                    model: None,
+                    created_at: updated,
+                    updated_at: updated,
+                    from_claude: true,
+                    live: false,
+                    running: false,
+                    waiting: 0,
+                    external: true,
+                    origin: Some(info.origin),
+                });
+            }
+        }
+        for s in out.iter_mut().filter(|s| s.from_claude && s.origin.is_none()) {
+            s.origin = origins.get(&s.id).cloned();
+        }
+        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        Ok(out)
+    }
+
+    /// A conversation's items. One from the Claude app is read from its saved file whenever it
+    /// isn't running here, so it includes anything said in it since, in either app.
+    pub fn items(&self, session_id: &str) -> Result<Vec<Item>> {
+        match self.db(|c| store::session(c, session_id)) {
+            Ok(s) if s.from_claude && self.live_for(session_id).is_none() => match self.find_transcript(session_id) {
+                Some((_, path)) => {
+                    let items = claude::read_transcript(&path, session_id)?;
+                    self.db(|c| store::replace_items(c, session_id, &items))
+                }
+                None => self.db(|c| store::items(c, session_id)),
+            },
+            Ok(_) => self.db(|c| store::items(c, session_id)),
+            Err(crate::error::Error::NotFound) => {
+                let (_, path) = self.find_transcript(session_id).ok_or(crate::error::Error::NotFound)?;
+                Ok(claude::read_transcript(&path, session_id)?)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Brings a conversation from the Claude app into Relay, the first time you send in it.
+    fn adopt(&self, session_id: &str) -> Result<()> {
+        if self.db(|c| store::session(c, session_id)).is_ok() {
+            return Ok(());
+        }
+        let (project, path) = self.find_transcript(session_id).ok_or(crate::error::Error::NotFound)?;
+        let (info, updated) = self.transcript_info(&path).ok_or_else(|| msg("That conversation's file can't be read."))?;
+        let mode = self.db(store::sessions)?.first().map(|s| s.mode).unwrap_or(Mode::Supervised);
+        let session = Session {
+            id: session_id.into(),
+            project_id: project.id,
+            title: info.title,
+            mode,
+            plan: false,
+            started: true,
+            model: None,
+            created_at: updated,
+            updated_at: updated,
+            from_claude: true,
+            live: false,
+            running: false,
+            waiting: 0,
+            external: false,
+            origin: Some(info.origin),
+        };
+        self.db(|c| store::save_session(c, &session))?;
+        let items = claude::read_transcript(&path, session_id)?;
+        self.db(|c| store::replace_items(c, session_id, &items))?;
+        Ok(())
+    }
+
     /// Sends a message, starting (or resuming) the session's process if needed.
     pub fn send(self: &Arc<Self>, session_id: &str, text: &str) -> Result<()> {
         let text = text.trim().to_string();
         if text.is_empty() {
             return Ok(());
         }
+        self.adopt(session_id)?;
         let live = self.ensure_live(session_id)?;
         if live.running.load(Ordering::SeqCst) {
             return Err(msg("Claude is still working. Stop it first, or wait for it to finish."));
@@ -521,9 +655,14 @@ pub fn agent_remove_project(agent: Ag<'_>, id: String) -> Result<()> {
     agent.db(|c| store::delete_project(c, &id))
 }
 
+/// Relay's sessions and the projects' conversations from the Claude app. Reading those files can
+/// take a moment, so it runs off the main thread.
 #[tauri::command]
-pub fn agent_sessions(agent: Ag<'_>) -> Result<Vec<Session>> {
-    Ok(agent.db(store::sessions)?.into_iter().map(|s| agent.view(s)).collect())
+pub async fn agent_sessions(agent: Ag<'_>) -> Result<Vec<Session>> {
+    let agent = agent.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || agent.all_sessions())
+        .await
+        .map_err(|e| msg(e.to_string()))?
 }
 
 #[tauri::command]
@@ -543,14 +682,20 @@ pub fn agent_new_session(agent: Ag<'_>, project_id: String, mode: Mode, plan: bo
         live: false,
         running: false,
         waiting: 0,
+        from_claude: false,
+        external: false,
+        origin: None,
     };
     agent.db(|c| store::save_session(c, &s))?;
     Ok(s)
 }
 
 #[tauri::command]
-pub fn agent_items(agent: Ag<'_>, session_id: String) -> Result<Vec<Item>> {
-    agent.db(|c| store::items(c, &session_id))
+pub async fn agent_items(agent: Ag<'_>, session_id: String) -> Result<Vec<Item>> {
+    let agent = agent.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || agent.items(&session_id))
+        .await
+        .map_err(|e| msg(e.to_string()))?
 }
 
 #[tauri::command]
@@ -645,6 +790,7 @@ mod tests {
         let s = Session {
             id: new_id(), project_id: project.id.clone(), title: String::new(), mode: Mode::Supervised, plan: false,
             started: false, model: None, created_at: 0, updated_at: 0, live: false, running: false, waiting: 0,
+            from_claude: false, external: false, origin: None,
         };
         agent.db(|c| store::save_session(c, &s)).unwrap();
 
@@ -685,6 +831,34 @@ mod tests {
         // Left idle, the process ends by itself (IDLE is 3 s in tests).
         let s = wait_until(&agent, &s.id, "idle shutdown", |x| !x.live);
         assert!(!s.running && s.waiting == 0);
+
+        // A conversation started outside Relay (as the Claude app does) shows up, reads, and
+        // continues here with its memory.
+        let outside = new_id();
+        let ran = std::process::Command::new(claude::find_cli().unwrap())
+            .args(["-p", "Reply with just the word: mango", "--model", "haiku", "--session-id", &outside])
+            .current_dir(work.path())
+            .output()
+            .unwrap();
+        assert!(ran.status.success(), "{}", String::from_utf8_lossy(&ran.stderr));
+        let listed = agent.all_sessions().unwrap();
+        let ext = listed.iter().find(|x| x.id == outside).expect("the outside conversation is listed");
+        assert!(ext.external && ext.from_claude && ext.title.contains("mango"), "{ext:?}");
+        assert!(!listed.iter().any(|x| x.id == s.id && x.external), "Relay's own session isn't listed twice");
+        let history = agent.items(&outside).unwrap();
+        assert!(history.iter().any(|i| matches!(&i.body, ItemBody::Text { text, .. } if text.to_lowercase().contains("mango"))));
+        agent.send(&outside, "Which fruit did I ask you to say? Reply with just that word.").unwrap();
+        wait_until(&agent, &outside, "reply in the adopted conversation", |x| !x.running);
+        let adopted = agent.db(|c| store::session(c, &outside)).unwrap();
+        assert!(adopted.from_claude);
+        assert_eq!(texts(&agent, &outside).to_lowercase().matches("mango").count(), 2, "{}", texts(&agent, &outside));
         agent.shutdown();
+        wait_until(&agent, &outside, "process to end", |x| !x.live);
+        // Re-read from the file once it isn't running: everything is still there.
+        let reread = agent.items(&outside).unwrap();
+        assert_eq!(reread.iter().filter(|i| matches!(i.body, ItemBody::User { .. })).count(), 2);
+
+        // Claude Code's saved files for the temporary folder.
+        let _ = std::fs::remove_dir_all(claude::projects_dir().unwrap().join(claude::project_slug(&project.path)));
     }
 }

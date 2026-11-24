@@ -135,6 +135,27 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
 - **Known gap:** opening a conversation while a reply is streaming shows only the text from that
   point; the full text replaces it when the reply ends.
 
+### Conversations from the Claude app
+
+Local Claude Code sessions from the Claude app (or the CLI) are saved by Claude Code in
+`%USERPROFILE%\.claude\projects\<project path with every non-letter/digit as ->\<id>.jsonl`.
+Relay lists them under the matching project, labeled with the app they came from:
+
+- **Listing** reads only the lines that matter (titles from `ai-title` / `custom-title`, else the
+  first message) and caches each file by its modified time and size.
+- **Opening** one reads its history from the file. Subagent work, thinking and Claude Code's
+  bookkeeping lines are left out.
+- **Sending** a message brings it into Relay and resumes it with `--resume`. From then on, whenever
+  it isn't running in Relay, it's read from the file again, so anything said in it in the Claude
+  app shows up too. Its approvals' outcomes and stop notices from Relay are replaced by what the
+  file has.
+- **Warnings:** a conversation changed in the last 2 minutes may still be open in the Claude app,
+  and using it in both at once mixes them up. Relay says so above the composer.
+- **Not included:** cloud sessions (not saved on the PC), sessions the Claude app ran in a
+  worktree folder (a different path, so a different folder in `.claude\projects`), and the Claude
+  app's own scratch workspaces.
+- The file format is Claude Code's internal one. Unknown lines are skipped, not fatal.
+
 ### To check on Windows
 
 1. The Code page finds `claude` (the version shows top right).
@@ -142,6 +163,8 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
 3. Send, approve, answer a question, approve a plan, Stop.
 4. Close Relay mid-session: no `claude.exe` left in Task Manager.
 5. Reopen Relay: the history is there and the next message continues the conversation.
+6. Add `relay` as a project: your Claude app conversations for it are listed, open with their
+   history, and continue when you send a message.
 
 ## Phase 2: Usage and polish
 

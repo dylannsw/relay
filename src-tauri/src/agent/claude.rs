@@ -496,6 +496,183 @@ fn error_detail(v: &Value) -> String {
     })
 }
 
+// ---------------------------------------------------------------------------------------------
+// Conversations Claude Code saved (from the Claude app, the CLI, or Relay)
+
+/// Where Claude Code keeps its conversations: `~/.claude/projects` (or under CLAUDE_CONFIG_DIR).
+pub fn projects_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        return Some(PathBuf::from(dir).join("projects"));
+    }
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })?;
+    Some(PathBuf::from(home).join(".claude").join("projects"))
+}
+
+/// The folder name Claude Code uses for a project: every character other than a letter or digit
+/// becomes "-" (`C:\Users\me\relay` is `C--Users-me-relay`).
+pub fn project_slug(path: &str) -> String {
+    path.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
+}
+
+/// A saved conversation, as the session list needs it.
+#[derive(Debug, Clone)]
+pub struct TranscriptInfo {
+    pub id: String,
+    pub title: String,
+    /// Which app wrote it, for its label ("Claude app" or "Claude Code").
+    pub origin: String,
+}
+
+/// Reads a saved conversation's title and origin. None for one with no messages. Only lines that
+/// can matter are parsed, so a 7 MB conversation takes milliseconds.
+pub fn scan_transcript(path: &Path) -> Option<TranscriptInfo> {
+    use std::io::BufRead;
+    let id = path.file_stem()?.to_str()?.to_string();
+    uuid::Uuid::parse_str(&id).ok()?;
+    let file = std::fs::File::open(path).ok()?;
+    let (mut custom, mut ai, mut first, mut entry) = (None::<String>, None::<String>, None::<String>, None::<String>);
+    let mut has_reply = false;
+    for line in std::io::BufReader::new(file).lines() {
+        let Ok(line) = line else { break };
+        let wanted = line.contains("\"custom-title\"")
+            || line.contains("\"ai-title\"")
+            || (first.is_none() && line.contains("\"type\":\"user\""))
+            || (!has_reply && line.contains("\"type\":\"assistant\""));
+        if !wanted {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        match v["type"].as_str().unwrap_or("") {
+            "custom-title" => custom = v["customTitle"].as_str().map(String::from).or(custom),
+            "ai-title" => ai = v["aiTitle"].as_str().map(String::from).or(ai),
+            "assistant" if !v["isSidechain"].as_bool().unwrap_or(false) => has_reply = true,
+            "user" if first.is_none() && !v["isSidechain"].as_bool().unwrap_or(false) && !v["isMeta"].as_bool().unwrap_or(false) => {
+                if let Some(text) = user_text(&v["message"]["content"]) {
+                    first = Some(text);
+                    entry = v["entrypoint"].as_str().map(String::from);
+                }
+            }
+            _ => {}
+        }
+    }
+    if !has_reply && first.is_none() {
+        return None;
+    }
+    let title = custom.or(ai).or_else(|| first.map(|t| clip(t.lines().next().unwrap_or(""), 60))).unwrap_or_default();
+    let origin = match entry.as_deref() {
+        Some(e) if e.contains("desktop") => "Claude app",
+        _ => "Claude Code",
+    };
+    Some(TranscriptInfo { id, title, origin: origin.into() })
+}
+
+/// What you typed in a user message, or None for one that's only tool results or Claude Code's
+/// own bookkeeping (a command's output). A slash command shows as the command.
+fn user_text(content: &Value) -> Option<String> {
+    let text = match content {
+        Value::String(s) => s.clone(),
+        Value::Array(parts) => {
+            let mut out: Vec<String> = parts.iter().filter_map(|p| p["text"].as_str().map(String::from)).collect();
+            let images = parts.iter().filter(|p| p["type"] == "image").count();
+            if images > 0 {
+                out.push(format!("[{images} image{}]", if images == 1 { "" } else { "s" }));
+            }
+            out.join("\n")
+        }
+        _ => return None,
+    };
+    let text = text.trim();
+    if text.is_empty() || text.starts_with("<local-command-stdout>") || text.starts_with("<local-command-caveat>") {
+        return None;
+    }
+    if let Some(rest) = text.strip_prefix("<command-name>") {
+        let name = rest.split("</command-name>").next().unwrap_or("").trim();
+        let args = text
+            .split("<command-args>")
+            .nth(1)
+            .and_then(|a| a.split("</command-args>").next())
+            .unwrap_or("")
+            .trim();
+        return Some(if args.is_empty() { name.to_string() } else { format!("{name} {args}") });
+    }
+    Some(text.to_string())
+}
+
+fn timestamp(v: &Value) -> i64 {
+    v["timestamp"]
+        .as_str()
+        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+        .map(|t| t.timestamp_millis())
+        .unwrap_or(0)
+}
+
+/// A saved conversation as Relay's items: your messages, Claude's replies and its tool calls with
+/// their results. Subagents' own work, thinking and Claude Code's bookkeeping are left out.
+pub fn read_transcript(path: &Path, session_id: &str) -> std::io::Result<Vec<Item>> {
+    use std::io::BufRead;
+    let file = std::fs::File::open(path)?;
+    let mut items: Vec<Item> = vec![];
+    let mut tools: HashMap<String, usize> = HashMap::new();
+    let item = |id: String, at: i64, body: ItemBody| Item { id, session_id: session_id.into(), seq: 0, created_at: at, body };
+    for line in std::io::BufReader::new(file).lines() {
+        let line = line?;
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        if v["isSidechain"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let uuid = v["uuid"].as_str().unwrap_or("").to_string();
+        let at = timestamp(&v);
+        match v["type"].as_str().unwrap_or("") {
+            "user" => {
+                let content = &v["message"]["content"];
+                if v["isCompactSummary"].as_bool().unwrap_or(false) {
+                    items.push(item(format!("t:{uuid}"), at, ItemBody::Notice { text: "Earlier messages were summarized to save space.".into(), error: false }));
+                    continue;
+                }
+                for block in content.as_array().into_iter().flatten().filter(|b| b["type"] == "tool_result") {
+                    let Some(&i) = block["tool_use_id"].as_str().and_then(|id| tools.get(id)) else { continue };
+                    if let ItemBody::Tool { output, is_error, .. } = &mut items[i].body {
+                        *output = Some(clip(&result_text(&block["content"]), 20_000));
+                        *is_error = block["is_error"].as_bool().unwrap_or(false);
+                    }
+                }
+                if v["isMeta"].as_bool().unwrap_or(false) {
+                    continue;
+                }
+                if let Some(text) = user_text(content) {
+                    items.push(item(format!("t:{uuid}"), at, ItemBody::User { text }));
+                }
+            }
+            "assistant" => {
+                for (i, block) in v["message"]["content"].as_array().into_iter().flatten().enumerate() {
+                    match block["type"].as_str().unwrap_or("") {
+                        "text" => {
+                            let text = block["text"].as_str().unwrap_or("").to_string();
+                            if !text.trim().is_empty() {
+                                items.push(item(format!("t:{uuid}:{i}"), at, ItemBody::Text { text, streaming: false }));
+                            }
+                        }
+                        "tool_use" => {
+                            let id = block["id"].as_str().unwrap_or("").to_string();
+                            let name = block["name"].as_str().unwrap_or("").to_string();
+                            let input = block["input"].clone();
+                            tools.insert(id.clone(), items.len());
+                            items.push(item(
+                                id,
+                                at,
+                                ItemBody::Tool { summary: summarize(&name, &input), name, input, output: None, is_error: false, approval: None },
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(items)
+}
+
 /// The one line a tool card shows.
 pub fn summarize(name: &str, input: &Value) -> String {
     let pick = |keys: &[&str]| keys.iter().find_map(|k| input[*k].as_str()).map(String::from);
@@ -674,7 +851,14 @@ mod tests {
             panic!("claude exited mid-turn");
         }
 
-        let allow = |_: &str, input: &Value| (true, input.clone());
+        // ExitPlanMode's plan file, removed at the end with the conversation's saved files.
+        let plan_file = std::sync::Mutex::new(None::<String>);
+        let allow = |name: &str, input: &Value| {
+            if name == "ExitPlanMode" {
+                *plan_file.lock().unwrap() = input["planFilePath"].as_str().map(String::from);
+            }
+            (true, input.clone())
+        };
         let pick_blue = |name: &str, input: &Value| {
             if name != "AskUserQuestion" {
                 return (true, input.clone());
@@ -698,6 +882,61 @@ mod tests {
             "Use the Bash tool to run exactly: echo hi > bash.txt   Then reply with just done.", &allow).await;
         assert!(tools.iter().any(|t| t == "Bash"), "{tools:?}");
         assert!(dir.path().join("bash.txt").exists());
+
+        drop(stdin);
+        let _ = child.wait().await;
+        if let Some(f) = plan_file.lock().unwrap().take() {
+            let _ = std::fs::remove_file(f);
+        }
+        let _ = std::fs::remove_dir_all(projects_dir().unwrap().join(project_slug(&dir.path().display().to_string())));
+    }
+
+    #[test]
+    fn reads_a_saved_conversation() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = "0a6c6b1e-1111-4222-8333-944455556666";
+        let path = dir.path().join(format!("{id}.jsonl"));
+        let lines = [
+            r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"<local-command-caveat>ignore</local-command-caveat>"},"uuid":"u0"}"#,
+            r#"{"type":"user","message":{"role":"user","content":"Fix the sync bug"},"uuid":"u1","entrypoint":"claude-desktop","timestamp":"2026-11-23T10:00:00.000Z"}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"Looking."},{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"cargo test"}}]},"uuid":"a1"}"#,
+            r#"{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"subagent noise"}]},"uuid":"s1"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"ok","is_error":false}]},"uuid":"u2"}"#,
+            r#"{"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>\n<command-args>opus</command-args>"},"uuid":"u3"}"#,
+            r#"{"type":"user","message":{"role":"user","content":"<local-command-stdout>Set model</local-command-stdout>"},"uuid":"u4"}"#,
+            r#"{"type":"ai-title","aiTitle":"Old title"}"#,
+            r#"{"type":"ai-title","aiTitle":"Calendar sync fix"}"#,
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+
+        let info = scan_transcript(&path).unwrap();
+        assert_eq!((info.id.as_str(), info.title.as_str(), info.origin.as_str()), (id, "Calendar sync fix", "Claude app"));
+
+        let items = read_transcript(&path, id).unwrap();
+        let shown: Vec<String> = items.iter().map(|i| match &i.body {
+            ItemBody::User { text } => format!("user:{text}"),
+            ItemBody::Text { text, .. } => format!("text:{text}"),
+            ItemBody::Tool { name, output, .. } => format!("tool:{name}:{}", output.clone().unwrap_or_default()),
+            other => format!("{other:?}"),
+        }).collect();
+        assert_eq!(shown, ["user:Fix the sync bug", "text:Looking.", "tool:Bash:ok", "user:/model opus"]);
+        assert_eq!(project_slug(r"C:\Users\dnsw9\Documents\GitHub\relay"), "C--Users-dnsw9-Documents-GitHub-relay");
+    }
+
+    /// Reads a real saved conversation: `RELAY_TRANSCRIPT=path cargo test read_real -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn read_real_transcript() {
+        let Ok(path) = std::env::var("RELAY_TRANSCRIPT") else { return };
+        let path = PathBuf::from(path);
+        let t = std::time::Instant::now();
+        let info = scan_transcript(&path).unwrap();
+        let scanned = t.elapsed();
+        let items = read_transcript(&path, &info.id).unwrap();
+        println!("{info:?}\nscan {scanned:?}, read {:?}, {} items", t.elapsed(), items.len());
+        for i in items.iter().take(6) {
+            println!("{:?}", i.body);
+        }
     }
 
     #[test]

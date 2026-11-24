@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     started    INTEGER NOT NULL,
     model      TEXT,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    from_claude INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS sessions_by_project ON sessions(project_id, updated_at DESC);
 CREATE TABLE IF NOT EXISTS items (
@@ -42,6 +43,11 @@ pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
     conn.execute_batch(SCHEMA)?;
+    // agent.db from before sessions could come from the Claude app.
+    let has: bool = conn.prepare("SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'from_claude'")?.exists([])?;
+    if !has {
+        conn.execute_batch("ALTER TABLE sessions ADD COLUMN from_claude INTEGER NOT NULL DEFAULT 0;")?;
+    }
     Ok(conn)
 }
 
@@ -91,13 +97,16 @@ fn session_row(r: &rusqlite::Row) -> rusqlite::Result<Session> {
         model: r.get(6)?,
         created_at: r.get(7)?,
         updated_at: r.get(8)?,
+        from_claude: r.get(9)?,
         live: false,
         running: false,
         waiting: 0,
+        external: false,
+        origin: None,
     })
 }
 
-const SESSION_COLS: &str = "id, project_id, title, mode, plan, started, model, created_at, updated_at";
+const SESSION_COLS: &str = "id, project_id, title, mode, plan, started, model, created_at, updated_at, from_claude";
 
 pub fn sessions(conn: &Connection) -> Result<Vec<Session>> {
     let mut stmt = conn.prepare(&format!("SELECT {SESSION_COLS} FROM sessions ORDER BY updated_at DESC"))?;
@@ -111,10 +120,10 @@ pub fn session(conn: &Connection, id: &str) -> Result<Session> {
 
 pub fn save_session(conn: &Connection, s: &Session) -> Result<()> {
     conn.execute(
-        "INSERT INTO sessions (id, project_id, title, mode, plan, started, model, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO sessions (id, project_id, title, mode, plan, started, model, created_at, updated_at, from_claude)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET title = ?3, mode = ?4, plan = ?5, started = ?6, model = ?7, updated_at = ?9",
-        params![s.id, s.project_id, s.title, s.mode.as_str(), s.plan, s.started, s.model, s.created_at, s.updated_at],
+        params![s.id, s.project_id, s.title, s.mode.as_str(), s.plan, s.started, s.model, s.created_at, s.updated_at, s.from_claude],
     )?;
     Ok(())
 }
@@ -157,4 +166,22 @@ pub fn upsert_item(conn: &Connection, item: &Item) -> Result<Item> {
         params![item.session_id, item.id, seq, serde_json::to_string(&item)?],
     )?;
     Ok(item)
+}
+
+/// Replaces a conversation's items, in order (a re-read of Claude Code's saved file).
+pub fn replace_items(conn: &Connection, session_id: &str, items: &[Item]) -> Result<Vec<Item>> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM items WHERE session_id = ?1", [session_id])?;
+    let mut out = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+        let mut item = item.clone();
+        item.seq = i as i64 + 1;
+        tx.execute(
+            "INSERT OR REPLACE INTO items (session_id, id, seq, data) VALUES (?1, ?2, ?3, ?4)",
+            params![session_id, item.id, item.seq, serde_json::to_string(&item)?],
+        )?;
+        out.push(item);
+    }
+    tx.commit()?;
+    Ok(out)
 }

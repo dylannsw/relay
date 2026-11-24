@@ -67,6 +67,14 @@ pub struct Session {
     pub running: bool,
     /// Not stored: approvals, questions or plans waiting for an answer.
     pub waiting: usize,
+    /// Started outside Relay (the Claude app or the CLI). Its history is read from the file Claude
+    /// Code saved, which also has anything said in it since, in either app.
+    pub from_claude: bool,
+    /// Not stored: found in Claude Code's files but not used in Relay yet. Sending a message
+    /// brings it in.
+    pub external: bool,
+    /// Not stored: "Claude app" or "Claude Code", for one started outside Relay.
+    pub origin: Option<String>,
 }
 
 /// An entry in a conversation, in order of `seq`.
