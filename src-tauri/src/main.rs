@@ -1,6 +1,7 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod bookmark_handoff;
 mod bookmarks;
 mod calendar;
@@ -82,6 +83,8 @@ fn main() {
             app.manage(tg.clone());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { tg.autostart(&handle).await });
+            // Code page: Claude Code sessions. Their processes start when a session is used.
+            app.manage(Arc::new(agent::Agent::for_app(app.handle().clone(), state.data_dir())?));
             tasks::spawn_watcher(app.handle().clone(), state.clone());
             bookmarks::spawn_watcher(app.handle().clone(), state);
             Ok(())
@@ -182,7 +185,28 @@ fn main() {
             telegram::stickers::telegram_sticker_sets,
             telegram::stickers::telegram_sticker_file,
             telegram::stickers::telegram_send_sticker,
+            agent::agent_cli_status,
+            agent::agent_projects,
+            agent::agent_add_project,
+            agent::agent_remove_project,
+            agent::agent_sessions,
+            agent::agent_new_session,
+            agent::agent_items,
+            agent::agent_send,
+            agent::agent_stop,
+            agent::agent_answer,
+            agent::agent_set_mode,
+            agent::agent_rename_session,
+            agent::agent_delete_session,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Relay");
+        .build(tauri::generate_context!())
+        .expect("error while running Relay")
+        .run(|app, event| {
+            // Claude processes don't outlive Relay.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(agent) = app.try_state::<Arc<agent::Agent>>() {
+                    agent.shutdown();
+                }
+            }
+        });
 }

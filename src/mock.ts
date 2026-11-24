@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import { formatDate } from "./tasks/tick/date";
 import { mockTelegram } from "./telegram/mock";
+import { mockAgent } from "./agent/mock";
 import {
   DEFAULT_BOOKMARKS_CONFIG, type Bookmark, type BookmarkBoard, type BookmarkNoteChange,
   type BookmarksConfig, type BookmarksSnapshot, type BookmarkWriteOutcome, type OrikoPreview, type OrikoResult,
@@ -884,6 +885,7 @@ export async function mockInvoke<T>(cmd: string, args: Record<string, unknown> =
       return delay(undefined) as Promise<T>;
     default:
       if (cmd.startsWith("telegram_")) return mockTelegram<T>(cmd, args);
+      if (cmd.startsWith("agent_")) return mockAgent<T>(cmd, args);
       return Promise.reject(`mock: unknown command ${cmd}`);
   }
 }

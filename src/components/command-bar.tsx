@@ -27,8 +27,7 @@ import {
   IconStar,
   IconSun,
   IconX,
-  type TablerIcon,
-} from "@tabler/icons-react";
+  type TablerIcon, IconTerminal2 } from "@tabler/icons-react";
 import { CalendarIcon } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -501,6 +500,7 @@ export function CommandBar(p: Props) {
       { id: "go-tasks", label: "Tasks", keywords: "to-do todo tick list", icon: <IconChecklist />, run: () => p.onNavigate({ kind: "tasks" }) },
       { id: "go-calendar", label: "Calendar", keywords: "events schedule week agenda google", icon: <CalendarIcon />, run: () => p.onNavigate({ kind: "calendar" }) },
       { id: "go-bookmarks", label: "Bookmarks", keywords: "saved board collection home", icon: <IconBookmark />, run: () => showBookmarks(null) },
+      { id: "go-code", label: "Code", keywords: "claude agent sessions coding terminal", icon: <IconTerminal2 />, run: () => p.onNavigate({ kind: "code" }) },
       ...(bookmarks?.boards ?? []).map((board) => ({
         id: `go-bookmark-board-${board.id}`,
         label: `Bookmark board · ${board.name}`,
