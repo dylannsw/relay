@@ -57,12 +57,35 @@ function appendDelta(sessionId: string, itemId: string, text: string) {
 /** Item events for conversations still loading, replayed once they've loaded. */
 const loading = new Map<string, AgentEvent[]>();
 
+let listTimer: ReturnType<typeof setTimeout> | undefined;
+/** Reads the session list again, once for a burst of changes. */
+function refreshSessionsSoon() {
+  clearTimeout(listTimer);
+  listTimer = setTimeout(async () => {
+    try {
+      set({ sessions: (await api.agent.sessions()).sort(byRecent) });
+    } catch {
+      // The next change tries again.
+    }
+  }, 300);
+}
+
 function onEvent(e: AgentEvent) {
   if (e.type === "session") return upsertSession(e.session);
+  if (e.type === "transcript") {
+    // Used in the Claude app or the CLI: its title and place in the list may have changed, and an
+    // open conversation shows what was said there.
+    refreshSessionsSoon();
+    const live = state.sessions.find((s) => s.id === e.sessionId)?.live;
+    if (state.items[e.sessionId] && !live) void loadItems(e.sessionId, true).catch(() => {});
+    return;
+  }
   const buffered = loading.get(e.sessionId);
   if (buffered) return void buffered.push(e);
   if (e.type === "item") upsertItem(e.sessionId, e.item);
-  else appendDelta(e.sessionId, e.itemId, e.text);
+  else if (e.type === "items") {
+    if (state.items[e.sessionId]) set({ items: { ...state.items, [e.sessionId]: e.items } });
+  } else appendDelta(e.sessionId, e.itemId, e.text);
 }
 
 /** Subscribes to the backend once and loads the lists. Safe to call from every page. */
@@ -88,7 +111,7 @@ export async function recheckCli() {
 
 /**
  * Loads a conversation the first time it's opened; later changes arrive as events. `fresh` loads it
- * again: one from the Claude app may have changed there since.
+ * again from Claude Code's saved file.
  */
 export async function loadItems(sessionId: string, fresh = false) {
   if ((state.items[sessionId] && !fresh) || loading.has(sessionId)) return;
@@ -97,9 +120,8 @@ export async function loadItems(sessionId: string, fresh = false) {
     const list = await api.agent.items(sessionId);
     set({ items: { ...state.items, [sessionId]: list } });
   } finally {
-    // Changes that arrived during the fetch, on top of what it returned. A streaming item's text
-    // isn't stored until it ends, so its deltas from before the fetch are lost; the full text
-    // replaces it when it finishes.
+    // Changes that arrived during the fetch, on top of what it returned. A streaming item already
+    // has its text so far; a delta from just before the fetch may show twice until that text ends.
     const buffered = loading.get(sessionId) ?? [];
     loading.delete(sessionId);
     buffered.forEach(onEvent);

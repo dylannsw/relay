@@ -1,7 +1,11 @@
 //! The Code page's backend: Claude Code sessions run by the `claude` CLI installed on this PC,
 //! using its own login. One process per open session, talking stream-json over stdin/stdout.
-//! `claude.rs` knows Claude's format; this file runs the processes, stores the conversation and
-//! tells the UI.
+//! `claude.rs` knows Claude's format; this file runs the processes and tells the UI.
+//!
+//! History comes from the file Claude Code saves for each conversation, the same one the Claude app
+//! and the CLI read and write, so every conversation looks the same in all three. While Claude runs
+//! in Relay, the conversation is shown from its live output instead, then read from the file again
+//! once the process ends. A watcher notices when the file changes elsewhere.
 //!
 //! A process ends 2 minutes after its last turn (each one holds about 240 MB) and the next message
 //! starts it again with `--resume`. All of them end when Relay quits.
@@ -26,11 +30,18 @@ use tokio::sync::mpsc;
 
 use crate::error::{msg, Result};
 use claude::{Action, Adapter, TranscriptInfo};
-use types::{Answer, CliStatus, Item, ItemBody, Mode, Project, Session};
+use types::{Answer, Approval, CliStatus, Item, ItemBody, Mode, Project, Session};
 
 pub const SESSION_EVENT: &str = "agent-session";
 pub const ITEM_EVENT: &str = "agent-item";
 pub const DELTA_EVENT: &str = "agent-delta";
+/// A conversation's items in full, replacing what the UI has (after a process ends).
+pub const ITEMS_EVENT: &str = "agent-items";
+/// A saved conversation changed outside Relay, or one appeared or went.
+pub const TRANSCRIPT_EVENT: &str = "agent-transcript";
+
+/// How often the watcher looks at Claude Code's saved conversations.
+const WATCH_EVERY: Duration = Duration::from_secs(2);
 
 /// How long a session's process stays up after its last turn.
 #[cfg(not(test))]
@@ -53,6 +64,19 @@ pub struct Agent {
     generations: AtomicU64,
     /// Saved conversations already read, by file, with the modified time and size they had then.
     transcripts: Mutex<HashMap<PathBuf, (SystemTime, u64, Option<TranscriptInfo>)>>,
+    /// What Relay knows about a conversation that Claude Code's file doesn't, by session, for as
+    /// long as Relay runs.
+    extras: Mutex<HashMap<String, Extras>>,
+    /// The watcher's last look: each saved conversation's modified time and size.
+    seen: Mutex<Option<HashMap<PathBuf, (SystemTime, u64)>>>,
+}
+
+/// Shown on top of a conversation read from its file: Relay's notices and turn ends, and how you
+/// answered approvals. Not stored, so gone after a restart, when the file alone is shown.
+#[derive(Default)]
+struct Extras {
+    items: Vec<Item>,
+    approvals: HashMap<String, Approval>,
 }
 
 /// A running Claude process for one session.
@@ -67,6 +91,22 @@ struct Live {
     stderr: Mutex<VecDeque<String>>,
     /// Set when the process has ended.
     exited: AtomicBool,
+    /// The conversation as shown while this process runs: the file as it was at the start, then
+    /// the live output.
+    items: Mutex<Vec<Item>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ItemsEvent<'a> {
+    session_id: &'a str,
+    items: &'a [Item],
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptEvent<'a> {
+    session_id: &'a str,
 }
 
 #[derive(Clone, Serialize)]
@@ -106,7 +146,59 @@ impl Agent {
             live: Mutex::new(HashMap::new()),
             generations: AtomicU64::new(0),
             transcripts: Mutex::new(HashMap::new()),
+            extras: Mutex::new(HashMap::new()),
+            seen: Mutex::new(None),
         })
+    }
+
+    /// Watches Claude Code's saved conversations, so one used in the Claude app or the CLI updates
+    /// here too. Only modified times and sizes are read, every 2 seconds.
+    pub fn watch(self: &Arc<Self>) {
+        let agent = Arc::downgrade(self);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(WATCH_EVERY);
+            let Some(agent) = agent.upgrade() else { return };
+            agent.check_files();
+        });
+    }
+
+    fn check_files(&self) {
+        let Ok(projects) = self.db(store::projects) else { return };
+        let mut now: HashMap<PathBuf, (SystemTime, u64)> = HashMap::new();
+        for project in &projects {
+            let Some(dir) = Self::transcript_dir(project) else { continue };
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                if let Ok(meta) = entry.metadata() {
+                    now.insert(path, (meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()));
+                }
+            }
+        }
+        let changed: Vec<PathBuf> = {
+            let mut seen = self.seen.lock().unwrap();
+            let changed = match seen.as_ref() {
+                None => vec![],
+                Some(before) => now
+                    .iter()
+                    .filter(|(p, v)| before.get(*p) != Some(*v))
+                    .map(|(p, _)| p.clone())
+                    .chain(before.keys().filter(|p| !now.contains_key(*p)).cloned())
+                    .collect(),
+            };
+            *seen = Some(now);
+            changed
+        };
+        for path in changed {
+            let Some(id) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+            // Relay's own process writes it as it goes, and its live output is already shown.
+            if self.live_for(id).is_none() {
+                self.send_event(TRANSCRIPT_EVENT, &TranscriptEvent { session_id: id });
+            }
+        }
     }
 
     fn db<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
@@ -118,12 +210,27 @@ impl Agent {
         self.live.lock().unwrap().get(id).cloned()
     }
 
-    /// A session with its live state filled in.
+    /// A session with its live state filled in, and its title, last activity and origin from
+    /// Claude Code's saved file. Never call it inside `db`: it reads the database itself.
     fn view(&self, mut s: Session) -> Session {
         if let Some(live) = self.live_for(&s.id) {
             s.live = true;
             s.running = live.running.load(Ordering::SeqCst);
             s.waiting = live.adapter.lock().unwrap().pending_count();
+        }
+        let path = self
+            .db(|c| store::project(c, &s.project_id))
+            .ok()
+            .and_then(|p| Self::transcript_dir(&p))
+            .map(|d| d.join(format!("{}.jsonl", s.id)));
+        if let Some((info, updated)) = path.filter(|p| p.is_file()).and_then(|p| self.transcript_info(&p)) {
+            if !s.renamed && !info.title.is_empty() {
+                s.title = info.title;
+            }
+            s.updated_at = s.updated_at.max(updated);
+            if s.from_claude {
+                s.origin = Some(info.origin);
+            }
         }
         s
     }
@@ -140,23 +247,52 @@ impl Agent {
         }
     }
 
+    /// An item from the live output: shown now, and kept in `extras` if the file won't have it.
     fn save_item(&self, item: &Item) {
-        match self.db(|c| store::upsert_item(c, item)) {
-            Ok(stored) => {
-                self.send_event(ITEM_EVENT, &ItemEvent { session_id: &stored.session_id, item: &stored });
+        self.remember(item);
+        let Some(live) = self.live_for(&item.session_id) else {
+            self.emit_items(&item.session_id);
+            return;
+        };
+        let stored = {
+            let mut list = live.items.lock().unwrap();
+            let mut item = item.clone();
+            match list.iter_mut().find(|x| x.id == item.id) {
+                Some(old) => {
+                    item.seq = old.seq;
+                    *old = item.clone();
+                }
+                None => {
+                    item.seq = list.last().map_or(0, |x| x.seq) + 1;
+                    list.push(item.clone());
+                }
             }
-            Err(e) => eprintln!("[agent] couldn't store an item: {e}"),
+            item
+        };
+        self.send_event(ITEM_EVENT, &ItemEvent { session_id: &stored.session_id, item: &stored });
+    }
+
+    /// Keeps what Claude Code's file won't have: Relay's notices, turn ends and your answers.
+    fn remember(&self, item: &Item) {
+        let mut extras = self.extras.lock().unwrap();
+        let x = extras.entry(item.session_id.clone()).or_default();
+        match &item.body {
+            ItemBody::Notice { .. } | ItemBody::TurnEnd { .. } => match x.items.iter_mut().find(|i| i.id == item.id) {
+                Some(old) => *old = item.clone(),
+                None => x.items.push(item.clone()),
+            },
+            ItemBody::Tool { approval: Some(a), .. } => {
+                x.approvals.insert(item.id.clone(), a.clone());
+            }
+            _ => {}
         }
     }
 
-    fn notice(&self, session_id: &str, text: impl Into<String>, error: bool) {
-        self.save_item(&Item {
-            id: new_id(),
-            session_id: session_id.into(),
-            seq: 0,
-            created_at: claude::now(),
-            body: ItemBody::Notice { text: text.into(), error },
-        });
+    fn emit_items(&self, id: &str) {
+        match self.items(id) {
+            Ok(items) => self.send_event(ITEMS_EVENT, &ItemsEvent { session_id: id, items: &items }),
+            Err(e) => eprintln!("[agent] couldn't read a conversation: {e}"),
+        }
     }
 
     fn write(&self, live: &Live, line: String) -> Result<()> {
@@ -177,6 +313,7 @@ impl Agent {
             return Err(msg(format!("The project folder {} doesn't exist any more.", project.path)));
         }
         let cli = claude::find_cli().ok_or_else(|| msg(NOT_INSTALLED))?;
+        let items = self.saved_items(&session.id)?;
 
         // Tauri runs plain commands on the main thread, outside any Tokio runtime, and Tokio's
         // process pipes need one: enter Tauri's.
@@ -206,6 +343,7 @@ impl Agent {
             idle_since: Mutex::new(Instant::now()),
             stderr: Mutex::new(VecDeque::new()),
             exited: AtomicBool::new(false),
+            items: Mutex::new(items),
         });
         self.live.lock().unwrap().insert(session.id.clone(), live.clone());
 
@@ -261,6 +399,12 @@ impl Agent {
             match action {
                 Action::Upsert(item) => self.save_item(&item),
                 Action::Delta { item_id, text } => {
+                    // Kept as it arrives, so opening the conversation mid-reply shows all of it.
+                    if let Some(Item { body: ItemBody::Text { text: all, .. }, .. }) =
+                        live.items.lock().unwrap().iter_mut().find(|x| x.id == item_id)
+                    {
+                        all.push_str(&text);
+                    }
                     self.send_event(DELTA_EVENT, &DeltaEvent { session_id: id, item_id: &item_id, text: &text });
                 }
                 Action::Started { model } => {
@@ -300,7 +444,7 @@ impl Agent {
         }
         let cancelled = live.adapter.lock().unwrap().cancel_pending();
         for item in &cancelled {
-            self.save_item(item);
+            self.remember(item);
         }
         // Mid-turn means it didn't stop because we asked it to.
         if live.running.swap(false, Ordering::SeqCst) {
@@ -310,8 +454,16 @@ impl Agent {
                 text.push_str("\n\n");
                 text.push_str(&tail.join("\n"));
             }
-            self.notice(id, text, true);
+            self.remember(&Item {
+                id: new_id(),
+                session_id: id.into(),
+                seq: 0,
+                created_at: claude::now(),
+                body: ItemBody::Notice { text, error: true },
+            });
         }
+        // From now on the conversation is read from Claude Code's file, which has everything.
+        self.emit_items(id);
         self.emit_session(id);
     }
 
@@ -375,11 +527,11 @@ impl Agent {
 
     /// Every session: Relay's own, then each project's saved conversations Relay hasn't used yet.
     fn all_sessions(&self) -> Result<Vec<Session>> {
-        let mut out: Vec<Session> = self.db(store::sessions)?.into_iter().map(|s| self.view(s)).collect();
-        let known: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
+        let stored = self.db(store::sessions)?;
+        let known: HashSet<String> = stored.iter().map(|s| s.id.clone()).collect();
         // A new session from the Claude app starts in the mode Relay used last.
-        let mode = out.first().map(|s| s.mode).unwrap_or(Mode::Supervised);
-        let mut origins: HashMap<String, String> = HashMap::new();
+        let mode = stored.iter().find(|s| !s.hidden).map(|s| s.mode).unwrap_or(Mode::Supervised);
+        let mut out: Vec<Session> = stored.into_iter().filter(|s| !s.hidden).map(|s| self.view(s)).collect();
         for project in self.db(store::projects)? {
             let Some(dir) = Self::transcript_dir(&project) else { continue };
             let Ok(entries) = std::fs::read_dir(&dir) else { continue };
@@ -389,7 +541,6 @@ impl Agent {
                     continue;
                 }
                 let Some((info, updated)) = self.transcript_info(&path) else { continue };
-                origins.insert(info.id.clone(), info.origin.clone());
                 if known.contains(&info.id) {
                     continue;
                 }
@@ -404,6 +555,8 @@ impl Agent {
                     created_at: updated,
                     updated_at: updated,
                     from_claude: true,
+                    renamed: false,
+                    hidden: false,
                     live: false,
                     running: false,
                     waiting: 0,
@@ -412,34 +565,46 @@ impl Agent {
                 });
             }
         }
-        for s in out.iter_mut().filter(|s| s.from_claude && s.origin.is_none()) {
-            s.origin = origins.get(&s.id).cloned();
-        }
         out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         Ok(out)
     }
 
-    /// A conversation's items. One from the Claude app is read from its saved file whenever it
-    /// isn't running here, so it includes anything said in it since, in either app.
+    /// A conversation's items: the live output while Claude runs here, otherwise Claude Code's
+    /// saved file, which has anything said in it in the Claude app or the CLI too.
     pub fn items(&self, session_id: &str) -> Result<Vec<Item>> {
-        match self.db(|c| store::session(c, session_id)) {
-            Ok(s) if s.from_claude && self.live_for(session_id).is_none() => match self.find_transcript(session_id) {
-                Some((_, path)) => {
-                    let items = claude::read_transcript(&path, session_id)?;
-                    self.db(|c| store::replace_items(c, session_id, &items))
-                }
-                None => self.db(|c| store::items(c, session_id)),
-            },
-            Ok(_) => self.db(|c| store::items(c, session_id)),
-            Err(crate::error::Error::NotFound) => {
-                let (_, path) = self.find_transcript(session_id).ok_or(crate::error::Error::NotFound)?;
-                Ok(claude::read_transcript(&path, session_id)?)
-            }
-            Err(e) => Err(e),
+        if let Some(live) = self.live_for(session_id) {
+            return Ok(live.items.lock().unwrap().clone());
         }
+        self.saved_items(session_id)
     }
 
-    /// Brings a conversation from the Claude app into Relay, the first time you send in it.
+    /// Claude Code's saved file, with what Relay knows on top. Empty before the first message.
+    fn saved_items(&self, session_id: &str) -> Result<Vec<Item>> {
+        let mut items = match self.find_transcript(session_id) {
+            Some((_, path)) => claude::read_transcript(&path, session_id)?,
+            None => vec![],
+        };
+        if let Some(x) = self.extras.lock().unwrap().get(session_id) {
+            for item in &mut items {
+                if let ItemBody::Tool { approval, .. } = &mut item.body {
+                    if let Some(a) = x.approvals.get(&item.id) {
+                        *approval = Some(a.clone());
+                    }
+                }
+            }
+            for extra in &x.items {
+                let at = items.partition_point(|i| i.created_at <= extra.created_at);
+                items.insert(at, extra.clone());
+            }
+        }
+        for (i, item) in items.iter_mut().enumerate() {
+            item.seq = i as i64 + 1;
+        }
+        Ok(items)
+    }
+
+    /// Brings a conversation from the Claude app into Relay, the first time you send in it. Only
+    /// its settings are kept: its history stays in Claude Code's file.
     fn adopt(&self, session_id: &str) -> Result<()> {
         if self.db(|c| store::session(c, session_id)).is_ok() {
             return Ok(());
@@ -458,16 +623,15 @@ impl Agent {
             created_at: updated,
             updated_at: updated,
             from_claude: true,
+            renamed: false,
+            hidden: false,
             live: false,
             running: false,
             waiting: 0,
             external: false,
             origin: Some(info.origin),
         };
-        self.db(|c| store::save_session(c, &session))?;
-        let items = claude::read_transcript(&path, session_id)?;
-        self.db(|c| store::replace_items(c, session_id, &items))?;
-        Ok(())
+        self.db(|c| store::save_session(c, &session))
     }
 
     /// Sends a message, starting (or resuming) the session's process if needed.
@@ -683,6 +847,8 @@ pub fn agent_new_session(agent: Ag<'_>, project_id: String, mode: Mode, plan: bo
         running: false,
         waiting: 0,
         from_claude: false,
+        renamed: false,
+        hidden: false,
         external: false,
         origin: None,
     };
@@ -740,18 +906,33 @@ pub fn agent_rename_session(agent: Ag<'_>, session_id: String, title: String) ->
     agent.db(|c| {
         let mut s = store::session(c, &session_id)?;
         s.title = title.trim().to_string();
+        s.renamed = true;
         store::save_session(c, &s)
     })?;
     agent.emit_session(&session_id);
     Ok(())
 }
 
-/// Removes the session from Relay. Claude's own transcript of it stays where Claude keeps it.
+/// Removes the session from Relay's list. Claude Code's file of it stays where Claude keeps it, so
+/// it's remembered as hidden rather than forgotten, or it would come back as one from the Claude app.
 #[tauri::command]
 pub fn agent_delete_session(agent: Ag<'_>, session_id: String) -> Result<()> {
     agent.stop_session_process(&session_id);
-    agent.db(|c| store::delete_session(c, &session_id))
+    agent.extras.lock().unwrap().remove(&session_id);
+    agent.db(|c| {
+        let mut s = store::session(c, &session_id)?;
+        if !s.started {
+            return store::delete_session(c, &session_id);
+        }
+        s.hidden = true;
+        store::save_session(c, &s)
+    })
 }
+
+/// Tests that use Claude Code's folder take turns: one points CLAUDE_CONFIG_DIR elsewhere, and the
+/// `claude` processes the live tests start would inherit it.
+#[cfg(test)]
+static CLAUDE_DIR: Mutex<()> = Mutex::new(());
 
 #[cfg(test)]
 mod tests {
@@ -770,10 +951,82 @@ mod tests {
     }
 
     fn texts(agent: &Agent, id: &str) -> String {
-        agent.db(|c| store::items(c, id)).unwrap().iter().filter_map(|i| match &i.body {
+        agent.items(id).unwrap().iter().filter_map(|i| match &i.body {
             ItemBody::Text { text, .. } => Some(text.clone()),
             _ => None,
         }).collect::<Vec<_>>().join("\n")
+    }
+
+    /// History comes from Claude Code's file, with Relay's extras on top, and the watcher notices
+    /// when the file changes elsewhere. No CLI needed.
+    #[test]
+    fn history_from_claude_codes_file() {
+        let _turn = super::CLAUDE_DIR.lock().unwrap_or_else(|e| e.into_inner());
+        let config = tempfile::tempdir().unwrap();
+        std::env::set_var("CLAUDE_CONFIG_DIR", config.path());
+        let data = tempfile::tempdir().unwrap();
+        let events: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
+        let log = events.clone();
+        let agent = Arc::new(Agent::new(Box::new(move |e, v| log.lock().unwrap().push((e.into(), v))), data.path()).unwrap());
+        let project = Project { id: new_id(), name: "relay".into(), path: "/work/relay".into(), created_at: 0 };
+        agent.db(|c| store::insert_project(c, &project)).unwrap();
+
+        let dir = claude::projects_dir().unwrap().join(claude::project_slug(&project.path));
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = "0a6c6b1e-1111-4222-8333-944455556666";
+        let path = dir.join(format!("{id}.jsonl"));
+        let mut lines = vec![
+            r#"{"type":"user","message":{"role":"user","content":"Fix the sync bug"},"uuid":"u1","entrypoint":"claude-desktop","timestamp":"2026-11-23T10:00:00.000Z"}"#.to_string(),
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"cargo test"}}]},"uuid":"a1","timestamp":"2026-11-23T10:00:01.000Z"}"#.to_string(),
+            r#"{"type":"ai-title","aiTitle":"Calendar sync fix"}"#.to_string(),
+        ];
+        std::fs::write(&path, lines.join("\n")).unwrap();
+
+        // Listed from the file; adopted, it keeps the file's title and history.
+        let listed = agent.all_sessions().unwrap();
+        assert!(listed.iter().any(|s| s.id == id && s.external && s.title == "Calendar sync fix"));
+        agent.adopt(id).unwrap();
+        let s = agent.view(agent.db(|c| store::session(c, id)).unwrap());
+        assert_eq!((s.title.as_str(), s.origin.as_deref()), ("Calendar sync fix", Some("Claude app")));
+
+        // Your answer to an approval, which the file doesn't have, shows on its tool card.
+        agent.remember(&Item {
+            id: "tu1".into(), session_id: id.into(), seq: 0, created_at: 0,
+            body: ItemBody::Tool {
+                name: "Bash".into(), input: Value::Null, summary: String::new(), output: None, is_error: false,
+                approval: Some(Approval { request_id: "r1".into(), state: types::ApprovalState::Allowed, answers: None, message: None }),
+            },
+        });
+        let items = agent.items(id).unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(matches!(&items[1].body, ItemBody::Tool { approval: Some(a), .. } if a.state == types::ApprovalState::Allowed));
+        assert_eq!(items.iter().map(|i| i.seq).collect::<Vec<_>>(), [1, 2]);
+
+        // Used in the Claude app: the watcher tells the UI, and the next read has the new message.
+        agent.check_files();
+        lines.push(r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Fixed it."}]},"uuid":"a2","timestamp":"2026-11-23T10:05:00.000Z"}"#.into());
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(&path, lines.join("\n")).unwrap();
+        agent.check_files();
+        assert!(events.lock().unwrap().iter().any(|(e, v)| e == TRANSCRIPT_EVENT && v["sessionId"] == id));
+        assert!(matches!(&agent.items(id).unwrap()[2].body, ItemBody::Text { text, .. } if text == "Fixed it."));
+
+        // A rename in Relay wins over the file's title; removing it hides it rather than letting it
+        // come back as one from the Claude app.
+        agent.db(|c| {
+            let mut s = store::session(c, id)?;
+            s.title = "Mine".into();
+            s.renamed = true;
+            store::save_session(c, &s)
+        }).unwrap();
+        assert!(agent.all_sessions().unwrap().iter().any(|s| s.id == id && s.title == "Mine" && !s.external));
+        agent.db(|c| {
+            let mut s = store::session(c, id)?;
+            s.hidden = true;
+            store::save_session(c, &s)
+        }).unwrap();
+        assert!(!agent.all_sessions().unwrap().iter().any(|s| s.id == id));
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
     }
 
     /// The session manager against the real `claude` CLI (Haiku): a reply is stored, the session
@@ -782,6 +1035,7 @@ mod tests {
     #[test]
     #[ignore]
     fn live_session() {
+        let _turn = super::CLAUDE_DIR.lock().unwrap_or_else(|e| e.into_inner());
         let data = tempfile::tempdir().unwrap();
         let work = tempfile::tempdir().unwrap();
         let agent = Arc::new(Agent::new(Box::new(|_, _| {}), data.path()).unwrap());
@@ -790,7 +1044,7 @@ mod tests {
         let s = Session {
             id: new_id(), project_id: project.id.clone(), title: String::new(), mode: Mode::Supervised, plan: false,
             started: false, model: None, created_at: 0, updated_at: 0, live: false, running: false, waiting: 0,
-            from_claude: false, external: false, origin: None,
+            from_claude: false, renamed: false, hidden: false, external: false, origin: None,
         };
         agent.db(|c| store::save_session(c, &s)).unwrap();
 
@@ -811,7 +1065,7 @@ mod tests {
         // An approval through the manager.
         agent.send(&s.id, "Use the Bash tool to run exactly: echo hi > hi.txt   Then reply with just: done").unwrap();
         wait_until(&agent, &s.id, "approval request", |x| x.waiting > 0);
-        let request = agent.db(|c| store::items(c, &s.id)).unwrap().into_iter().find_map(|i| match i.body {
+        let request = agent.items(&s.id).unwrap().into_iter().find_map(|i| match i.body {
             ItemBody::Tool { approval: Some(a), .. } if a.state == types::ApprovalState::Pending => Some(a.request_id),
             _ => None,
         }).expect("a pending approval item");
@@ -819,7 +1073,7 @@ mod tests {
         wait_until(&agent, &s.id, "turn after approval", |x| !x.running);
         assert!(work.path().join("hi.txt").exists());
 
-        let items = agent.db(|c| store::items(c, &s.id)).unwrap();
+        let items = agent.items(&s.id).unwrap();
         let kinds: Vec<&str> = items.iter().map(|i| match i.body {
             ItemBody::User { .. } => "user", ItemBody::Text { .. } => "text", ItemBody::Tool { .. } => "tool",
             ItemBody::TurnEnd { .. } => "turnEnd", ItemBody::Notice { .. } => "notice",

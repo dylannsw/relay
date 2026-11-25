@@ -70,6 +70,12 @@ pub struct Session {
     /// Started outside Relay (the Claude app or the CLI). Its history is read from the file Claude
     /// Code saved, which also has anything said in it since, in either app.
     pub from_claude: bool,
+    /// You renamed it in Relay, so its title wins over the one Claude Code saved.
+    #[serde(skip)]
+    pub renamed: bool,
+    /// You deleted it in Relay. Claude Code's file stays, so it's only left out of the list.
+    #[serde(skip)]
+    pub hidden: bool,
     /// Not stored: found in Claude Code's files but not used in Relay yet. Sending a message
     /// brings it in.
     pub external: bool,
@@ -77,7 +83,8 @@ pub struct Session {
     pub origin: Option<String>,
 }
 
-/// An entry in a conversation, in order of `seq`.
+/// An entry in a conversation, in order of `seq`. Not stored: read from Claude Code's file, or from
+/// the live output while Claude is running in Relay.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {

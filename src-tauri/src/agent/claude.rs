@@ -795,6 +795,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     #[ignore]
     async fn live_cli() {
+        let _turn = super::super::CLAUDE_DIR.lock().unwrap_or_else(|e| e.into_inner());
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         let cli = find_cli().expect("claude CLI");
         let dir = tempfile::tempdir().unwrap();

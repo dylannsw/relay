@@ -84,7 +84,9 @@ fn main() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { tg.autostart(&handle).await });
             // Code page: Claude Code sessions. Their processes start when a session is used.
-            app.manage(Arc::new(agent::Agent::for_app(app.handle().clone(), state.data_dir())?));
+            let agent = Arc::new(agent::Agent::for_app(app.handle().clone(), state.data_dir())?);
+            agent.watch();
+            app.manage(agent);
             tasks::spawn_watcher(app.handle().clone(), state.clone());
             bookmarks::spawn_watcher(app.handle().clone(), state);
             Ok(())
