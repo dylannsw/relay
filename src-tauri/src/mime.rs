@@ -274,7 +274,9 @@ pub fn decode_entities(s: &str) -> String {
     while let Some(pos) = rest.find('&') {
         out.push_str(&rest[..pos]);
         rest = &rest[pos..];
-        let end = rest[..rest.len().min(12)].find(';');
+        // Search bytes, not a &str slice: byte 12 can land inside a multi-byte char
+        // (emoji, curly quote) and slicing there panics. ';' is ASCII, so any hit is a char boundary.
+        let end = rest.as_bytes()[..rest.len().min(12)].iter().position(|&b| b == b';');
         let decoded = end.and_then(|end| {
             let ent = &rest[1..end];
             let ch = match ent {
@@ -396,6 +398,17 @@ pub fn format_date(ms: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_entities_survives_multibyte_near_ampersand() {
+        // 12 bytes after '&' falls inside the emoji / curly quote: used to panic and crash the app.
+        for s in ["R&D for the €2m budget", "A & Bob said “hi” 🎉"] {
+            let amp = s.find('&').unwrap();
+            assert!(!s.is_char_boundary(amp + 12), "test string must straddle byte 12: {s}");
+            assert_eq!(decode_entities(s), s);
+        }
+        assert_eq!(decode_entities("&amp;🎉 &#x1F600; &lt;€&gt;"), "&🎉 😀 <€>");
+    }
 
     #[test]
     fn parses_address_lists() {
