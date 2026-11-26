@@ -134,8 +134,8 @@ export function Conversation({ session, project }: { session: AgentSession; proj
   const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
-    // One from the Claude app is read again each time: it may have moved on there.
-    void loadItems(session.id, session.fromClaude && !session.live).catch((e) => toast.error(errorText(e)));
+    // Read again from Claude Code's file each time: it may have moved on in the Claude app.
+    void loadItems(session.id, !session.live).catch((e) => toast.error(errorText(e)));
     stick.current = true;
   }, [session.id]);
 
@@ -186,14 +186,15 @@ export function Conversation({ session, project }: { session: AgentSession; proj
               <IconPencil />
               Rename
             </DropdownMenuItem>
-            {/* One from the Claude app would only come back: its file stays where Claude Code keeps it. */}
-            {!session.fromClaude && (
+            {/* Only from Relay's list: Claude Code's file stays, so the Claude app still has it. One
+                not used in Relay yet has nothing to remove. */}
+            {!session.external && (
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => deleteSession(session.id).catch((e) => toast.error(errorText(e)))}
               >
                 <IconTrash />
-                Delete session
+                Remove from Relay
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -247,7 +248,7 @@ function FromClaudeNote({ session }: { session: AgentSession }) {
         ? `This was active in the ${app} in the last 2 minutes. If it's still open there, finish it there first: using it in both at once mixes them up.`
         : session.external
           ? `Started in the ${app}. Sending a message continues it here.`
-          : `Started in the ${app}. Anything said in it there since shows here too.`}
+          : `Started in the ${app}. Anything said in it there shows here as it happens.`}
     </p>
   );
 }

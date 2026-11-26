@@ -315,13 +315,15 @@ export const api = {
       call<AgentSession>("agent_set_mode", { sessionId, mode, plan }),
     rename: (sessionId: string, title: string) => call<void>("agent_rename_session", { sessionId, title }),
     deleteSession: (sessionId: string) => call<void>("agent_delete_session", { sessionId }),
-    /** Session changes, new or changed items, and streamed text. */
+    /** Session changes, new or changed items, streamed text, and saved conversations changing. */
     onEvent: (cb: (e: AgentEvent) => void): Promise<() => void> => {
       if (!isTauri) return Promise.resolve(mockAgentEvents(cb));
       const subs = [
         listen<AgentSession>("agent-session", (e) => cb({ type: "session", session: e.payload })),
         listen<{ sessionId: string; item: AgentItem }>("agent-item", (e) => cb({ type: "item", ...e.payload })),
         listen<{ sessionId: string; itemId: string; text: string }>("agent-delta", (e) => cb({ type: "delta", ...e.payload })),
+        listen<{ sessionId: string; items: AgentItem[] }>("agent-items", (e) => cb({ type: "items", ...e.payload })),
+        listen<{ sessionId: string }>("agent-transcript", (e) => cb({ type: "transcript", ...e.payload })),
       ];
       return Promise.all(subs).then((offs) => () => offs.forEach((off) => off()));
     },
@@ -331,7 +333,11 @@ export const api = {
 export type AgentEvent =
   | { type: "session"; session: AgentSession }
   | { type: "item"; sessionId: string; item: AgentItem }
-  | { type: "delta"; sessionId: string; itemId: string; text: string };
+  | { type: "delta"; sessionId: string; itemId: string; text: string }
+  /** A conversation in full, replacing what was loaded (Claude's process ended in Relay). */
+  | { type: "items"; sessionId: string; items: AgentItem[] }
+  /** A saved conversation changed outside Relay (the Claude app or the CLI), or appeared or went. */
+  | { type: "transcript"; sessionId: string };
 
 /** "2026-11-15 14.32.10", for naming a pasted picture. */
 function pastedStamp(): string {

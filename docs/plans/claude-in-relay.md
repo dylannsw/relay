@@ -1,10 +1,12 @@
 # Plan: Claude Code inside Relay
 
-Status: phase 1 and the Claude app import built, waiting for a check on Windows. Phase 2 next.
+Status: phase 1 built, history now read from Claude Code's files, waiting for a check on Windows.
+Phase 2 next.
 
 ## Progress log
 
-Work is on branch `claude/gracious-feynman-pbx6c1` (not merged into `main`).
+Phase 1 merged into `main` (PR #1) and shipped in v2.1.2. Reading history from Claude Code's files
+is on branch `claude/friendly-hopper-wy6coy`.
 
 | Date | Done |
 | --- | --- |
@@ -13,6 +15,7 @@ Work is on branch `claude/gracious-feynman-pbx6c1` (not merged into `main`).
 | 2026-11-23 | Phase 1 built: the Code page (projects, sessions, streamed replies, tool cards, approvals, questions, plan approval, permission modes, Stop, history kept across restarts, idle processes stopped after 2 minutes). |
 | 2026-11-24 | Conversations from the Claude app: listed under their project, history read from Claude Code's saved files, continued in Relay on the first message. |
 | 2026-11-24 | First run on Windows: the Code page loads and finds Claude Code (2.1.299, older than the 2.1.330 tested here). Nothing beyond that tried yet. |
+| 2026-11-25 | Relay no longer keeps its own copy of conversations: history is read from Claude Code's files for every session, and a watcher picks up changes made in the Claude app or the CLI. See "One source: Claude Code's files". |
 
 ### Where to pick up
 
@@ -26,6 +29,9 @@ Work is on branch `claude/gracious-feynman-pbx6c1` (not merged into `main`).
      are labeled "Claude Code" instead of "Claude app" (`scan_transcript` in
      `src-tauri/src/agent/claude.rs`).
    - Is anything left in Task Manager (`claude.exe`) after quitting Relay mid-session?
+   - Does the Claude app pick up messages sent from Relay when you reopen the conversation there?
+     Relay picks up the app's within about 2 seconds; the app may only read the file when it
+     opens a conversation.
 
 ### How to test
 
@@ -80,10 +86,30 @@ work, stop there.
   }
   ```
 
-- **Relay keeps its own copy of each conversation.** The normalized events are stored in SQLite
-  (`db.rs`), and the UI renders from there. `--resume` restores Claude's memory but doesn't replay
-  old messages on stdout, so the UI can't depend on it. T3 Code does the same (an event store),
-  reading Claude's own history files only for sessions started outside it.
+- **One source: Claude Code's files** (changed 2026-11-25; Relay first kept its own copy in
+  SQLite, as T3 Code does). Claude Code saves every conversation as a `.jsonl` file, the same one
+  the Claude app and the CLI read and write. Relay reads history from there for every session and
+  keeps only each session's settings (project, mode, plan mode, a title you renamed it to, hidden)
+  in `agent.db`. Why:
+  - A conversation looks the same in Relay, the Claude app and the CLI, and continuing it in any
+    of them shows up in the others.
+  - A copy would outlive Claude Code's cleanup (`cleanupPeriodDays`, 30 days by default), leaving
+    conversations in Relay that can be read but not continued, because `--resume` needs the file.
+    Keeping history longer is one Claude Code setting for all three apps.
+  - Less code: nothing to keep in sync.
+  The cost: Relay depends on Claude Code's undocumented file format for all history. A format
+  change shows history wrongly until Relay is fixed, but loses nothing, since the file is
+  untouched.
+- **While Claude runs in Relay** the conversation is shown from the live output (kept in memory,
+  streamed text included), because the file only gets each message once it's complete. When the
+  process ends (2 idle minutes, Stop doesn't end it), Relay reads the file again and replaces the
+  live view.
+- **What the file doesn't have** (Relay's notices, turn ends with cost and time, how you answered
+  approvals) is kept in memory and shown on top of the file until Relay quits. After a restart
+  only what Claude Code saved is shown.
+- **The watcher** checks the project folders' saved files every 2 seconds (modified time and size
+  only). A change to a conversation not running in Relay refreshes the list and, if it's open, the
+  conversation.
 - **Idle processes are stopped.** Each `claude` process uses about 240 MB. A session's process is
   ended 2 minutes after its last turn (T3 Code's default), and the next message resumes it, which
   takes about 2 seconds.
@@ -154,8 +180,9 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
 ### Phase 1 as built
 
 - **Backend** `src-tauri/src/agent/`: `claude.rs` (CLI lookup, arguments, the adapter: one stdout
-  line in, a list of actions out), `mod.rs` (session manager and commands), `store.rs`
-  (`agent.db`, its own SQLite file so agent writes never wait on mail sync), `types.rs`.
+  line in, a list of actions out, and reading Claude Code's saved files), `mod.rs` (session
+  manager, watcher and commands), `store.rs` (`agent.db`: projects and session settings, its own
+  SQLite file so agent writes never wait on mail sync), `types.rs`.
 - **Frontend** `src/agent/` (types, store, browser-preview mock) and `src/components/code/` (page,
   conversation, items, Markdown). A **Code** entry in the sidebar with a count of sessions waiting
   for you, and in the command bar.
@@ -167,8 +194,8 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
   the idle shutdown.
 - **Found by the live tests:** Tauri runs plain commands on the main thread, outside Tokio, and
   spawning the CLI needs a Tokio runtime. The manager enters Tauri's runtime before spawning.
-- **Known gap:** opening a conversation while a reply is streaming shows only the text from that
-  point; the full text replaces it when the reply ends.
+- **Fixed gap:** opening a conversation while a reply is streaming used to show only the text from
+  that point. The live view now keeps the text as it arrives.
 
 ### Conversations from the Claude app
 
@@ -180,10 +207,10 @@ Relay lists them under the matching project, labeled with the app they came from
   first message) and caches each file by its modified time and size.
 - **Opening** one reads its history from the file. Subagent work, thinking and Claude Code's
   bookkeeping lines are left out.
-- **Sending** a message brings it into Relay and resumes it with `--resume`. From then on, whenever
-  it isn't running in Relay, it's read from the file again, so anything said in it in the Claude
-  app shows up too. Its approvals' outcomes and stop notices from Relay are replaced by what the
-  file has.
+- **Sending** a message brings it into Relay (its settings only) and resumes it with `--resume`.
+  Whenever it isn't running in Relay it's read from the file, and the watcher reloads it within
+  about 2 seconds of a change, so anything said in it in the Claude app shows up as it happens.
+- **Removing** a session hides it in Relay. Claude Code's file stays, so the Claude app keeps it.
 - **Warnings:** a conversation changed in the last 2 minutes may still be open in the Claude app,
   and using it in both at once mixes them up. Relay says so above the composer.
 - **Not included:** cloud sessions (not saved on the PC), sessions the Claude app ran in a
@@ -200,6 +227,10 @@ Relay lists them under the matching project, labeled with the app they came from
 5. Reopen Relay: the history is there and the next message continues the conversation.
 6. Add `relay` as a project: your Claude app conversations for it are listed, open with their
    history, and continue when you send a message.
+7. With a conversation open in Relay, send a message in it from the Claude app: it shows in Relay
+   within a few seconds, and the list moves it to the top.
+8. Sessions started in Relay before this change still show their history (now from Claude Code's
+   files; the old copy in `agent.db` is dropped on first start).
 
 ## Phase 2: Usage and polish
 
