@@ -94,7 +94,13 @@ const history: Record<string, TgMessage[]> = {
     msg({ chatId: "101", text: "Is this the right dashboard?", outgoing: true, senderName: "You", date: now - 1 * day + 1.2 * min }),
     msg({ chatId: "101", text: "Yes that's the one. Ping me if anything's unclear", senderName: "Maya Lim", senderId: "101", date: now - 20 * hr, reactions: [{ emoji: "🙏", count: 1, mine: true }] }),
     msg({ chatId: "101", text: "This is the one you mean, right? The filters are along the top and the status column is on the far right.", senderName: "Maya Lim", senderId: "101", date: now - 19.9 * hr, reply: { id: 0, sender: "You", senderId: null, text: "Is this the right dashboard?" }, media: { kind: "photo", label: "Photo", width: 1280, height: 400, mime: null } }),
+    // Stacked runs with quoted replies at the top and in the middle, to show the tight corners.
+    msg({ chatId: "101", text: "Perfect, thanks", outgoing: true, senderName: "You", date: now - 19.8 * hr, reply: { id: 0, sender: "Maya Lim", senderId: "101", text: "This is the one you mean, right?" } }),
+    msg({ chatId: "101", text: "I'll go through the filters this afternoon", outgoing: true, senderName: "You", date: now - 19.8 * hr + 0.2 * min }),
+    msg({ chatId: "101", text: "Quick one: where do the archived tickets live?", outgoing: true, senderName: "You", date: now - 19.8 * hr + 0.4 * min, reply: { id: 0, sender: "Maya Lim", senderId: "101", text: "Ping me if anything's unclear" } }),
+    msg({ chatId: "101", text: "Thanks!", outgoing: true, senderName: "You", date: now - 19.8 * hr + 0.5 * min }),
     msg({ chatId: "101", text: "Morning!", senderName: "Maya Lim", senderId: "101", date: now - 6 * min }),
+    msg({ chatId: "101", text: "Under the Status filter, it's the last option", senderName: "Maya Lim", senderId: "101", date: now - 5.5 * min, reply: { id: 0, sender: "You", senderId: null, text: "Quick one: where do the archived tickets live?" } }),
     msg({ chatId: "101", text: "Can you send me the deck before standup?", senderName: "Maya Lim", senderId: "101", date: now - 4 * min }),
   ],
   "-1001": [

@@ -891,8 +891,9 @@ export function Conversation({ chat }: { chat: TgChat }) {
                         m={m}
                         first={first}
                         last={last}
-                        joinTop={stacked(prev, m)}
-                        joinBottom={stacked(m, next)}
+                        // The unread line splits a stack, so the bubbles either side of it keep their full corners.
+                        joinTop={stacked(prev, m) && m.id !== unreadFrom}
+                        joinBottom={stacked(m, next) && next?.id !== unreadFrom}
                         showName={group && !m.outgoing && first}
                         showAvatar={group && !m.outgoing}
                         onReply={() => startReply(m)}
@@ -1619,7 +1620,13 @@ function Bubble(props: {
                 onClick={() => m.reply && props.onJump(m.reply.id)}
                 // 5px from the bubble's edge on three sides (its corners 9px, the bubble's 14 less that gap), padded like the
                 // bubble's own text (12px sides, 9px top and bottom), and 9px above the text (the bubble's bottom padding).
-                className={cn("-mx-[7px] mb-[9px] flex w-[calc(100%+14px)] min-w-0 flex-col rounded-[9px] border px-3 py-[9px] text-left text-sm leading-snug", m.forwardedFrom === null ? "-mt-[4px]" : "mt-0.5", out ? quoteOut : "bg-tint-hover")}
+                // At the top of a stacked bubble its sender-side top corner tightens with the bubble's (6px), to 3px.
+                className={cn(
+                  "-mx-[7px] mb-[9px] flex w-[calc(100%+14px)] min-w-0 flex-col rounded-[9px] border px-3 py-[9px] text-left text-sm leading-snug",
+                  m.forwardedFrom === null ? "-mt-[4px]" : "mt-0.5",
+                  m.forwardedFrom === null && props.joinTop && (out ? "rounded-tr-[3px]" : "rounded-tl-[3px]"),
+                  out ? quoteOut : "bg-tint-hover",
+                )}
               >
                 <QuoteLines chat={chat} reply={m.reply} out={out} />
               </button>
