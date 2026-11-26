@@ -667,6 +667,24 @@
     animation: none;
   }
 }
+/* The Code tab's "something is waiting for you" dot: star yellow with a soft halo that breathes. */
+.waiting-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--star);
+  box-shadow: 0 0 6px 1px color-mix(in oklab, var(--star) 55%, transparent);
+  animation: waiting-glow 2.4s ease-in-out infinite;
+}
+@keyframes waiting-glow {
+  0%, 100% { box-shadow: 0 0 4px 0 color-mix(in oklab, var(--star) 35%, transparent); }
+  50% { box-shadow: 0 0 8px 2px color-mix(in oklab, var(--star) 60%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .waiting-dot {
+    animation: none;
+  }
+}
 /* While a card is dragged the pointer is a grabbing hand everywhere and nothing gets selected. */
 :root[data-dragging-card] {
   cursor: grabbing;

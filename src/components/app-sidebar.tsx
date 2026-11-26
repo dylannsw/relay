@@ -466,8 +466,8 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 
 /**
  * Hub or Code, at the top of the sidebar: which the sidebar shows. Code shows your projects and sessions and
- * opens the Code page; Hub goes back to the page you were on before. The Code tab counts the
- * sessions waiting for you, so a question or approval shows from anywhere.
+ * opens the Code page; Hub goes back to the page you were on before. A glowing dot on the Code tab
+ * says a session is waiting for you, so a question or approval shows from anywhere.
  */
 function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void }) {
   const coding = view.kind === "code";
@@ -503,7 +503,12 @@ function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void })
               <span className="relative flex items-center gap-1.5">
                 {m.label}
                 {m.id === "code" && waiting > 0 && (
-                  <SidebarCount className="font-normal">{waiting}</SidebarCount>
+                  <span
+                    className="waiting-dot shrink-0"
+                    role="status"
+                    aria-label={`${waiting} session${waiting === 1 ? "" : "s"} waiting for you`}
+                    title={`${waiting} session${waiting === 1 ? "" : "s"} waiting for you`}
+                  />
                 )}
               </span>
             </TabsTrigger>
