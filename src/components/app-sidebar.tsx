@@ -465,8 +465,8 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 }
 
 /**
- * Relay or Code, at the top of the sidebar: which the sidebar shows. Code shows your projects and sessions and
- * opens the Code page; Relay goes back to the page you were on before. The Code tab counts the
+ * Hub or Code, at the top of the sidebar: which the sidebar shows. Code shows your projects and sessions and
+ * opens the Code page; Hub goes back to the page you were on before. The Code tab counts the
  * sessions waiting for you, so a question or approval shows from anywhere.
  */
 function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void }) {
@@ -476,12 +476,12 @@ function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void })
   const waiting = waitingSessions(useAgent());
   useEffect(startAgent, []);
   const modes = [
-    { id: "relay", label: "Relay" },
+    { id: "hub", label: "Hub" },
     { id: "code", label: "Code" },
   ] as const;
   return (
     <Tabs
-      value={coding ? "code" : "relay"}
+      value={coding ? "code" : "hub"}
       onValueChange={(m) => onView(m === "code" ? { kind: "code" } : lastRelay.current)}
     >
       <LayoutGroup id="sidebar-mode">
@@ -533,7 +533,7 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
             <CodeSidebarItems />
           </div>
         ) : (
-        <div key="relay" className="animate-in fade-in duration-200">
+        <div key="hub" className="animate-in fade-in duration-200">
         <SidebarGroup className={GUTTER}>
           <SidebarGroupLabel>Overview</SidebarGroupLabel>
           <SidebarGroupContent>
