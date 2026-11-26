@@ -35,6 +35,7 @@ import { completeTask, deleteTaskList, editTask, reloadTasks, useTasks, type Und
 import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
 import { sectionChip } from "@/tasks/chips";
 import { tasksToMarkdown } from "@/tasks/copy";
+import { noteToOneLine } from "@/tasks/note-markdown";
 import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 import { loadBoardOrder, saveBoardOrder, sortByOrder, type BoardOrder } from "@/tasks/board-order";
 import { TaskDialog } from "./task-dialog";
@@ -69,8 +70,12 @@ const COLUMN_LEAVE: Transition = { type: "spring", visualDuration: 0.65, bounce:
  */
 const COLUMN_LAND: Transition = { type: "spring", visualDuration: 0.7, bounce: 0.45, velocity: 0.1 };
 
-/** Where dragged cards can land: a column, or the Done zone. */
+/** Where dragged cards can be put: a column, or the Done zone. */
 type Target = TaskStatus | "done";
+/** What a dragged card can be over: a place to put it, or the Delete zone. */
+type Over = Target | "delete";
+/** The two zones over the metrics while dragging: dropped on either, the cards sink into it. */
+const isZone = (o: Over | null): o is "done" | "delete" => o === "done" || o === "delete";
 
 interface Card {
   task: ParsedTask;
@@ -105,7 +110,7 @@ function cardKeys(tasks: ParsedTask[]): string[] {
 /**
  * The cards being dragged (the one held first) and how the copy above the board behaves:
  * "held" follows the pointer; "land" and "back" glide onto a card's place (its new column, or
- * where it came from); "done" sinks into the Done zone.
+ * where it came from); "sink" sinks into the Done or Delete zone.
  */
 interface Lift {
   cards: Card[];
@@ -118,11 +123,11 @@ interface Lift {
   gap?: boolean;
   /** Where on the held card it was grabbed, as fractions, so the copy shrinks toward the pointer. */
   grab: { x: number; y: number };
-  mode: "held" | "land" | "back" | "done";
-  over: Target | null;
+  mode: "held" | "land" | "back" | "sink";
+  over: Over | null;
   /** Where in the column under the pointer the gap is (among the cards not being dragged). */
   index: number;
-  /** The Done zone's box (page coordinates) when dropped there. */
+  /** The middle of the zone dropped on (page coordinates). */
   zone?: { x: number; y: number };
 }
 
@@ -137,7 +142,7 @@ const without = <K, V>(m: Map<K, V>, keys: K[]) => {
 /**
  * Every open task on a board of three columns: Backlog, Doing, Priority. The column is the task's
  * status tag in the to-do note (see `src/tasks/status.tsx`). Drag a card to another column to
- * move it, or onto the Done zone that appears while dragging to complete it. Ctrl+click selects
+ * move it, or onto the Done or Delete zones that cover the metrics while dragging. Ctrl+click selects
  * several cards; dragging one of them takes them all.
  */
 export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
@@ -158,6 +163,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const dragY = useMotionValue(0);
   const columns = useRef(new Map<TaskStatus, HTMLElement>());
   const doneZone = useRef<HTMLDivElement | null>(null);
+  const deleteZone = useRef<HTMLDivElement | null>(null);
   const endDrag = useRef<(() => void) | null>(null);
   /** The page: the dragged copy is drawn in it (not in <body>, which is outside the light content frame in mixed mode). */
   const page = useRef<HTMLDivElement>(null);
@@ -223,7 +229,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
 
   // The column under a dragged card swells and holds; leaving lets it ease back. The column a drop
   // lands in (set by the drop just before the card lets go) pops and settles from the swell instead.
-  const grownColumn = held && held.over !== "done" ? held.over : null;
+  const grownColumn = held && !isZone(held.over) ? held.over : null;
   const landedColumn = useRef<TaskStatus | null>(null);
   useEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -381,12 +387,14 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     const group = selected.has(card.key) && picked.length > 1 ? [card, ...picked.filter((c) => c.key !== card.key)] : [card];
     const groupKeys = new Set(group.map((c) => c.key));
     let started = false;
-    let over: Target | null = null;
+    let over: Over | null = null;
     let index = 0;
 
-    const targetAt = (x: number, y: number): Target | null => {
-      const zone = doneZone.current?.getBoundingClientRect();
-      if (zone && inside(zone, x, y)) return "done";
+    const targetAt = (x: number, y: number): Over | null => {
+      const done = doneZone.current?.getBoundingClientRect();
+      if (done && inside(done, x, y)) return "done";
+      const del = deleteZone.current?.getBoundingClientRect();
+      if (del && inside(del, x, y)) return "delete";
       for (const [status, el] of columns.current) if (inside(el.getBoundingClientRect(), x, y)) return status;
       return null;
     };
@@ -436,7 +444,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       dragX.set(ev.clientX - (startX - box.left) - origin.left);
       dragY.set(ev.clientY - (startY - box.top) - origin.top);
       const now = targetAt(ev.clientX, ev.clientY);
-      const at = now && now !== "done" ? indexAt(now, ev.clientY) : 0;
+      const at = now && !isZone(now) ? indexAt(now, ev.clientY) : 0;
       if (now !== over || at !== index) {
         over = now;
         index = at;
@@ -461,12 +469,15 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       window.setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
 
       const target = dropIt ? over : null;
-      if (target === "done") {
-        const zone = doneZone.current?.getBoundingClientRect();
-        if (zone) halo.current?.fire(zone);
-        setLift((l) => l && { ...l, mode: "done", zone: zone && { x: zone.left + zone.width / 2 - origin.left, y: zone.top + zone.height / 2 - origin.top } });
+      if (isZone(target)) {
+        // Into the zone: the cards sink into its middle. Done also sends the glow across the page;
+        // Delete waits behind its Undo toast like any other delete.
+        const zone = (target === "done" ? doneZone : deleteZone).current?.getBoundingClientRect();
+        if (zone && target === "done") halo.current?.fire(zone);
+        setLift((l) => l && { ...l, mode: "sink", zone: zone && { x: zone.left + zone.width / 2 - origin.left, y: zone.top + zone.height / 2 - origin.top } });
         setSelected(new Set());
-        drop(group, "done");
+        if (target === "done") drop(group, "done");
+        else remove(group);
       } else if (target) {
         // Into the column at the gap: the order there changes, and the status if it's another column.
         // (The board here is from when the press began, so the dragged cards are still in it.)
@@ -511,7 +522,7 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       <PageHeader etched>
         <PageTitle>Tasks</PageTitle>
       </PageHeader>
-      {/* Out of the way while cards are held, so it never covers the Done zone. */}
+      {/* Out of the way while cards are held: the Done and Delete zones take over then. */}
       <SelectionBar open={picked.length > 0 && !held} label={`${picked.length} selected`} onClear={() => setSelected(new Set())}>
         <SelectionBarAction
           label="Copy as Prompt"
@@ -538,7 +549,19 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
           if (!(e.target as HTMLElement).closest("[data-card-key]")) setSelected(new Set());
         }}
       >
-        <TaskMetrics stats={t.status === "ready" ? t.stats : null} heatColor={t.settings.heatmapColor} />
+        {/* While cards are dragged, the Done and Delete zones cover the metrics card in two equal halves. */}
+        <div className="relative col-span-3">
+          {/* Softened under the zones: their frost shows it as soft shapes, and the gap between them shows no legible text. */}
+          <div className={cn("transition-[opacity,filter] duration-200", held && "opacity-60 blur-[3px]")}>
+            <TaskMetrics stats={t.status === "ready" ? t.stats : null} heatColor={t.settings.heatmapColor} />
+          </div>
+          <div className="pointer-events-none absolute inset-0 z-(--z-raised) grid grid-cols-2 gap-3">
+            <AnimatePresence>
+              {held && <DropZone key="done" kind="done" zoneRef={doneZone} active={held.over === "done"} count={held.cards.length} />}
+              {held && <DropZone key="delete" kind="delete" zoneRef={deleteZone} active={held.over === "delete"} count={held.cards.length} />}
+            </AnimatePresence>
+          </div>
+        </div>
         {STATUSES.map((status) => {
           const cards = board.get(status)!;
           const target = held && held.over === status;
@@ -641,10 +664,6 @@ export function TasksPage({ onOpenSettings }: { onOpenSettings: () => void }) {
             </section>
           );
         })}
-
-        <AnimatePresence>
-          {held && <DoneZone key="done" zoneRef={doneZone} active={held.over === "done"} count={held.cards.length} />}
-        </AnimatePresence>
       </div>
 
       {lift && (
@@ -703,7 +722,7 @@ function TaskCard({ task, chip, label, done, selected, hidden, onToggle, onClick
   onClick?: (e: React.MouseEvent<HTMLElement>) => void;
   onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
 } & Omit<React.ComponentProps<"div">, "onPointerDown" | "onClick">) {
-  const note = task.note.replace(/\s+/g, " ").trim();
+  const note = noteToOneLine(task.note);
   return (
     <div
       {...rest}
@@ -859,7 +878,7 @@ function TaskCardMenu({ task, status, done, sections, onToggle, onEdit, onDelete
 /**
  * The cards lifted off the board, moving like a dragged calendar event: the held card trails the
  * pointer on a critically damped spring, tilts with how fast it moves, and on drop glides onto its
- * place (the new column, or back where it came from). Over the Done zone it shrinks toward the
+ * place (the new column, or back where it came from). Over the Done or Delete zone it shrinks toward the
  * pointer so the zone stays readable; dropped there, it sinks into it.
  *
  * The rest of a selection follow it in a chain, each on a looser spring chasing the card ahead:
@@ -884,7 +903,7 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
   const opacity = useMotionValue(1);
   const rotate = useSpring(0, tilt);
   const held = mode === "held";
-  const overDone = held && lift.over === "done";
+  const overZone = held && isZone(lift.over);
 
   // The chain: each follower chases the card ahead of it (hooks can't loop, so a fixed number).
   const f1x = useSpring(tx, FOLLOW);
@@ -911,12 +930,12 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
     [g3x, g3y],
   ] as const;
 
-  // Lift: a touch bigger while held, and much smaller over the Done zone.
+  // Lift: a touch bigger while held, and much smaller over a zone.
   useEffect(() => {
     if (!held) return;
-    const c = animate(scale, overDone ? 0.6 : 1.04, { type: "spring", stiffness: 500, damping: 32 });
+    const c = animate(scale, overZone ? 0.6 : 1.04, { type: "spring", stiffness: 500, damping: 32 });
     return () => c.stop();
-  }, [held, overDone, scale]);
+  }, [held, overZone, scale]);
 
   // Tilt into the direction of travel by how fast the trailing card moves (as calendar events do).
   const speed = useVelocity(tx);
@@ -946,7 +965,7 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
       rotate.set(0);
       // Where the held card goes; the followers chase it there (through the pointer's values).
       let to: { x: number; y: number } | null = null;
-      if (mode === "done" && lift.zone) {
+      if (mode === "sink" && lift.zone) {
         to = { x: lift.zone.x - width * grab.x, y: lift.zone.y - 40 * grab.y };
         runs = [animate(mx, to.x, opts), animate(my, to.y, opts), animate(scale, 0.3, opts), animate(opacity, 0, opts)];
       } else {
@@ -994,7 +1013,7 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
               width,
               height: lift.height,
               scale,
-              opacity: mode === "done" ? opacity : 1,
+              opacity: mode === "sink" ? opacity : 1,
               originX: grab.x,
               originY: grab.y,
             }}
@@ -1034,33 +1053,45 @@ function LiftedCards({ lift, x, y, page, chip, label, onLanded }: {
 }
 
 /**
- * Appears at the bottom of the board while cards are dragged (after the split-view drop cards in
- * the Zia Zen theme): a frosted grey tray with a dashed line inside, that springs bigger and turns
- * green when a card is over it. Dropping completes the tasks.
+ * How much a zone grows while a card is over it. The zones are each half the board wide, so the
+ * step is small: about 12px at a typical width, which still reads clearly as a lift.
  */
-/** How much the Done zone grows while a card is over it (its old 264px → 320px width step). */
-const DONE_ZONE_GROW = 320 / 264;
+const ZONE_GROW = 1.02;
 
-function DoneZone({ zoneRef, active, count }: { zoneRef: React.RefObject<HTMLDivElement | null>; active: boolean; count: number }) {
+/**
+ * The Done and Delete zones, shown over the metrics card while cards are dragged, each half of it
+ * (after the split-view drop cards in the Zia Zen theme): a frosted grey tray with a dashed line
+ * inside, that springs a little bigger and takes its colour (green for Done, red for Delete) when
+ * a card is over it. Dropping on Done completes the tasks; on Delete deletes them (with Undo).
+ */
+function DropZone({ kind, zoneRef, active, count }: {
+  kind: "done" | "delete";
+  zoneRef: React.RefObject<HTMLDivElement | null>;
+  active: boolean;
+  count: number;
+}) {
+  const done = kind === "done";
+  const label = done ? (count > 1 ? `Mark ${count} as done` : "Mark as done") : count > 1 ? `Delete ${count}` : "Delete";
   return (
     <motion.div
       ref={zoneRef}
       data-active={active ? "" : undefined}
-      className="done-zone absolute bottom-6 left-1/2 z-(--z-raised) h-[76px] w-[264px] rounded-[18px]"
-      // Grows by scale, not width/height, so it never re-lays out: 264×76 → about 320×92 when active.
-      style={{ x: "-50%", originY: 1 }}
-      initial={{ opacity: 0, scale: 0.94, y: 16 }}
-      animate={{ opacity: 1, scale: active ? DONE_ZONE_GROW : 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94, y: 16, transition: quick }}
+      data-kind={kind}
+      // The metrics card's corners (rounded-2xl); the dashed line 6px inside is 6px less.
+      className="drop-zone menu-glass relative rounded-2xl"
+      // Grows by scale, not width/height, so it never re-lays out. Drops in from above, where it sits.
+      initial={{ opacity: 0, scale: 0.97, y: -8 }}
+      animate={{ opacity: 1, scale: active ? ZONE_GROW : 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97, y: -8, transition: quick }}
       transition={{
         default: { type: "spring", stiffness: 420, damping: 24 },
         opacity: { duration: 0.18 },
       }}
     >
-      <div className="done-zone-line">
+      <div className="drop-zone-line">
         <span className="flex items-center gap-2">
-          <IconCircleCheck className="size-5" />
-          <span className="done-zone-label">{count > 1 ? `Mark ${count} as done` : "Mark as done"}</span>
+          {done ? <IconCircleCheck className="size-5" /> : <IconTrash className="size-5" />}
+          <span className="drop-zone-label">{label}</span>
         </span>
       </div>
     </motion.div>

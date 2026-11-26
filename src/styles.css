@@ -606,33 +606,32 @@
   background-image: var(--halo-glint);
   background-origin: border-box;
 }
-/* The Tasks board's Done zone, shown while a card is dragged (tasks-page.tsx DoneZone): a frosted
-   grey tray with a dashed line inside, after the Zia theme's split-view drop cards. A card over it
-   ([data-active]) turns it green, in the app's own colours for light and dark. */
-.done-zone {
-  --done: var(--chip-green);
-  --done-ink: oklch(from var(--done) min(l, 0.5) c h);
-  --done-shine: var(--foreground);
-  background: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--muted) 70%, transparent));
-  backdrop-filter: blur(12px) saturate(1.4);
+/* The Tasks board's Done and Delete zones, shown over the metrics while a card is dragged (tasks-page.tsx
+   DropZone), with a dashed line inside, after the Zia theme's split-view drop cards. The surface is the
+   menus' frosted glass (.menu-glass, below: tint, blur, rim and shadow). A card over one ([data-active])
+   tints the glass green (Done) or red (Delete), still see-through, in the app's own colours. */
+.drop-zone {
+  --zone: var(--chip-green);
+  --zone-ink: oklch(from var(--zone) min(l, 0.5) c h);
+  --zone-shine: var(--foreground);
   color: var(--muted-foreground);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 10%), inset 0 0 0 1px color-mix(in srgb, var(--foreground) 8%, transparent);
   transition: background-color 0.15s ease, color 0.15s ease;
   @variant dark {
-    --done-ink: oklch(from var(--done) max(l, 0.8) c h);
-    --done-shine: #fff;
-    background: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--muted) 55%, transparent));
-    box-shadow: 0 12px 32px rgb(0 0 0 / 40%), inset 0 0 0 1px rgb(255 255 255 / 7%);
+    --zone-ink: oklch(from var(--zone) max(l, 0.8) c h);
+    --zone-shine: #fff;
   }
   &[data-active] {
-    color: var(--done-ink);
-    background: color-mix(in srgb, var(--done) 16%, var(--background));
+    color: var(--zone-ink);
+    background-color: color-mix(in srgb, var(--zone) 18%, var(--menu-bg));
     @variant dark {
-      background: color-mix(in srgb, var(--done) 22%, var(--card));
+      background-color: color-mix(in srgb, var(--zone) 24%, var(--menu-bg));
     }
   }
 }
-.done-zone-line {
+.drop-zone[data-kind="delete"] {
+  --zone: var(--chip-red);
+}
+.drop-zone-line {
   position: absolute;
   inset: 6px;
   display: flex;
@@ -640,31 +639,31 @@
   justify-content: center;
   gap: 8px;
   /* A 1.5px dash; a card over it changes only its colour. The label grows with the whole zone
-     (DoneZone scales it), so it needs no scale of its own. */
+     (DropZone scales it), so it needs no scale of its own. */
   border: 1.5px dashed color-mix(in srgb, var(--foreground) 20%, transparent);
-  border-radius: 12px;
-  font-size: 14px;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: 600;
   transition: border-color 0.15s ease;
-  .done-zone[data-active] & {
-    border-color: color-mix(in srgb, var(--done-ink) 90%, transparent);
+  .drop-zone[data-active] & {
+    border-color: color-mix(in srgb, var(--zone-ink) 90%, transparent);
   }
 }
 /* A light sweeping across the label now and then. */
-.done-zone-label {
-  background-image: linear-gradient(100deg, currentColor 0%, currentColor 40%, var(--done-shine) 50%, currentColor 60%, currentColor 100%);
+.drop-zone-label {
+  background-image: linear-gradient(100deg, currentColor 0%, currentColor 40%, var(--zone-shine) 50%, currentColor 60%, currentColor 100%);
   background-size: 300% 100%;
   background-position: 100% 0;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: done-zone-shine 2.8s ease-in-out infinite;
+  animation: drop-zone-shine 2.8s ease-in-out infinite;
 }
-@keyframes done-zone-shine {
+@keyframes drop-zone-shine {
   0%, 55% { background-position: 100% 0; }
   100% { background-position: 0% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .done-zone-label {
+  .drop-zone-label {
     animation: none;
   }
 }
@@ -696,8 +695,7 @@
 }
 .selection-bar .sb-action.sb-chip:hover {
   background-color: color-mix(in srgb, var(--foreground) 14%, transparent);
-}
-.selection-bar .sb-action:active {
+}.selection-bar .sb-action:active {
   background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 /* The divider between action groups: a plain 2px grey pill, light grey on the light glass, darker on the dark. */

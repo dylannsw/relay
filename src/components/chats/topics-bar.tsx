@@ -1,6 +1,8 @@
 import { useEffect, useRef, type CSSProperties } from "react";
+import { LayoutGroup, motion } from "motion/react";
 import { IconAt, IconHash, IconLock, IconPin, IconVolumeOff } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { glide } from "@/lib/motion";
 import { useTasksState } from "@/tasks/store";
 import { SelectionBar } from "@/components/selection-bar";
 import type { TgTopic } from "@/telegram/types";
@@ -10,7 +12,8 @@ export const TOPICS_BAR_ROOM = 70;
 
 /**
  * The topics of a group with topics, as a floating bar under the group's name: the floating action
- * bar's glass and chips, one chip per topic. The open topic is the filled chip.
+ * bar's glass and chips, one chip per topic. The open topic is the filled chip; the fill is one pill
+ * that glides from chip to chip, like the Calendar's day-count tabs. The bar fades in.
  */
 export function TopicsBar({ topics, selected, onSelect }: { topics: TgTopic[] | null; selected: number | null; onSelect: (id: number) => void }) {
   const heat = useTasksState().settings.heatmapColor || "var(--primary)";
@@ -36,10 +39,12 @@ export function TopicsBar({ topics, selected, onSelect }: { topics: TgTopic[] | 
 
   return (
     <div ref={bar} style={{ "--heat": heat } as CSSProperties}>
-      <SelectionBar open={!!topics?.length} ariaLabel="Topics" placement="top">
-        {topics?.map((t) => (
-          <TopicChip key={t.id} topic={t} selected={t.id === selected} onClick={() => onSelect(t.id)} />
-        ))}
+      <SelectionBar open={!!topics?.length} ariaLabel="Topics" placement="top" fade>
+        <LayoutGroup id="topics">
+          {topics?.map((t) => (
+            <TopicChip key={t.id} topic={t} selected={t.id === selected} onClick={() => onSelect(t.id)} />
+          ))}
+        </LayoutGroup>
       </SelectionBar>
     </div>
   );
@@ -55,11 +60,15 @@ function TopicChip({ topic: t, selected, onClick }: { topic: TgTopic; selected: 
       onClick={onClick}
       className={cn(
         // Optical padding: a side that ends in an icon or count gets 1px more than a side that ends in text.
-        "sb-action flex h-9.5 shrink-0 items-center gap-2 rounded-[10px] pl-[15px] text-sm font-medium whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // Like the Calendar's day tabs: no fill of its own on hover or press (that would flash a second pill
+        // while the selected one glides over), only the text brightens. isolate: the pill sits behind the
+        // chip's content but inside the chip.
+        "relative isolate flex h-9.5 shrink-0 items-center gap-2 rounded-[10px] pl-[15px] text-sm font-medium whitespace-nowrap outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         trailing ? "pr-[15px]" : "pr-3.5",
-        selected ? "sb-chip" : !unread && "text-muted-foreground",
+        !selected && !unread && "text-muted-foreground",
       )}
     >
+      {selected && <motion.span aria-hidden layoutId="topic-pill" transition={glide} className="sb-chip absolute inset-0 -z-10 rounded-[inherit]" />}
       <span
         aria-hidden
         // Telegram's topic colours are light, so the letter is a dark shade of the same hue.
