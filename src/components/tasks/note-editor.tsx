@@ -73,7 +73,13 @@ export function NoteEditor({ value, onChange, onSubmit, placeholder, className, 
           syntaxHighlighting(highlight),
           EditorView.lineWrapping,
           placeholderExt(placeholder ?? ""),
-          EditorView.contentAttributes.of({ ...(aria.id ? { id: aria.id } : {}), "aria-label": aria["aria-label"] ?? "Note", "aria-multiline": "true" }),
+          EditorView.contentAttributes.of({
+            ...(aria.id ? { id: aria.id } : {}),
+            "aria-label": aria["aria-label"] ?? "Note",
+            "aria-multiline": "true",
+            // The caret glides from place to place as in the Telegram message box (src/lib/caret-glide.ts).
+            "data-fast-caret-glide": "",
+          }),
           theme,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) handlers.current.onChange(u.state.doc.toString());

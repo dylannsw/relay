@@ -695,8 +695,7 @@
 }
 .selection-bar .sb-action.sb-chip:hover {
   background-color: color-mix(in srgb, var(--foreground) 14%, transparent);
-}
-.selection-bar .sb-action:active {
+}.selection-bar .sb-action:active {
   background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 /* The divider between action groups: a plain 2px grey pill, light grey on the light glass, darker on the dark. */
