@@ -197,6 +197,14 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
 - **Fixed gap:** opening a conversation while a reply is streaming used to show only the text from
   that point. The live view now keeps the text as it arrives.
 
+### Sidebar modes
+
+The Code page used to have its own session list beside the app sidebar, so two sidebars showed at
+once. Now a **Relay / Code** switch sits above Settings. Code swaps the sidebar's contents for the
+projects and their sessions and opens the Code page, which shows only the conversation; Relay goes
+back to the page you were on. The Code tab carries the count of sessions waiting for you, and is the
+last Ctrl+Tab stop. The open session lives in the agent store (`selectedId`) so both halves share it.
+
 ### Conversations from the Claude app
 
 Local Claude Code sessions from the Claude app (or the CLI) are saved by Claude Code in

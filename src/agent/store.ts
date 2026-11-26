@@ -15,9 +15,11 @@ export interface AgentState {
   error: string | null;
   /** Conversations loaded so far, by session id, in order. */
   items: Record<string, AgentItem[]>;
+  /** The conversation open on the Code page, picked in the sidebar's Code mode. */
+  selectedId: string | null;
 }
 
-let state: AgentState = { cli: null, projects: [], sessions: [], loaded: false, error: null, items: {} };
+let state: AgentState = { cli: null, projects: [], sessions: [], loaded: false, error: null, items: {}, selectedId: null };
 const listeners = new Set<() => void>();
 let started = false;
 
@@ -141,9 +143,13 @@ export async function removeProject(id: string) {
   set({ projects: state.projects.filter((p) => p.id !== id), sessions: state.sessions.filter((s) => s.projectId !== id) });
 }
 
+export function selectSession(id: string | null) {
+  if (state.selectedId !== id) set({ selectedId: id });
+}
+
 export async function newSession(projectId: string, mode: AgentMode, plan: boolean): Promise<AgentSession> {
   const s = await api.agent.newSession(projectId, mode, plan);
-  set({ items: { ...state.items, [s.id]: [] } });
+  set({ items: { ...state.items, [s.id]: [] }, selectedId: s.id });
   upsertSession(s);
   return s;
 }
@@ -155,7 +161,11 @@ export async function setMode(sessionId: string, mode: AgentMode, plan: boolean)
 export async function deleteSession(sessionId: string) {
   await api.agent.deleteSession(sessionId);
   const { [sessionId]: _, ...items } = state.items;
-  set({ sessions: state.sessions.filter((s) => s.id !== sessionId), items });
+  set({
+    sessions: state.sessions.filter((s) => s.id !== sessionId),
+    items,
+    selectedId: state.selectedId === sessionId ? null : state.selectedId,
+  });
 }
 
 /** Sessions with a request waiting for you, for the sidebar badge. */

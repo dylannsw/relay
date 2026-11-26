@@ -51,6 +51,10 @@ import { useTasks } from "@/tasks/store";
 import { useTodayEvents } from "@/calendar/events";
 import { unreadChats, useTelegram } from "@/telegram/store";
 import { startAgent, useAgent, waitingSessions } from "@/agent/store";
+import { CodeSidebarItems } from "@/components/code/code-sidebar";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LayoutGroup, motion } from "motion/react";
+import { glide } from "@/lib/motion";
 
 /**
  * Home, or the Tasks list (optionally filtered to a section). Mail: all inboxes and groups show
@@ -159,10 +163,13 @@ const stop = (v: View) => ({ "data-sidebar-stop": JSON.stringify(v) });
  * The sidebar's stops, top to bottom, read from the rendered sidebar so Ctrl+Tab always follows
  * its order. Before the sidebar has rendered, falls back to the pages and accounts.
  */
+let lastStops: View[] = [];
 function sidebarViews(accounts: Account[]): View[] {
   const marked = [...document.querySelectorAll<HTMLElement>("[data-sidebar-stop]")]
     .map((el) => JSON.parse(el.dataset.sidebarStop!) as View);
-  if (marked.length) return marked;
+  // In Code mode only the Code tab is left: step on through Relay's items as they were last shown.
+  if (marked.length > 1) lastStops = marked;
+  if (lastStops.length) return lastStops;
   return [
     { kind: "home" },
     { kind: "tasks" },
@@ -305,9 +312,6 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   const t = useTasks();
   const open = t.status === "ready" ? t.tasks.length : 0;
   const today = useTodayEvents().length;
-  // Code: sessions with an approval, question or plan waiting for you.
-  const waiting = waitingSessions(useAgent());
-  useEffect(startAgent, []);
   return (
     <>
       <SidebarMenuItem>
@@ -356,18 +360,6 @@ function PageItems({ view, onView }: { view: View; onView: (v: View) => void }) 
           <IconBookmark />
           <span>Bookmarks</span>
         </SidebarMenuButton>
-      </SidebarMenuItem>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          isActive={view.kind === "code"}
-          {...stop({ kind: "code" })}
-          onClick={() => onView({ kind: "code" })}
-          className="[--sidebar-icon-active:var(--home)]"
-        >
-          <IconTerminal2 />
-          <span>Code</span>
-        </SidebarMenuButton>
-        {waiting > 0 && <SidebarMenuBadge>{waiting}</SidebarMenuBadge>}
       </SidebarMenuItem>
     </>
   );
@@ -475,6 +467,59 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
   );
 }
 
+/**
+ * Relay or Code, above Settings: which the sidebar shows. Code shows your projects and sessions and
+ * opens the Code page; Relay goes back to the page you were on before. The Code tab counts the
+ * sessions waiting for you, so a question or approval shows from anywhere.
+ */
+function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void }) {
+  const coding = view.kind === "code";
+  const lastRelay = useRef<View>(coding ? { kind: "home" } : view);
+  if (!coding) lastRelay.current = view;
+  const waiting = waitingSessions(useAgent());
+  useEffect(startAgent, []);
+  const modes = [
+    { id: "relay", label: "Relay", icon: IconSmartHome },
+    { id: "code", label: "Code", icon: IconTerminal2 },
+  ] as const;
+  return (
+    <Tabs
+      value={coding ? "code" : "relay"}
+      onValueChange={(m) => onView(m === "code" ? { kind: "code" } : lastRelay.current)}
+    >
+      <LayoutGroup id="sidebar-mode">
+        <TabsList className="w-full">
+          {modes.map((m) => (
+            <TabsTrigger
+              key={m.id}
+              value={m.id}
+              {...(m.id === "code" && stop({ kind: "code" }))}
+              className="data-active:bg-transparent data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent"
+            >
+              {(m.id === "code") === coding && (
+                <motion.span
+                  layoutId="pill"
+                  transition={glide}
+                  className="absolute inset-0 rounded-[inherit] corner-smooth bg-background smooth-shadow-ring-xs dark:bg-input/40"
+                />
+              )}
+              <span className="relative flex items-center gap-1.5">
+                <m.icon className="size-4" />
+                {m.label}
+                {m.id === "code" && waiting > 0 && (
+                  <span className="min-w-4 rounded-full bg-star px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">
+                    {waiting}
+                  </span>
+                )}
+              </span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </LayoutGroup>
+    </Tabs>
+  );
+}
+
 export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, draftCounts, search, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = sortedLabels(accounts);
@@ -485,6 +530,12 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
       <SidebarContent className="hover-pill-host relative isolate">
         <SidebarHoverPill />
         {search && <SidebarGroup className={cn(GUTTER, "pb-0")}>{search}</SidebarGroup>}
+        {view.kind === "code" ? (
+          <div key="code" className="animate-in fade-in duration-200">
+            <CodeSidebarItems />
+          </div>
+        ) : (
+        <div key="relay" className="animate-in fade-in duration-200">
         <SidebarGroup className={GUTTER}>
           <SidebarGroupLabel>Overview</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -566,9 +617,12 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+        </div>
+        )}
       </SidebarContent>
 
       <SidebarFooter className={GUTTER}>
+        <ModeSwitch view={view} onView={onView} />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onOpenSettings}>
