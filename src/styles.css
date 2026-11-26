@@ -135,6 +135,8 @@
     /* Named radii that sit outside that scale on purpose: a chat bubble, and the composer's
        tray with the field inside it (concentric: the inner radius plus the 6px gap). */
     --radius-bubble: var(--bubble-radius);
+    /* A stacked bubble's corners where it touches the one above or below it (sender's side only). */
+    --radius-bubble-tight: var(--bubble-radius-tight);
     --radius-tray: 1.125rem;
     --radius-tray-inner: 0.875rem;
     /* shadow-lift: the short, firm shadow under something picked out of the page (a selected event). */
@@ -220,6 +222,9 @@
     --bubble-out-link: var(--link);
     --bubble-out-mention: var(--mention);
     --bubble-radius: 0.625rem;
+    --bubble-radius-tight: 0.25rem;
+    /* Dark only: a faint top-lit wash over theirs. */
+    --bubble-sheen: none;
     /* A reaction badge on a bubble's corner, and yours (picked out like a selected row). */
     --reaction: color-mix(in srgb, var(--foreground) 9%, var(--background));
     --reaction-mine: var(--selected);
@@ -312,18 +317,21 @@
     --tint-active: color-mix(in oklab, var(--foreground) 16%, transparent);
     --border-strong: color-mix(in oklab, var(--foreground) 15%, transparent);
     --field-focus: rgb(255 255 255 / 20%);
-    /* Solid, borderless bubbles: a raised grey for theirs, and yours in your accent colour with its
-       own text colour (the same pair as a primary button). The 14px corner is the message
-       field's own. */
-    --bubble: #262626;
-    --bubble-border: var(--bubble);
+    /* Theirs: a dark grey a step off the page, lit from above (a faint wash, lighter at the top) and
+       framed in a hairline just lighter than its fill. Yours: your accent colour with its own text
+       colour (the same pair as a primary button), framed in a rim of the accent lifted toward white.
+       The 14px corner is the message field's own. */
+    --bubble: #1e1e1e;
+    --bubble-border: color-mix(in srgb, #fff 6%, var(--bubble));
+    --bubble-sheen: linear-gradient(rgb(255 255 255 / 2%), rgb(0 0 0 / 10%));
     --bubble-out: var(--primary);
-    --bubble-out-border: var(--bubble-out);
+    --bubble-out-border: color-mix(in oklab, var(--bubble-out) 80%, #fff);
     --bubble-out-foreground: var(--primary-foreground);
     --bubble-out-muted: color-mix(in srgb, var(--primary-foreground) 78%, transparent);
     --bubble-out-link: var(--primary-foreground);
     --bubble-out-mention: var(--primary-foreground);
     --bubble-radius: 0.875rem;
+    --bubble-radius-tight: 0.375rem;
     /* A reply quoted in your bubble: a wash of the bubble's text colour over it, with that text colour. */
     --quote-out: color-mix(in srgb, var(--primary-foreground) 16%, transparent);
     --quote-out-foreground: var(--primary-foreground);
@@ -528,6 +536,11 @@
     box-shadow: inset 0 0 0 1px var(--card-highlight);
     pointer-events: none;
   }
+}
+
+/* Their chat bubble: the Dark theme's top-lit wash over its fill (none in Light). */
+.bubble-in {
+  background-image: var(--bubble-sheen);
 }
 
 /* Your own chat bubble: the colours its text, links and tags take inside it. */
