@@ -12,9 +12,9 @@ export interface Accent {
 }
 
 export const ACCENTS: Accent[] = [
-  // A sky blue, the same in both themes: deepened just enough from #54b7f5 that white text on it
-  // clears MIN_WHITE_CONTRAST (2.34:1), so labels stay white. A brighter dark-mode step would not.
-  { id: "blue", label: "Blue", light: "#4fb2f0", dark: "#4fb2f0" },
+  // A sky blue, the same in both themes: #54b7f5 deepened (same hue) until white text on it reaches
+  // 3.5:1, so message text in your bubbles stays readable. Brightening it for dark mode would undo that.
+  { id: "blue", label: "Blue", light: "#2690cc", dark: "#2690cc" },
   { id: "graphite", label: "Dark gray", light: "#3f3f46", dark: "#6b6b74" },
 ];
 

@@ -152,7 +152,7 @@
     --smooth-ring-color: rgba(0, 0, 0, 0.05);
     /* Relay's accent: the logo blue. Filled buttons, checked boxes, links and unread dots.
        The fallback is the default accent, ACCENTS[0] in src/appearance.ts; keep the two in step. */
-    --brand: var(--accent-light, #4fb2f0);
+    --brand: var(--accent-light, #2690cc);
     /* Text on the accent: white, or near-black when a light custom colour needs it. */
     --brand-foreground: var(--accent-light-fg, oklch(0.985 0 0));
     --background: oklch(1 0 0);
@@ -272,7 +272,7 @@
 .mixed {
     color-scheme: dark;
     /* A touch brighter so filled controls stand out on dark surfaces. */
-    --brand: var(--accent-dark, #4fb2f0);
+    --brand: var(--accent-dark, #2690cc);
     --brand-foreground: var(--accent-dark-fg, oklch(0.985 0 0));
     /* Neutral greys, darkest to lightest: the sidebar (#0c0c0c); the frame with its title bar,
        page header and page (#111); Tasks' columns (#151515); cards and list rows (#1f1f1f), a
