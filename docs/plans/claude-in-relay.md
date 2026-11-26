@@ -202,7 +202,7 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
 The Code page used to have its own session list beside the app sidebar, so two sidebars showed at
 once. Now a **Hub / Code** switch sits at the top of the sidebar, where the search field was (search moved to the middle of the window strip). Code swaps the sidebar's contents for the
 projects and their sessions and opens the Code page, which shows only the conversation; Hub goes
-back to the page you were on. A softly glowing dot on the Code tab shows a session is waiting for you, and the tab is the
+back to the page you were on. A softly glowing dot in the accent colour on the Code tab shows a session is waiting for you, and the tab is the
 first Ctrl+Tab stop (it sits above Home). The open session lives in the agent store (`selectedId`) so both halves share it.
 
 ### Conversations from the Claude app
