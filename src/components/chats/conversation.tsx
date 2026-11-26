@@ -1620,11 +1620,13 @@ function Bubble(props: {
                 onClick={() => m.reply && props.onJump(m.reply.id)}
                 // 5px from the bubble's edge on three sides (its corners 9px, the bubble's 14 less that gap), padded like the
                 // bubble's own text (12px sides, 9px top and bottom), and 9px above the text (the bubble's bottom padding).
-                // At the top of a stacked bubble its sender-side top corner tightens with the bubble's (6px), to 3px.
+                // At the top of a stacked bubble its sender-side top corner tightens with the bubble's (6px less the
+                // 5px gap; 3px so it doesn't read as square), and so does the corner below it: the quote keeps one
+                // flat side toward the sender, like a stacked bubble, rather than a single odd corner.
                 className={cn(
                   "-mx-[7px] mb-[9px] flex w-[calc(100%+14px)] min-w-0 flex-col rounded-[9px] border px-3 py-[9px] text-left text-sm leading-snug",
                   m.forwardedFrom === null ? "-mt-[4px]" : "mt-0.5",
-                  m.forwardedFrom === null && props.joinTop && (out ? "rounded-tr-[3px]" : "rounded-tl-[3px]"),
+                  m.forwardedFrom === null && props.joinTop && (out ? "rounded-r-[3px]" : "rounded-l-[3px]"),
                   out ? quoteOut : "bg-tint-hover",
                 )}
               >

@@ -32,7 +32,7 @@ const chat = ({ last, ...c }: Omit<Partial<TgChat>, "last"> & Pick<TgChat, "id" 
 });
 
 const chats: TgChat[] = [
-  chat({ id: "101", name: "Maya Lim", kind: "user", presence: { kind: "online", at: Math.floor((now + 60 * min) / 1000) }, unread: 2, folders: [2], last: { text: "Can you send me the deck before standup?", outgoing: false, sender: null, date: now - 4 * min } }),
+  chat({ id: "101", name: "Maya Lim", kind: "user", presence: { kind: "online", at: Math.floor((now + 60 * min) / 1000) }, unread: 1, folders: [2], last: { text: "Can you send me the deck before standup?", outgoing: false, sender: null, date: now - 4 * min } }),
   chat({ id: "-1001", name: "Product Interns 2026", kind: "group", unread: 14, mentions: 1, folders: [2], last: { text: "@you can you take the demo on Friday?", outgoing: false, sender: "Jun", date: now - 22 * min } }),
   chat({ id: "102", name: "Daniel Ong", kind: "user", presence: { kind: "offline", at: Math.floor((now - 25 * min) / 1000) }, folders: [3], pinned: true, last: { text: "Sounds good, see you at 3", outgoing: true, sender: null, date: now - 1.5 * hr } }),
   chat({ id: "-1002", name: "Ops Team", kind: "group", unread: 3, muted: true, folders: [3], last: { text: "Photo · Rota for next week", outgoing: false, sender: "Priya", date: now - 3 * hr } }),
