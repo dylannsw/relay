@@ -164,7 +164,7 @@ let lastStops: View[] = [];
 function sidebarViews(accounts: Account[]): View[] {
   const marked = [...document.querySelectorAll<HTMLElement>("[data-sidebar-stop]")]
     .map((el) => JSON.parse(el.dataset.sidebarStop!) as View);
-  // In Code mode only the Code tab is left: step on through Relay's items as they were last shown.
+  // In Code mode only the Code tab is left: step on through Hub's items as they were last shown.
   if (marked.length > 1) lastStops = marked;
   if (lastStops.length) return lastStops;
   return [
