@@ -12,8 +12,6 @@ export const cn = createCn({
     classGroups: {
       "font-size": [{ text: ["2xs", "meta", "title"] }],
       rounded: [{ rounded: ["bubble", "tray", "tray-inner"] }],
-      "rounded-l": [{ "rounded-l": ["bubble-tight"] }],
-      "rounded-r": [{ "rounded-r": ["bubble-tight"] }],
       "rounded-tl": [{ "rounded-tl": ["bubble-tight"] }],
       "rounded-tr": [{ "rounded-tr": ["bubble-tight"] }],
       "rounded-br": [{ "rounded-br": ["bubble-tight"] }],
