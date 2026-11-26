@@ -503,9 +503,7 @@ function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void })
               <span className="relative flex items-center gap-1.5">
                 {m.label}
                 {m.id === "code" && waiting > 0 && (
-                  <span className="min-w-4 rounded-full bg-star px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">
-                    {waiting}
-                  </span>
+                  <SidebarCount className="font-normal">{waiting}</SidebarCount>
                 )}
               </span>
             </TabsTrigger>
