@@ -12,9 +12,10 @@ export interface Accent {
 }
 
 export const ACCENTS: Accent[] = [
-  // A sky blue, the same in both themes: #54b7f5 deepened (same hue) until white text on it reaches
-  // 3.5:1, so message text in your bubbles stays readable. Brightening it for dark mode would undo that.
-  { id: "blue", label: "Blue", light: "#2690cc", dark: "#2690cc" },
+  // A sky blue, the same in both themes: #54b7f5 deepened (same hue) until white text on the reply
+  // quoted in your bubble (this blue lightened 16%) reaches 2.3:1; on the bubble itself it's 2.77:1.
+  // Brightening it for dark mode would undo that.
+  { id: "blue", label: "Blue", light: "#3ea4e0", dark: "#3ea4e0" },
   { id: "graphite", label: "Dark gray", light: "#3f3f46", dark: "#6b6b74" },
 ];
 
