@@ -16,7 +16,7 @@ export const SELECTION_BAR_ROOM = 86;
  * It wears the menus' frosted glass (.menu-glass) and a grey pill divider, so it matches the right-click
  * menu in every theme; its chip and hover tints are in .selection-bar in styles.css.
  */
-export function SelectionBar({ open, label, ariaLabel = "Selection actions", onClear, children, placement = "floating", className }: {
+export function SelectionBar({ open, label, ariaLabel = "Selection actions", onClear, children, placement = "floating", className, fade }: {
   open: boolean;
   /** "3 selected", "2 of 5 selected"… Leave it out for a bar that isn't about a selection (no count chip). */
   label?: ReactNode;
@@ -29,6 +29,8 @@ export function SelectionBar({ open, label, ariaLabel = "Selection actions", onC
   placement?: "floating" | "top" | "inline";
   /** Extra classes for the bar's positioning wrapper, e.g. a different `bottom-*` lift. */
   className?: string;
+  /** Comes and goes with a plain fade, no slide or scale (the topics bar). */
+  fade?: boolean;
 }) {
   // Keep the last label while the bar leaves, so it doesn't read "0 selected" on its way out.
   const shown = useRef<ReactNode>(label);
@@ -44,9 +46,13 @@ export function SelectionBar({ open, label, ariaLabel = "Selection actions", onC
             role="toolbar"
             aria-label={ariaLabel}
             className={cn("selection-bar menu-glass pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto no-scrollbar rounded-2xl p-1.5 text-popover-foreground", inline && "my-2")}
-            initial={{ opacity: 0, y: lift, scale: inline ? 1 : 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1, transition: { type: "spring", duration: 0.35, bounce: 0.25, opacity: { duration: 0.15 } } }}
-            exit={{ opacity: 0, y: inline ? -4 : lift * 0.6, scale: inline ? 1 : 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
+            initial={fade ? { opacity: 0 } : { opacity: 0, y: lift, scale: inline ? 1 : 0.96 }}
+            animate={
+              fade
+                ? { opacity: 1, transition: { duration: 0.2, ease: "easeOut" } }
+                : { opacity: 1, y: 0, scale: 1, transition: { type: "spring", duration: 0.35, bounce: 0.25, opacity: { duration: 0.15 } } }
+            }
+            exit={fade ? { opacity: 0, transition: { duration: 0.14, ease: "easeIn" } } : { opacity: 0, y: inline ? -4 : lift * 0.6, scale: inline ? 1 : 0.97, transition: { duration: 0.14, ease: "easeIn" } }}
             // Clicks here mustn't reach the page behind (which clears the selection on empty space).
             onClick={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}

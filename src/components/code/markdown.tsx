@@ -22,8 +22,16 @@ const components: Components = {
       {children}
     </a>
   ),
-  ul: ({ node: _, ...p }) => <ul className="my-2 list-disc space-y-1 pl-5" {...p} />,
-  ol: ({ node: _, ...p }) => <ol className="my-2 list-decimal space-y-1 pl-5" {...p} />,
+  // GFM gives task lists their own classes (contains-task-list, task-list-item), so ours are merged in,
+  // not replaced. A task item shows its checkbox where the bullet would be, as Obsidian does.
+  ul: ({ node: _, className, ...p }) => <ul className={cn("my-2 list-disc space-y-1 pl-5", className)} {...p} />,
+  ol: ({ node: _, className, ...p }) => <ol className={cn("my-2 list-decimal space-y-1 pl-5", className)} {...p} />,
+  li: ({ node: _, className, ...p }) => (
+    <li className={cn(className, className?.includes("task-list-item") && "-ml-5 list-none [&>ul]:ml-5")} {...p} />
+  ),
+  input: ({ node: _, className, ...p }) => (
+    <input className={cn("mr-1.5 size-3.5 translate-y-0.5 accent-primary", className)} {...p} />
+  ),
   h1: ({ node: _, ...p }) => <h3 className="mt-4 mb-2 text-base font-semibold first:mt-0" {...p} />,
   h2: ({ node: _, ...p }) => <h3 className="mt-4 mb-2 text-base font-semibold first:mt-0" {...p} />,
   h3: ({ node: _, ...p }) => <h4 className="mt-3 mb-1.5 font-semibold first:mt-0" {...p} />,

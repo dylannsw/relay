@@ -7,9 +7,9 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/api";
 import { editTask } from "@/tasks/store";
+import { NoteEditor } from "./note-editor";
 import { sectionKey, type ParsedTask, type TaskStatus } from "@/tasks/tick";
 import { STATUSES, STATUS_META, StatusIcon } from "@/tasks/status";
 
@@ -18,6 +18,7 @@ const NEW_SECTION = "\u0000new";
 /**
  * A task's name, section, board status and note, like Add Task / Manage Task in Tick's Raycast extension.
  * Moving takes the task and its note to the end of the other section; an empty note removes it.
+ * The note is Markdown, styled as it's typed (as in Raycast) and saved exactly as written.
  */
 export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
   task: ParsedTask;
@@ -45,7 +46,13 @@ export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
     try {
       const moved = sectionKey(target) !== sectionKey(task.section);
       const landed = await editTask(task, { text, section: target, note, status });
-      if (moved) toast.success(`Moved to ${landed ?? target}`);
+      // Say what was saved: a move, else the note, else the rest.
+      const before = task.note.trim();
+      const after = note.trim();
+      const description = text.trim();
+      if (moved) toast.success(`Moved to ${landed ?? target}`, { description });
+      else if (after !== before) toast.success(!after ? "Note removed" : !before ? "Note added" : "Note saved", { description });
+      else if (description !== task.text.trim() || status !== task.status) toast.success("Task saved", { description });
       onClose();
     } catch (e) {
       toast.error(errorText(e));
@@ -118,19 +125,14 @@ export function TaskDialog({ task, sections, onClose, onDelete, onComplete }: {
             </div>
             <Field>
               <FieldLabel htmlFor="task-note">Note</FieldLabel>
-              <Textarea
+              <NoteEditor
                 id="task-note"
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Write anything. Leave empty to remove notes."
-                className="min-h-48"
-                onKeyDown={(e) => {
-                  // Ctrl+Enter saves from the note too (Enter adds a line there).
-                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    void save();
-                  }
-                }}
+                onChange={setNote}
+                // Ctrl+Enter saves from the note too (Enter adds a line there).
+                onSubmit={() => void save()}
+                placeholder="Write anything, in Markdown. Leave empty to remove notes."
+                className="max-h-96 min-h-48"
               />
             </Field>
           </FieldGroup>
