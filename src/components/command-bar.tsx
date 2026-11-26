@@ -627,14 +627,12 @@ export function CommandBar(p: Props) {
 
   return (
     <>
-      {/* Sidebar trigger, above Home, showing the applied search when there is one. Its 8px left
-          padding centres the search icon on the rows' icons below; 7px on the right ends the
-          shortcut on the counts' right edge. */}
+      {/* The trigger, centred in the window strip, showing the applied search when there is one. */}
       <div className="relative w-full">
         <button
           type="button"
           onClick={() => p.onOpenChange(true)}
-          className="flex h-9.5 w-full items-center gap-2 rounded-lg border bg-background pr-[7px] pl-2 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-border-strong focus-visible:border-field-focus"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border bg-background pr-[5px] pl-2.5 text-sm text-muted-foreground/70 transition-[border-color,box-shadow] duration-200 ease-(--ease-out-soft) outline-none hover:border-border-strong focus-visible:border-field-focus"
         >
           <IconSearch className="size-4 shrink-0" />
           <span className="flex-1 truncate text-left">

@@ -818,31 +818,6 @@ export default function App() {
           onReconnect={addAccount}
           onOpenSettings={() => openSettings()}
           draftCounts={draftCounts}
-          search={
-            <CommandBar
-              open={commandOpen}
-              onOpenChange={(open) => open ? openCommandBar() : setCommandOpen(false)}
-              mode={commandMode}
-              onModeChange={setCommandMode}
-              search={search}
-              onSearch={setSearch}
-              scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
-              canFilterMail={view.kind !== "bookmarks"}
-              searchMessages={searchMessages}
-              accounts={accounts}
-              accountById={accountById}
-              onOpenMessage={(m) => void openMessage(m)}
-              onNavigate={(v) => {
-                setView(v);
-                clearSelection();
-              }}
-              onCompose={() => startCompose("new")}
-              onSync={() => void syncNow()}
-              onSettings={openSettings}
-              onFilter={setFilter}
-              onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
-            />
-          }
         />
         <SidebarInset
           className={cn(
@@ -852,7 +827,33 @@ export default function App() {
             view.kind !== "chats" && "bg-canvas",
           )}
         >
-          <WindowStrip />
+          <WindowStrip
+            center={
+              <CommandBar
+                open={commandOpen}
+                onOpenChange={(open) => open ? openCommandBar() : setCommandOpen(false)}
+                mode={commandMode}
+                onModeChange={setCommandMode}
+                search={search}
+                onSearch={setSearch}
+                scopeLabel={view.kind === "account" ? `${folderLabel(view.folder)} (${viewAccount?.email ?? ""})` : viewTitle}
+                canFilterMail={view.kind !== "bookmarks"}
+                searchMessages={searchMessages}
+                accounts={accounts}
+                accountById={accountById}
+                onOpenMessage={(m) => void openMessage(m)}
+                onNavigate={(v) => {
+                  setView(v);
+                  clearSelection();
+                }}
+                onCompose={() => startCompose("new")}
+                onSync={() => void syncNow()}
+                onSettings={openSettings}
+                onFilter={setFilter}
+                onTaskAdded={(origin) => windowHalo.current?.fire(origin)}
+              />
+            }
+          />
           {/* The view takes what the strip leaves; views size themselves h-full against this box. */}
           <div className="relative flex min-h-0 flex-1 flex-col">
           {view.kind === "home" ? (

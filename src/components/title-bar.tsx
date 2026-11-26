@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IconArrowBarToDown, IconMaximize, IconMinimize, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -24,8 +24,8 @@ export function SidebarBrand() {
 }
 
 /**
- * The strip across the top of the frame: the sidebar toggle on the left, the window controls on
- * the right, the rest a drag region (Tauri only honours `data-tauri-drag-region` on the element
+ * The strip across the top of the frame: the sidebar toggle on the left, the search field in the
+ * middle, the window controls on the right, the rest a drag region (Tauri only honours `data-tauri-drag-region` on the element
  * that was clicked, so the buttons stay clickable; double-click maximizes). An etched line, the
  * same groove as PageHeader's, separates it from the page's own header. Deliberately not layered
  * above dialogs: an open dialog's overlay dims it like the rest of the window.
@@ -35,18 +35,20 @@ export function SidebarBrand() {
  * title's left edge, the close icon with the right edge of the header's last button (Compose).
  * Their 28px tiles overhang the 18px icons by 5px, hence 11px of padding.
  */
-export function WindowStrip() {
+export function WindowStrip({ center }: { center?: ReactNode }) {
   return (
     <div
       data-tauri-drag-region
       className={cn(
-        "flex h-(--window-strip-height) shrink-0 items-center justify-between px-[11px] select-none",
+        "relative flex h-(--window-strip-height) shrink-0 items-center justify-between px-[11px] select-none",
         "shadow-[inset_0_-1px_0_var(--card-highlight),inset_0_-2px_0_var(--border)] dark:shadow-[inset_0_-1px_0_var(--border)]",
       )}
     >
       <SidebarTrigger
         className={cn(ZEN_TILE, "hover:bg-black/7 dark:hover:bg-white/10 dark:hover:text-white")}
       />
+      {/* The search field, centred on the frame whatever the two ends measure. */}
+      {center && <div className="absolute top-1/2 left-1/2 w-[min(26rem,50%)] -translate-1/2">{center}</div>}
       <WindowControls />
     </div>
   );

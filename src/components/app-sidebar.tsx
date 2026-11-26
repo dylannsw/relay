@@ -1,5 +1,5 @@
 import { SidebarBrand } from "@/components/title-bar";
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconBriefcase,
@@ -10,7 +10,6 @@ import {
   IconUsers,
   IconBookmark,
   IconChecklist,
-  IconTerminal2,
   IconChevronRight,
   IconSchool,
   IconInbox,
@@ -111,8 +110,6 @@ interface Props {
   onOpenSettings: () => void;
   /** Saved drafts per account id. */
   draftCounts?: Record<string, number>;
-  /** The search bar (the command bar's trigger), above Home. */
-  search?: ReactNode;
   className?: string;
 }
 
@@ -468,7 +465,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
 }
 
 /**
- * Relay or Code, above Settings: which the sidebar shows. Code shows your projects and sessions and
+ * Relay or Code, at the top of the sidebar: which the sidebar shows. Code shows your projects and sessions and
  * opens the Code page; Relay goes back to the page you were on before. The Code tab counts the
  * sessions waiting for you, so a question or approval shows from anywhere.
  */
@@ -479,8 +476,8 @@ function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void })
   const waiting = waitingSessions(useAgent());
   useEffect(startAgent, []);
   const modes = [
-    { id: "relay", label: "Relay", icon: IconSmartHome },
-    { id: "code", label: "Code", icon: IconTerminal2 },
+    { id: "relay", label: "Relay" },
+    { id: "code", label: "Code" },
   ] as const;
   return (
     <Tabs
@@ -504,7 +501,6 @@ function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void })
                 />
               )}
               <span className="relative flex items-center gap-1.5">
-                <m.icon className="size-4" />
                 {m.label}
                 {m.id === "code" && waiting > 0 && (
                   <span className="min-w-4 rounded-full bg-star px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">
@@ -520,7 +516,7 @@ function ModeSwitch({ view, onView }: { view: View; onView: (v: View) => void })
   );
 }
 
-export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, draftCounts, search, className }: Props) {
+export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings, draftCounts, className }: Props) {
   const totalUnread = accounts.reduce((n, a) => n + a.unreadCount, 0);
   const labels = sortedLabels(accounts);
 
@@ -529,7 +525,9 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
       <SidebarBrand />
       <SidebarContent className="hover-pill-host relative isolate">
         <SidebarHoverPill />
-        {search && <SidebarGroup className={cn(GUTTER, "pb-0")}>{search}</SidebarGroup>}
+        <SidebarGroup className={cn(GUTTER, "pb-0")}>
+          <ModeSwitch view={view} onView={onView} />
+        </SidebarGroup>
         {view.kind === "code" ? (
           <div key="code" className="animate-in fade-in duration-200">
             <CodeSidebarItems />
@@ -622,7 +620,6 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
       </SidebarContent>
 
       <SidebarFooter className={GUTTER}>
-        <ModeSwitch view={view} onView={onView} />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onOpenSettings}>
