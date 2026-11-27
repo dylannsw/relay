@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { quickAddTask } from "@/tasks/quick-add";
+import { useChatZoom, useChatZoomKeys } from "@/telegram/zoom";
+import { CHAT_WIDTHS, useChatWidth } from "@/telegram/chat-width";
 import { toast } from "sonner";
 import {
   IconAlertCircle,
@@ -519,6 +521,11 @@ export function Conversation({ chat }: { chat: TgChat }) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  const chatWidth = useChatWidth();
+
+  // Ctrl+= / Ctrl+- zoom the message bubbles (Ctrl+0 resets), in every chat.
+  useChatZoomKeys();
+
   // Coming back to the window reads what arrived while you were away (if you're at the bottom).
   useEffect(() => {
     const onFocus = () => stickToBottom.current && markRead();
@@ -832,7 +839,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
         </div>
       </PageHeader>
 
-      <div className="@container/chat relative min-h-0 flex-1">
+      <div className="@container/chat relative min-h-0 flex-1" style={{ "--chat-max": `${CHAT_WIDTHS[chatWidth].px}px` } as CSSProperties}>
         {chat.forum && (
           <TopicsBar
             topics={topics}
@@ -844,7 +851,7 @@ export function Conversation({ chat }: { chat: TgChat }) {
           ref={scroller}
           onScroll={onScroll}
           style={{ overflowAnchor: "none", paddingTop: messages ? undefined : topInset }}
-          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 @3xl/chat:px-[100px]"
+          className="@container absolute inset-0 overflow-y-auto no-scrollbar overscroll-contain px-4 @3xl/chat:px-[max(100px,calc((100cqw_-_var(--chat-max))/2))]"
         >
           {error ? (
             <p className="mt-10 text-center text-sm text-destructive">{error}</p>
@@ -1046,7 +1053,9 @@ function UnreadLine() {
   return (
     <div role="separator" data-unread-line className="pt-5 pb-1">
       <div className="relative flex justify-center">
-        <span className="absolute top-1/2 left-1/2 h-px w-[calc(100cqw+2rem)] -translate-1/2 bg-primary/40 @3xl/chat:w-[calc(100cqw+200px)]" />
+        {/* Runs the chat's full width, past the gutters: a spread shadow, clipped to 1px tall, which
+            (unlike a wider element) can never make the list scroll sideways. */}
+        <span className="absolute inset-x-0 top-1/2 h-px bg-primary/40 shadow-[0_0_0_100vmax] shadow-primary/40 [clip-path:inset(0_-100vmax)]" />
         <span className="relative rounded-full bg-primary px-3 py-1 text-xs leading-none font-medium text-primary-foreground">Unread messages</span>
       </div>
     </div>
@@ -1501,6 +1510,9 @@ function Bubble(props: {
   onFocusComposer: () => void;
 }) {
   const { chat, m, first, last } = props;
+  // Ctrl+= / Ctrl+- (in Conversation) zoom the bubbles only, not the rest of the chat.
+  const zoom = useChatZoom();
+  const zoomStyle = zoom === 1 ? undefined : { zoom };
   const out = m.outgoing;
   const failed = m.pending === "failed";
   const read = out && !m.pending && m.id <= chat.readOutbox;
@@ -1562,7 +1574,7 @@ function Bubble(props: {
       <ContextMenu onOpenChange={setMenuOpen}>
         <ContextMenuTrigger asChild>
           {sticker ? (
-            <div data-bubble onDoubleClick={m.pending ? undefined : props.onReply} className={cn("relative flex max-w-[min(78%,40rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]", out ? "origin-right" : "origin-left")}>
+            <div data-bubble style={zoomStyle} onDoubleClick={m.pending ? undefined : props.onReply} className={cn("relative flex max-w-[min(78%,40rem)] min-w-0 flex-col gap-1 text-sm leading-[1.4]", out ? "origin-right" : "origin-left")}>
               {nameLine}
               {(m.forwardedFrom !== null || m.reply) && (
                 <div className={cn("max-w-full min-w-0 self-start rounded-2xl bg-bubble px-3 py-1.5", out && "self-end")}>
@@ -1590,6 +1602,7 @@ function Bubble(props: {
           ) : (
           <div
             data-bubble
+            style={zoomStyle}
             onContextMenu={pickSelection}
             // Double-clicking the text selects a word (as everywhere); only the rest of the bubble replies.
             onDoubleClick={m.pending ? undefined : (e) => !(e.target as HTMLElement).closest("[data-msg-text]") && props.onReply()} className={cn("flex max-w-[min(78%,40rem)] min-w-0 flex-col gap-1", out ? "origin-right items-end" : "origin-left items-start")}>
@@ -1975,8 +1988,9 @@ function Composer(props: {
   return (
     // Floats over the chat's end, so messages scroll up to the bar's edge. Behind its lower half
     // and the gap under it the page shows, so nothing peeks out below the bar. It's 8px wider each
-    // side than the messages (px-2 against their px-4; 92px against 100px once the chat is wide).
-    <div ref={props.boxRef} className="absolute inset-x-0 bottom-0 px-2 pb-3 @3xl/chat:px-[92px]">
+    // side than the messages (px-2 against their px-4; 92px against 100px once the chat is wide),
+    // and like them stops growing past the width picked in Settings > Chats, centred in a wider chat.
+    <div ref={props.boxRef} className="absolute inset-x-0 bottom-0 px-2 pb-3 @3xl/chat:px-[max(92px,calc((100cqw_-_var(--chat-max))/2_-_8px))]">
       <div aria-hidden className="absolute inset-x-0 top-1/2 bottom-0 bg-background" />
       <MentionPicker open={picking} members={matches} active={active} onActive={setActive} onPick={pickMember} onClose={() => trigger && setDismissed(trigger.start)}>
       <ComposerTray>

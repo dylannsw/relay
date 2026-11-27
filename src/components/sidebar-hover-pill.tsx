@@ -3,11 +3,13 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 const ROW = '[data-sidebar="menu-button"], [data-sidebar="menu-sub-button"]';
+const MENU = '[data-sidebar="menu"], [data-sidebar="menu-sub"]';
 
 /**
  * One hover highlight shared by every row in its parent, which slides from row to row instead of
  * each row lighting up on its own. It fades in where the pointer enters, follows it across rows
- * (the gaps between rows keep it where it is) and fades out when the pointer leaves the parent.
+ * (gaps within a menu keep it where it is) and fades out when the pointer leaves the parent
+ * or moves to a sidebar group header.
  *
  * The parent needs `relative isolate`: relative to place the pill, isolate so the pill's -z-10
  * sits behind the rows but above the surface. In the app sidebar the parent also takes
@@ -63,20 +65,28 @@ export function SidebarHoverPill({
       pill.style.opacity = active && el.matches(active) ? "0" : "1";
     };
 
-    const onOver = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return;
-      const el = (e.target as Element).closest<HTMLElement>(rows);
-      if (!el || el === row || !host.contains(el) || el.matches(":disabled, [aria-disabled='true']")) return;
-      place(el, row !== null);
-      row = el;
-    };
     const onLeave = () => {
       pill.style.opacity = "0";
       row = null;
     };
+    const onOver = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || !(e.target instanceof Element)) return;
+      const el = e.target.closest<HTMLElement>(rows);
+      if (!el || !host.contains(el) || el.matches(":disabled, [aria-disabled='true']")) {
+        // Keep the slide across gaps inside the same sidebar menu, but clear it over headers
+        // and their actions. They aren't part of the menu below them.
+        if (rows === ROW && row && (el || e.target.closest(MENU) !== row.closest(MENU))) onLeave();
+        return;
+      }
+      if (el === row) return;
+      place(el, row !== null);
+      row = el;
+    };
+
+    const rowIsVisible = () => row && host.contains(row) && !row.closest("[hidden]");
     // A group opening or closing moves the rows under a still pointer: follow the row once it settles.
     const onSettle = () => {
-      if (row?.isConnected) place(row, true);
+      if (row && rowIsVisible()) place(row, true);
       else onLeave();
     };
     // Selecting the hovered row: once it shows as selected, the pill gives way to its fill.
@@ -137,7 +147,13 @@ export function SidebarHoverPill({
     host.addEventListener("pointerleave", onLeave);
     host.addEventListener("animationend", onSettle);
     host.addEventListener("click", onClick);
+    // A collapse can hide or remove the hovered row without another pointer event or animation.
+    const rowChanges = new MutationObserver(() => {
+      if (row && !rowIsVisible()) onLeave();
+    });
+    rowChanges.observe(host, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
     return () => {
+      rowChanges.disconnect();
       host.removeEventListener("pointerover", onOver);
       host.removeEventListener("pointerleave", onLeave);
       host.removeEventListener("animationend", onSettle);

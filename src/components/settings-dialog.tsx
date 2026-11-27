@@ -13,6 +13,7 @@ import {
   IconFolderOpen,
   IconKey,
   IconMail,
+  IconMessages,
   IconPhoto,
   IconKeyboard,
   IconLogin2,
@@ -106,6 +107,7 @@ import { checkForUpdates, installUpdate, setAutoUpdate, useUpdater } from "@/upd
 import { appIconSrc, useAppIcon } from "@/app-icon";
 import { api, errorText, isTauri } from "@/api";
 import { setStatus as setTelegramStatus, useTelegram } from "@/telegram/store";
+import { CHAT_WIDTHS, setChatWidth, useChatWidth, type ChatWidth } from "@/telegram/chat-width";
 import { relativeTime } from "@/format";
 import {
   FIXED_SHORTCUTS,
@@ -168,6 +170,7 @@ const SECTIONS = [
   { id: "accounts", group: "Accounts", label: "Accounts", icon: IconUsers, note: "Account changes save automatically." },
   { id: "home", group: "Features", label: "Home", icon: IconSmartHome, note: "Home settings save automatically." },
   { id: "mail", group: "Features", label: "Mail", icon: IconMail, note: "Mail settings save automatically." },
+  { id: "chats", group: "Features", label: "Chats", icon: IconMessages, note: "Chat settings apply right away." },
   { id: "calendar", group: "Features", label: "Calendar", icon: CalendarIcon, note: "Calendar settings save automatically." },
   { id: "tasks", group: "Features", label: "Tasks", icon: IconChecklist, note: "Tasks settings save automatically." },
   { id: "bookmarks", group: "Features", label: "Bookmarks", icon: IconBookmark, note: "Bookmark settings save automatically." },
@@ -254,6 +257,10 @@ export function SettingsDialog({ accounts, onClose, onAccountsChanged, onSignIn,
             <TabsContent value="mail">
               <SectionTitle>{SECTIONS.find((x) => x.id === "mail")!.label}</SectionTitle>
               <MailTab />
+            </TabsContent>
+            <TabsContent value="chats">
+              <SectionTitle>{SECTIONS.find((x) => x.id === "chats")!.label}</SectionTitle>
+              <ChatsTab />
             </TabsContent>
             <TabsContent value="connections">
               <SectionTitle>{SECTIONS.find((x) => x.id === "connections")!.label}</SectionTitle>
@@ -1176,6 +1183,24 @@ function MailTab() {
           max={500}
           onCommit={(n) => void commit({ messagesPerAccount: n })}
         />
+      </SettingRow>
+    </div>
+  );
+}
+
+function ChatsTab() {
+  const width = useChatWidth();
+  return (
+    <div className="flex flex-col divide-y">
+      <SettingRow title="Conversation width" description="How wide messages and the message box can grow, in chats and Code sessions. In a wider window they stay centred.">
+        <Select value={width} onValueChange={(v) => setChatWidth(v as ChatWidth)}>
+          <SelectTrigger aria-label="Conversation width"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {(Object.keys(CHAT_WIDTHS) as ChatWidth[]).map((id) => (
+              <SelectItem key={id} value={id}>{CHAT_WIDTHS[id].label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </SettingRow>
     </div>
   );

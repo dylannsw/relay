@@ -1,12 +1,13 @@
 # Plan: Claude Code inside Relay
 
-Status: phase 1 built, history read from Claude Code's files, Code mode in the sidebar. Waiting
-for a check on Windows. Phase 2 next.
+Status: phase 1 built, history read from Claude Code's files, Code mode in the sidebar, sessions
+listed as the Claude app lists them, the conversation drawn with AI Elements. Waiting for a check
+on Windows. Phase 2 next.
 
 ## Progress log
 
-Phase 1 merged into `main` (PR #1) and shipped in v2.1.2. Reading history from Claude Code's files
-and the sidebar's Code mode are on `main` too, not yet in a release.
+Phase 1 merged into `main` (PR #1) and shipped in v2.1.2. Everything since, up to 2026-11-28, ships
+in v2.2.0.
 
 | Date | Done |
 | --- | --- |
@@ -17,16 +18,22 @@ and the sidebar's Code mode are on `main` too, not yet in a release.
 | 2026-11-24 | First run on Windows: the Code page loads and finds Claude Code (2.1.299, older than the 2.1.330 tested here). Nothing beyond that tried yet. |
 | 2026-11-25 | Relay no longer keeps its own copy of conversations: history is read from Claude Code's files for every session, and a watcher picks up changes made in the Claude app or the CLI. See "One source: Claude Code's files". |
 | 2026-11-26 | Code mode in the sidebar: a Hub / Code switch at the top of the sidebar replaces the Code page's own session list, search moved to the middle of the window strip, and a glowing accent dot on the Code tab shows a session waiting for you. See "Sidebar modes". |
+| 2026-11-28 | Sessions listed as the Claude app lists them: read from its own session list, so its archived ones stay out and the CLI's don't show. Projects are found from those sessions. Archive (keeps Claude Code's file) or Delete (removes it) per session or per project, rename in place, folding project rows, and a new session you leave without writing in is dropped. Settings > Chats: conversation width for chats and Code. |
+| 2026-11-28 | The conversation drawn with shadcn AI Elements (Conversation, Message, Response/Streamdown, Tool, CodeBlock, Confirmation, Shimmer). Back-to-back tool calls fold into one row ("Edited 3 files, ran 2 commands"), paths show relative to the project, MCP tools get plain names. Your messages use the Telegram chat's grey bubble. Ctrl+= / Ctrl+- zoom, shared with Telegram chats. The notes above the composer about where a session started are gone. See "Conversation UI". |
 
 ### Where to pick up
 
-1. **Windows check** (list under "To check on Windows" below). Before it, on the PC: pull the
-   branch, `npm install` (new packages: `react-markdown`, `remark-gfm`), and `claude update`, since
-   2.1.299 may lack options Relay uses. Fix whatever it turns up first. Also try the Hub / Code
-   switch there: dragging the window either side of the search field, and Ctrl+Tab through Code.
-2. **Then phase 2:** usage meter, "Always allow" on approvals, model menu and slash-command picker,
+1. **Windows check** (list under "To check on Windows" below). Before it, on the PC: pull,
+   `npm install` (new packages: `ai`, `streamdown`, `@streamdown/code`, `shiki`,
+   `use-stick-to-bottom`), and `claude update`, since 2.1.299 may lack options Relay uses. Fix
+   whatever it turns up first. Also try the Hub / Code switch there: dragging the window either
+   side of the search field, and Ctrl+Tab through Code.
+2. **Restyle the AI Elements** to Relay's rules, as was done for `ui/`: tool rows and code blocks
+   first (card surface, 10px / 7px radii, the status colours on tokens), then one code theme for
+   `CodeBlock` and Streamdown, then Streamdown's lists and tables.
+3. **Then phase 2:** usage meter, "Always allow" on approvals, model menu and slash-command picker,
    subagent activity in the Agent card.
-3. **Open questions to settle on Windows:**
+4. **Open questions to settle on Windows:**
    - Does the Claude app write `"entrypoint"` containing "desktop"? If not, its conversations
      are labeled "Claude Code" instead of "Claude app" (`scan_transcript` in
      `src-tauri/src/agent/claude.rs`).
@@ -221,22 +228,53 @@ once. Now a **Hub / Code** switch sits at the top of the sidebar, where the sear
 
 Local Claude Code sessions from the Claude app (or the CLI) are saved by Claude Code in
 `%USERPROFILE%\.claude\projects\<project path with every non-letter/digit as ->\<id>.jsonl`.
-Relay lists them under the matching project, labeled with the app they came from:
+Relay lists the ones the Claude app lists, under their project:
 
-- **Listing** reads only the lines that matter (titles from `ai-title` / `custom-title`, else the
-  first message) and caches each file by its modified time and size.
+- **Listing** (changed 2026-11-28) follows the Claude app's own session list,
+  `claude-code-sessions\<account>\<org>\local_<id>.json` in its data folder (`Claude-Data\<package>`
+  in LOCALAPPDATA for the Store build, `Claude` in APPDATA otherwise). Each record gives the Claude
+  Code id, folder, title and whether it's archived. Archived sessions stay out (and drop out of
+  Relay when archived there), and conversations only the CLI knows about aren't listed. A missing
+  title is taken from the file (`ai-title` / `custom-title`, else the first message). Each file is
+  cached by its modified time and size, and the watcher checks the list too.
+- **Projects** come from those sessions: a session's folder becomes a project while it has one.
+  Projects you add yourself (marked `added` in `agent.db`) show even when empty.
 - **Opening** one reads its history from the file. Subagent work, thinking and Claude Code's
   bookkeeping lines are left out.
 - **Sending** a message brings it into Relay (its settings only) and resumes it with `--resume`.
   Whenever it isn't running in Relay it's read from the file, and the watcher reloads it within
   about 2 seconds of a change, so anything said in it in the Claude app shows up as it happens.
-- **Removing** a session hides it in Relay. Claude Code's file stays, so the Claude app keeps it.
-- **Warnings:** a conversation changed in the last 2 minutes may still be open in the Claude app,
-  and using it in both at once mixes them up. Relay says so above the composer.
+- **Archive** hides a session in Relay; Claude Code's file stays, so the Claude app keeps it.
+  **Delete** removes that file too (and its subagents' folder). Both work per session or for all
+  of a project's sessions, from the right-click menu, with a confirmation.
+- **No notes about origin** (removed 2026-11-28): where a session started doesn't matter, since
+  either app can carry it on. Relay no longer warns about one used in the Claude app in the last 2
+  minutes either; using a session in both at once still mixes them up.
 - **Not included:** cloud sessions (not saved on the PC), sessions the Claude app ran in a
   worktree folder (a different path, so a different folder in `.claude\projects`), and the Claude
   app's own scratch workspaces.
 - The file format is Claude Code's internal one. Unknown lines are skipped, not fatal.
+
+### Conversation UI
+
+Built on shadcn **AI Elements** (2026-11-28), copied into `src/components/ai-elements/` like the
+shadcn components in `ui/`, so ours to change. Never re-add them with `--overwrite`.
+
+- **Used:** `Conversation` (sticks to the end while you're there, jump-to-latest button above the
+  composer), `Message`, `MessageResponse` (Streamdown, with `@streamdown/code` for highlighted code
+  blocks; its `raw` HTML step is left out so HTML shows as text, links open in the browser),
+  `Tool` with `CodeBlock` (Edit as a red/green diff, Bash and written files highlighted),
+  `Confirmation` for approvals, questions and plans, `Shimmer` for "Working…".
+- **Not used:** `PromptInput` (the composer is Relay's own, shared with chats) and anything for
+  the session list.
+- **Changed from stock so far:** Tabler icons instead of lucide, `ToolHeader` takes an icon and a
+  summary, compact `CodeBlock`, `MessageResponse` re-renders when streaming ends, your bubble is the
+  Telegram chat's grey incoming bubble, the AI SDK v6 `@ts-expect-error` lines removed.
+- **Tool groups:** two or more tool calls in a row fold into one row summarising them; approvals,
+  questions and plans always stand alone. Paths inside the project show relative to it.
+- **Zoom:** Ctrl+= / Ctrl+- / Ctrl+0 zoom the conversation (not the composer), the same setting as
+  Telegram chats (`src/telegram/zoom.ts`).
+- **Packages:** `ai` (types only), `streamdown`, `@streamdown/code`, `shiki`, `use-stick-to-bottom`.
 
 ### To check on Windows
 
@@ -245,8 +283,9 @@ Relay lists them under the matching project, labeled with the app they came from
 3. Send, approve, answer a question, approve a plan, Stop.
 4. Close Relay mid-session: no `claude.exe` left in Task Manager.
 5. Reopen Relay: the history is there and the next message continues the conversation.
-6. Add `relay` as a project: your Claude app conversations for it are listed, open with their
-   history, and continue when you send a message.
+6. The Claude app's Code sessions are listed under their projects without adding anything, its
+   archived ones aren't, and they open with their history and continue when you send a message.
+   Archiving one in the Claude app takes it out of Relay within a few seconds.
 7. With a conversation open in Relay, send a message in it from the Claude app: it shows in Relay
    within a few seconds, and the list moves it to the top.
 8. Sessions started in Relay before this change still show their history (now from Claude Code's

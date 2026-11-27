@@ -514,10 +514,78 @@ pub fn project_slug(path: &str) -> String {
     path.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect()
 }
 
+/// The folders where the Claude desktop app keeps its list of Code sessions, one per account and
+/// organisation: `claude-code-sessions/<account>/<org>/` under its data folder (`Claude-Data\<package>`
+/// in LOCALAPPDATA for the Store build, `Claude` in APPDATA or Application Support otherwise).
+pub fn desktop_session_dirs() -> Vec<PathBuf> {
+    let mut bases = vec![];
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        if let Ok(entries) = std::fs::read_dir(PathBuf::from(local).join("Claude-Data")) {
+            bases.extend(entries.flatten().map(|e| e.path()));
+        }
+    }
+    if let Some(roaming) = std::env::var_os("APPDATA") {
+        bases.push(PathBuf::from(roaming).join("Claude"));
+    }
+    if let Some(home) = std::env::var_os("HOME").filter(|_| cfg!(target_os = "macos")) {
+        bases.push(PathBuf::from(home).join("Library/Application Support/Claude"));
+    }
+    let mut dirs = vec![];
+    for base in bases {
+        let Ok(accounts) = std::fs::read_dir(base.join("claude-code-sessions")) else { continue };
+        for account in accounts.flatten() {
+            let Ok(orgs) = std::fs::read_dir(account.path()) else { continue };
+            dirs.extend(orgs.flatten().map(|o| o.path()).filter(|p| p.is_dir()));
+        }
+    }
+    dirs
+}
+
+/// A Code session as the Claude desktop app lists it.
+#[derive(Debug, Clone)]
+pub struct DesktopSession {
+    /// Claude Code's id for it, which names its saved conversation.
+    pub id: String,
+    /// The folder it runs in.
+    pub cwd: String,
+    pub title: String,
+    pub archived: bool,
+    pub updated_at: i64,
+}
+
+/// Reads one of the desktop app's session files (`local_<id>.json`). None for anything else or a
+/// file caught mid-write.
+pub fn read_desktop_session(path: &Path) -> Option<DesktopSession> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Record {
+        cli_session_id: Option<String>,
+        cwd: Option<String>,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        is_archived: bool,
+        last_activity_at: Option<i64>,
+        created_at: Option<i64>,
+    }
+    let name = path.file_name()?.to_str()?;
+    if !name.starts_with("local_") || !name.ends_with(".json") {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    let r: Record = serde_json::from_reader(std::io::BufReader::new(file)).ok()?;
+    Some(DesktopSession {
+        id: r.cli_session_id?,
+        cwd: r.cwd?,
+        title: r.title,
+        archived: r.is_archived,
+        updated_at: r.last_activity_at.or(r.created_at).unwrap_or(0),
+    })
+}
+
 /// A saved conversation, as the session list needs it.
 #[derive(Debug, Clone)]
 pub struct TranscriptInfo {
-    pub id: String,
     pub title: String,
     /// Which app wrote it, for its label ("Claude app" or "Claude Code").
     pub origin: String,
@@ -563,7 +631,7 @@ pub fn scan_transcript(path: &Path) -> Option<TranscriptInfo> {
         Some(e) if e.contains("desktop") => "Claude app",
         _ => "Claude Code",
     };
-    Some(TranscriptInfo { id, title, origin: origin.into() })
+    Some(TranscriptInfo { title, origin: origin.into() })
 }
 
 /// What you typed in a user message, or None for one that's only tool results or Claude Code's
@@ -718,6 +786,24 @@ mod tests {
 
     fn feed(a: &mut Adapter, lines: &[&str]) -> Vec<Action> {
         lines.iter().flat_map(|l| a.handle(&serde_json::from_str(l).unwrap())).collect()
+    }
+
+    #[test]
+    fn reads_a_desktop_session_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("local_1.json");
+        let record = serde_json::json!({
+            "sessionId": "local_1", "cliSessionId": "abc", "cwd": "C:\\work\\relay", "title": "Fix sync",
+            "isArchived": true, "createdAt": 5, "lastActivityAt": 9, "model": "x", "other": {"nested": [1, 2]},
+        });
+        std::fs::write(&path, record.to_string()).unwrap();
+        let s = read_desktop_session(&path).unwrap();
+        assert_eq!((s.id.as_str(), s.cwd.as_str(), s.title.as_str(), s.archived, s.updated_at), ("abc", "C:\\work\\relay", "Fix sync", true, 9));
+        // Other files in the folder, and one caught mid-write, are skipped.
+        std::fs::write(dir.path().join("archived-sessions.idx"), "{}").unwrap();
+        assert!(read_desktop_session(&dir.path().join("archived-sessions.idx")).is_none());
+        std::fs::write(&path, "{\"cliSessionId\": \"ab").unwrap();
+        assert!(read_desktop_session(&path).is_none());
     }
 
     #[test]
@@ -911,7 +997,7 @@ mod tests {
         std::fs::write(&path, lines.join("\n")).unwrap();
 
         let info = scan_transcript(&path).unwrap();
-        assert_eq!((info.id.as_str(), info.title.as_str(), info.origin.as_str()), (id, "Calendar sync fix", "Claude app"));
+        assert_eq!((info.title.as_str(), info.origin.as_str()), ("Calendar sync fix", "Claude app"));
 
         let items = read_transcript(&path, id).unwrap();
         let shown: Vec<String> = items.iter().map(|i| match &i.body {
@@ -933,7 +1019,7 @@ mod tests {
         let t = std::time::Instant::now();
         let info = scan_transcript(&path).unwrap();
         let scanned = t.elapsed();
-        let items = read_transcript(&path, &info.id).unwrap();
+        let items = read_transcript(&path, path.file_stem().unwrap().to_str().unwrap()).unwrap();
         println!("{info:?}\nscan {scanned:?}, read {:?}, {} items", t.elapsed(), items.len());
         for i in items.iter().take(6) {
             println!("{:?}", i.body);

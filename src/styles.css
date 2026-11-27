@@ -5,6 +5,8 @@
 @import "@fontsource-variable/inter";
 /* Smooth stacked shadows for every shadow-* utility, plus smooth-shadow-ring-* for elevated surfaces. */
 @import "./shadow-plugin.css";
+@import "streamdown/styles.css";
+@source "../node_modules/streamdown/dist/*.js";
 
 /* Dark covers the whole app in Dark, and everything outside the frames in Mixed (the framed
    content, marked .frame, stays light there, and so do dialogs, menus and popovers: keep the
@@ -826,15 +828,19 @@
   /* The dark glass's tint (menus, command bar, dark toasts): a lifted charcoal rather than the near-black
      sidebar (#0c0c0c), so the dark glass reads as grey frost, not black. */
   --frost-dark: rgb(22 22 22);
+  /* The engraved divider (.menu-divider): a dark groove with a light edge under it. Here rather than
+     on the menus so the sidebar's divider is the same one. */
+  --menu-groove: rgb(0 0 0 / 9%);
+  --menu-groove-light: rgb(255 255 255 / 75%);
 }
 .dark {
   --menu-rim: rgb(255 255 255 / 9%);
+  --menu-groove: rgb(0 0 0 / 45%);
+  --menu-groove-light: rgb(255 255 255 / 6%);
 }
 :is([data-slot="context-menu-content"], [data-slot="context-menu-sub-content"], [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="select-content"], [data-slot="tooltip-content"], .menu-glass) {
   --menu-bg: color-mix(in srgb, black var(--frost-shade), color-mix(in srgb, var(--sidebar) 72%, transparent));
   --menu-shadow: 0 12px 32px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 6%);
-  --menu-groove: rgb(0 0 0 / 9%);
-  --menu-groove-light: rgb(255 255 255 / 75%);
   background-color: var(--menu-bg);
   backdrop-filter: blur(12px) saturate(1.8);
   border: 1px solid var(--menu-rim);
@@ -845,8 +851,6 @@
   /* a dark outline just outside the rim, and a deep shadow. No inset top highlight: inside the rim it
      doubled the top edge into a brighter 2px band. */
   --menu-shadow: 0 0 0 1px rgb(0 0 0 / 45%), 0 12px 32px rgb(0 0 0 / 45%);
-  --menu-groove: rgb(0 0 0 / 45%);
-  --menu-groove-light: rgb(255 255 255 / 6%);
 }
 /* Highlighted rows: no fill of their own. The shared hover pill (menu-hover-pill.tsx) slides under them instead,
    as in the sidebar. Destructive rows keep their red fill (the pill fades out over them). */

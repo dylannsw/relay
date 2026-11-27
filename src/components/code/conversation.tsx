@@ -1,16 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  IconArrowUp,
   IconCheck,
   IconDots,
   IconListCheck,
   IconPencil,
   IconPlayerStopFilled,
   IconShieldCheck,
-  IconTrash,
+  IconArchive,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { api, errorText } from "@/api";
+import { ComposerField, ComposerOptions, ComposerSubmit, ComposerTray } from "@/components/composer-tray";
+import { PageHeader, PageTitle } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,11 +21,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { InputGroupTextarea } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { CHAT_WIDTHS, useChatWidth } from "@/telegram/chat-width";
+import { useChatZoom, useChatZoomKeys } from "@/telegram/zoom";
 import { deleteSession, loadItems, setMode, useAgent } from "@/agent/store";
 import type { AgentMode, AgentProject, AgentSession } from "@/agent/types";
-import { ItemView } from "./items";
+import { ItemList } from "./items";
+import {
+  Conversation as AiConversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton,
+} from "@/components/ai-elements/conversation";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 
 export const MODES: { id: AgentMode; label: string; hint: string }[] = [
   { id: "supervised", label: "Supervised", hint: "Asks before commands and file edits" },
@@ -41,8 +52,9 @@ function ModeMenu({ session }: { session: AgentSession }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="xs" className={cn("gap-1 px-2 text-muted-foreground", session.plan && "text-primary")}>
-          {session.plan ? <IconListCheck className="size-3.5" /> : <IconShieldCheck className="size-3.5" />}
+        {/* Styled as the chat's Attach button, in its place. */}
+        <Button type="button" variant="outline" size="sm" className={cn("text-muted-foreground", session.plan && "text-primary")}>
+          {session.plan ? <IconListCheck /> : <IconShieldCheck />}
           {modeLabel(session)}
         </Button>
       </DropdownMenuTrigger>
@@ -70,7 +82,12 @@ function ModeMenu({ session }: { session: AgentSession }) {
   );
 }
 
-function Composer({ session }: { session: AgentSession }) {
+/**
+ * The chat's writing box, for a session: the same tray, field and send button, floating over the
+ * conversation's end at the same width. Permissions sit where the chat has Attach and Stickers, and
+ * the send button stops Claude while it works.
+ */
+function Composer({ session, boxRef }: { session: AgentSession; boxRef: React.Ref<HTMLDivElement> }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -92,36 +109,38 @@ function Composer({ session }: { session: AgentSession }) {
   const stop = () => api.agent.stop(session.id).catch((e) => toast.error(errorText(e)));
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-4">
-      <div className="rounded-2xl border bg-card shadow-xs focus-within:border-field-focus">
-        <textarea
-          ref={box}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-          rows={1}
-          placeholder={session.waiting ? "Answer Claude above to continue" : session.title ? "Reply to Claude" : "What should Claude do?"}
-          className="field-sizing-content max-h-60 min-h-11 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-sm outline-none placeholder:text-muted-foreground"
-        />
-        <div className="flex items-center gap-1 px-2 pb-2">
-          <ModeMenu session={session} />
-          <span className="flex-1" />
+    // As in a chat: 8px wider each side than the messages, and no wider than Settings > Chats allows.
+    // Behind its lower half the page shows, so nothing peeks out below it.
+    <div ref={boxRef} className="absolute inset-x-0 bottom-0 px-2 pb-3 @3xl/chat:px-[max(92px,calc((100cqw_-_var(--chat-max))/2_-_8px))]">
+      <div aria-hidden className="absolute inset-x-0 top-1/2 bottom-0 bg-background" />
+      <ComposerTray>
+        <ComposerField>
+          <InputGroupTextarea
+            ref={box}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+            rows={1}
+            placeholder={session.waiting ? "Answer Claude above to continue" : session.title ? "Reply to Claude" : "What should Claude do?"}
+            aria-label="Message to Claude"
+            // The chat box's type and padding.
+            className="no-scrollbar max-h-50 min-h-[calc(1.4em+16px)] pt-3 pr-4 pb-1 pl-[18px] text-title leading-[1.4] md:text-title"
+          />
           {session.running ? (
-            <Button size="icon" variant="secondary" className="size-8 rounded-full" onClick={stop} title="Stop">
-              <IconPlayerStopFilled className="size-3.5" />
-            </Button>
+            <ComposerSubmit ready label="Stop" icon={<IconPlayerStopFilled />} onClick={stop} />
           ) : (
-            <Button size="icon" className="size-8 rounded-full" disabled={!text.trim() || sending} onClick={() => void send()} title="Send (Enter)">
-              {sending ? <Spinner className="size-4" /> : <IconArrowUp className="size-4" />}
-            </Button>
+            <ComposerSubmit ready={!!text.trim()} busy={sending} label="Send" onClick={() => void send()} />
           )}
-        </div>
-      </div>
+        </ComposerField>
+        <ComposerOptions>
+          <ModeMenu session={session} />
+        </ComposerOptions>
+      </ComposerTray>
     </div>
   );
 }
@@ -129,21 +148,28 @@ function Composer({ session }: { session: AgentSession }) {
 export function Conversation({ session, project }: { session: AgentSession; project: AgentProject | undefined }) {
   const agent = useAgent();
   const items = agent.items[session.id];
-  const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
   const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     // Read again from Claude Code's file each time: it may have moved on in the Claude app.
     void loadItems(session.id, !session.live).catch((e) => toast.error(errorText(e)));
-    stick.current = true;
   }, [session.id]);
 
-  // Follow new output while you're at the bottom; stay put if you've scrolled up to read.
+  // The floating composer's height, which the conversation leaves room for at its end.
+  const chatWidth = useChatWidth();
+  const zoom = useChatZoom();
+  useChatZoomKeys();
+  const composerBox = useRef<HTMLDivElement>(null);
+  const [composerH, setComposerH] = useState(0);
   useLayoutEffect(() => {
-    const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [items, session.running]);
+    const el = composerBox.current;
+    if (!el) return;
+    const measure = () => setComposerH(el.offsetHeight);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, []);
 
   const rename = async (title: string) => {
     setRenaming(false);
@@ -154,27 +180,28 @@ export function Conversation({ session, project }: { session: AgentSession; proj
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 px-4 shadow-[inset_0_-1px_0_var(--border)]">
-        <div className="min-w-0 flex-1">
-          {renaming ? (
-            <input
-              autoFocus
-              defaultValue={session.title}
-              onBlur={(e) => void rename(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void rename(e.currentTarget.value);
-                if (e.key === "Escape") setRenaming(false);
-              }}
-              className="w-full bg-transparent text-base font-bold outline-none"
-            />
-          ) : (
-            <h2 className="truncate text-base leading-tight font-bold">{session.title || "New session"}</h2>
-          )}
-          <p className="truncate text-xs text-muted-foreground" title={project?.path}>
-            {project?.name ?? "Project removed"}
-            {session.model ? ` · ${session.model.replace(/^claude-/, "")}` : ""}
-          </p>
-        </div>
+      {/* The session, then its project in the lighter grey the calendar gives the year. */}
+      <PageHeader etched className="gap-2">
+        {renaming ? (
+          <input
+            autoFocus
+            defaultValue={session.title}
+            onBlur={(e) => void rename(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void rename(e.currentTarget.value);
+              if (e.key === "Escape") setRenaming(false);
+            }}
+            aria-label="Session name"
+            className="min-w-0 flex-1 bg-transparent text-lg font-semibold outline-none"
+          />
+        ) : (
+          <PageTitle>
+            {session.title || "New session"}{" "}
+            <span className="font-normal text-muted-foreground" title={project?.path}>
+              – {project?.name ?? "Project removed"}
+            </span>
+          </PageTitle>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="size-8" title="Session">
@@ -182,73 +209,61 @@ export function Conversation({ session, project }: { session: AgentSession; proj
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem disabled={session.external} onSelect={() => setRenaming(true)}>
+            <DropdownMenuItem onSelect={() => setRenaming(true)}>
               <IconPencil />
               Rename
             </DropdownMenuItem>
-            {/* Only from Relay's list: Claude Code's file stays, so the Claude app still has it. One
-                not used in Relay yet has nothing to remove. */}
-            {!session.external && (
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => deleteSession(session.id).catch((e) => toast.error(errorText(e)))}
-              >
-                <IconTrash />
-                Remove from Relay
-              </DropdownMenuItem>
-            )}
+            {/* Only from Relay's list: Claude Code's file stays, so the Claude app still has it. */}
+            <DropdownMenuItem onSelect={() => deleteSession(session.id).catch((e) => toast.error(errorText(e)))}>
+              <IconArchive />
+              Archive
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </header>
+      </PageHeader>
 
-      <div
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-5">
+      {/* Laid out as a chat: as wide as Settings > Chats allows, centred past that. */}
+      <div className="@container/chat relative min-h-0 flex-1" style={{ "--chat-max": `${CHAT_WIDTHS[chatWidth].px}px` } as CSSProperties}>
+      {/* AI Elements' Conversation: follows new output while you're at the bottom, stays put if
+          you've scrolled up to read. Keyed by session so each opens at its end. */}
+      <AiConversation key={session.id} initial="instant" className="absolute inset-0">
+        <ConversationContent
+          scrollClassName="no-scrollbar overscroll-contain"
+          // Room at the end for the composer floating over it.
+          style={{ paddingBottom: composerH + 20 }}
+          className="px-4 pt-5 @3xl/chat:px-[max(100px,calc((100cqw_-_var(--chat-max))/2))]"
+        >
+          {/* Ctrl+= / Ctrl+- zoom what's said, as in a Telegram chat (the same zoom); the
+              column's width and the composer stay as they are. */}
+          <div className="flex flex-col gap-3" style={zoom === 1 ? undefined : { zoom }}>
           {!items ? (
             <div className="flex justify-center py-10">
               <Spinner className="text-muted-foreground" />
             </div>
           ) : items.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">
-              Claude works in <span className="font-mono text-xs">{project?.path}</span>.
-              <br />
-              Tell it what to do.
-            </p>
+            <ConversationEmptyState className="py-16">
+              <p className="text-sm text-muted-foreground">
+                Claude works in <span className="font-mono text-xs">{project?.path}</span>.
+                <br />
+                Tell it what to do.
+              </p>
+            </ConversationEmptyState>
           ) : (
-            items.map((it) => <ItemView key={it.id} item={it} running={session.running} />)
+            <ItemList items={items} running={session.running} projectPath={project?.path} />
           )}
           {session.running && !session.waiting && (
-            <p className="flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
-              <Spinner className="size-3.5" />
-              Working…
+            <p className="flex items-center gap-2 text-xs" aria-live="polite">
+              <Spinner className="size-3.5 text-muted-foreground" />
+              <Shimmer className="text-xs">Working…</Shimmer>
             </p>
           )}
-        </div>
+          </div>
+        </ConversationContent>
+        <ConversationScrollButton style={{ bottom: composerH + 12 }} title="Jump to the latest" />
+      </AiConversation>
+
+      <Composer session={session} boxRef={composerBox} />
       </div>
-
-      {session.fromClaude && !session.live && <FromClaudeNote session={session} />}
-      <Composer session={session} />
     </div>
-  );
-}
-
-/** Above the composer, for a conversation started outside Relay. */
-function FromClaudeNote({ session }: { session: AgentSession }) {
-  const app = session.origin ?? "Claude app";
-  const recent = Date.now() - session.updatedAt < 2 * 60_000;
-  return (
-    <p className={cn("mx-auto w-full max-w-3xl px-5 pb-2 text-xs", recent ? "text-star" : "text-muted-foreground")}>
-      {recent
-        ? `This was active in the ${app} in the last 2 minutes. If it's still open there, finish it there first: using it in both at once mixes them up.`
-        : session.external
-          ? `Started in the ${app}. Sending a message continues it here.`
-          : `Started in the ${app}. Anything said in it there shows here as it happens.`}
-    </p>
   );
 }

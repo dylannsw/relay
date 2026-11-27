@@ -10,7 +10,6 @@ import {
   IconUsers,
   IconBookmark,
   IconChecklist,
-  IconChevronRight,
   IconSchool,
   IconInbox,
   IconLogin2,
@@ -43,6 +42,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ColorDot } from "@/components/color-dot";
 import { SidebarHoverPill } from "@/components/sidebar-hover-pill";
+import { FOLD, RowChevron } from "@/components/sidebar-row";
 import type { Account, Folder, Provider } from "@/types";
 import { relativeTime } from "@/format";
 import { FOLDERS } from "@/folders";
@@ -115,23 +115,6 @@ interface Props {
 
 /** The groups' side padding: 6px, a little tighter than the stock 8px. */
 const GUTTER = "px-1.5";
-
-/** The right end of a row that expands: just the chevron, turned down when open (no count: its children show theirs). */
-function RowChevron({ open }: { open: boolean }) {
-  return (
-    <IconChevronRight
-      aria-hidden
-      className={cn("pointer-events-none size-4! text-muted-foreground/50 transition-transform duration-200", open && "rotate-90")}
-    />
-  );
-}
-
-/**
- * A folding sidebar group. The height opens in 220ms and closes in 260ms on the app's curve, while
- * the rows inside dissolve (fade, blur, drift up) faster than that: see `.sidebar-fold` in styles.css.
- */
-const FOLD =
-  "sidebar-fold overflow-hidden ease-(--ease-out-soft) data-[state=closed]:animate-collapsible-up data-[state=closed]:duration-260 data-[state=open]:animate-collapsible-down data-[state=open]:duration-220";
 
 const sameView = (a: View, b: View) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -213,11 +196,12 @@ function AccountItem({ account: a, view, onView, onReconnect, drafts }: {
         if (!was) autoOpened.current = true;
         return true;
       });
-    } else if (autoOpened.current) {
+    } else if (autoOpened.current && view.kind !== "code") {
       autoOpened.current = false;
       setOpen(false);
     }
-  }, [viewing]);
+    // Switching to Code hides the Hub sidebar without leaving the account: it stays as it was.
+  }, [viewing, view.kind]);
 
   return (
     <Collapsible
@@ -382,7 +366,7 @@ function ChatItems({ view, onView }: { view: View; onView: (v: View) => void }) 
         if (!was) autoOpened.current = true;
         return true;
       });
-    } else if (autoOpened.current && view.kind !== "chats") {
+    } else if (autoOpened.current && view.kind !== "chats" && view.kind !== "code") {
       autoOpened.current = false;
       setOpen(false);
     }
@@ -531,12 +515,12 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
         <SidebarGroup className={cn(GUTTER, "pb-0")}>
           <ModeSwitch view={view} onView={onView} />
         </SidebarGroup>
-        {view.kind === "code" ? (
-          <div key="code" className="animate-in fade-in duration-200">
-            <CodeSidebarItems />
-          </div>
-        ) : (
-        <div key="hub" className="animate-in fade-in duration-200">
+        {/* Both stay mounted and the other one is hidden, so switching keeps what you folded or
+            unfolded. Shown again, it fades in (the animation restarts when it stops being hidden). */}
+        <div hidden={view.kind !== "code"} className="animate-in fade-in duration-200">
+          <CodeSidebarItems />
+        </div>
+        <div hidden={view.kind === "code"} className="animate-in fade-in duration-200">
         <SidebarGroup className={GUTTER}>
           <SidebarGroupLabel>Overview</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -619,10 +603,15 @@ export function AppSidebar({ accounts, view, onView, onReconnect, onOpenSettings
           </SidebarGroup>
         )}
         </div>
-        )}
       </SidebarContent>
 
       <SidebarFooter className={GUTTER}>
+        {/* The menus' engraved divider, edge to edge across the sidebar (out past the footer's 6px and the
+            sidebar's 8px). The footer's own gap puts Settings as far below it as the footer's padding below. */}
+        <div
+          aria-hidden
+          className="menu-divider -mx-3.5 shrink-0"
+        />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onOpenSettings}>

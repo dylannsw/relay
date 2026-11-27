@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 import { IconAlertTriangle, IconRefresh, IconTerminal2 } from "@tabler/icons-react";
-import { isTauri } from "@/api";
-import { PageHeader, PageTitle } from "@/components/page-header";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { recheckCli, refresh, selectSession, startAgent, useAgent } from "@/agent/store";
@@ -62,15 +59,6 @@ export function CodePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader etched className="gap-2">
-        <PageTitle>Code</PageTitle>
-        {!isTauri && <Badge variant="outline">Sample data</Badge>}
-        {agent.cli?.version && (
-          <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground" title={agent.cli.path ?? undefined}>
-            Claude Code {agent.cli.version.replace(/\s*\(Claude Code\)/, "")}
-          </span>
-        )}
-      </PageHeader>
       {agent.error && (
         <p className="flex items-center gap-2 bg-destructive/10 px-4 py-2 text-sm text-destructive">
           <IconAlertTriangle className="size-4" />
@@ -85,7 +73,7 @@ export function CodePage() {
             <Conversation key={selected.id} session={selected} project={project} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              {agent.projects.length ? "Pick a session in the sidebar, or start one with +." : "Add a project in the sidebar to start."}
+              {agent.projects.length ? "Pick a session in the sidebar, or start one with +." : "Start a session in the Claude app and its project shows in the sidebar."}
             </div>
           )}
         </section>

@@ -314,7 +314,8 @@ export const api = {
     setMode: (sessionId: string, mode: AgentMode, plan: boolean) =>
       call<AgentSession>("agent_set_mode", { sessionId, mode, plan }),
     rename: (sessionId: string, title: string) => call<void>("agent_rename_session", { sessionId, title }),
-    deleteSession: (sessionId: string) => call<void>("agent_delete_session", { sessionId }),
+    /** Archives a session (hidden from Relay, kept for the Claude app); `forever` deletes its saved conversation too. */
+    deleteSession: (sessionId: string, forever = false) => call<void>("agent_delete_session", { sessionId, forever }),
     /** Session changes, new or changed items, streamed text, and saved conversations changing. */
     onEvent: (cb: (e: AgentEvent) => void): Promise<() => void> => {
       if (!isTauri) return Promise.resolve(mockAgentEvents(cb));

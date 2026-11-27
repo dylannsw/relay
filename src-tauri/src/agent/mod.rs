@@ -29,7 +29,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use crate::error::{msg, Result};
-use claude::{Action, Adapter, TranscriptInfo};
+use claude::{Action, Adapter, DesktopSession, TranscriptInfo};
 use types::{Answer, Approval, CliStatus, Item, ItemBody, Mode, Project, Session};
 
 pub const SESSION_EVENT: &str = "agent-session";
@@ -69,6 +69,10 @@ pub struct Agent {
     extras: Mutex<HashMap<String, Extras>>,
     /// The watcher's last look: each saved conversation's modified time and size.
     seen: Mutex<Option<HashMap<PathBuf, (SystemTime, u64)>>>,
+    /// Where the Claude desktop app lists its Code sessions. Relay shows those and no others.
+    desktop_dirs: Vec<PathBuf>,
+    /// The desktop app's session files already read, like `transcripts`.
+    desktop: Mutex<HashMap<PathBuf, (SystemTime, u64, Option<DesktopSession>)>>,
 }
 
 /// Shown on top of a conversation read from its file: Relay's notices and turn ends, and how you
@@ -128,6 +132,11 @@ fn new_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+/// A folder as Claude Code names it, ignoring case, to match the same folder written two ways.
+fn folder_key(path: &str) -> String {
+    claude::project_slug(path).to_ascii_lowercase()
+}
+
 impl Agent {
     /// The agent for Relay's window.
     pub fn for_app(app: AppHandle, data_dir: &Path) -> Result<Self> {
@@ -148,6 +157,8 @@ impl Agent {
             transcripts: Mutex::new(HashMap::new()),
             extras: Mutex::new(HashMap::new()),
             seen: Mutex::new(None),
+            desktop_dirs: claude::desktop_session_dirs(),
+            desktop: Mutex::new(HashMap::new()),
         })
     }
 
@@ -176,6 +187,12 @@ impl Agent {
                 if let Ok(meta) = entry.metadata() {
                     now.insert(path, (meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()));
                 }
+            }
+        }
+        // The desktop app's list: a session started, renamed or archived there.
+        for path in self.desktop_files() {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                now.insert(path, (meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()));
             }
         }
         let changed: Vec<PathBuf> = {
@@ -500,6 +517,67 @@ impl Agent {
         Some(claude::projects_dir()?.join(claude::project_slug(&project.path)))
     }
 
+    /// The desktop app's session files.
+    fn desktop_files(&self) -> Vec<PathBuf> {
+        let mut files = vec![];
+        for dir in &self.desktop_dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else { continue };
+            files.extend(entries.flatten().map(|e| e.path()).filter(|p| {
+                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("local_") && n.ends_with(".json"))
+            }));
+        }
+        files
+    }
+
+    /// Every Code session the Claude desktop app has, archived ones included. Each file is read
+    /// again only when it changed.
+    fn desktop_sessions(&self) -> Vec<DesktopSession> {
+        let files = self.desktop_files();
+        let mut cache = self.desktop.lock().unwrap();
+        cache.retain(|p, _| files.contains(p));
+        let mut out = vec![];
+        for path in files {
+            let Ok(meta) = std::fs::metadata(&path) else { continue };
+            let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            let fresh = matches!(cache.get(&path), Some((m, len, _)) if *m == modified && *len == meta.len());
+            if !fresh {
+                cache.insert(path.clone(), (modified, meta.len(), claude::read_desktop_session(&path)));
+            }
+            if let Some((_, _, Some(s))) = cache.get(&path) {
+                out.push(s.clone());
+            }
+        }
+        out
+    }
+
+    /// Adds the folders of the desktop app's sessions that Relay doesn't list yet and that still
+    /// exist. Returns the projects to show: the ones with a session, and the ones you added.
+    fn discover_projects(&self) -> Result<Vec<Project>> {
+        let mut projects = self.db(store::projects)?;
+        let mut known: HashSet<String> = projects.iter().map(|p| folder_key(&p.path)).collect();
+        let mut added = false;
+        for d in self.desktop_sessions().into_iter().filter(|d| !d.archived) {
+            if known.contains(&folder_key(&d.cwd)) || !Path::new(&d.cwd).is_dir() {
+                continue;
+            }
+            let folder = PathBuf::from(&d.cwd);
+            let name = folder.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| d.cwd.clone());
+            let p = Project { id: new_id(), name, path: d.cwd.clone(), created_at: claude::now() };
+            // A concurrent scan may have added it first; the unique path rejects the second.
+            if self.db(|c| store::insert_project(c, &p)).is_ok() {
+                known.insert(folder_key(&d.cwd));
+                added = true;
+            }
+        }
+        if added {
+            projects = self.db(store::projects)?;
+        }
+        let mine = self.db(store::added_projects)?;
+        let used: HashSet<String> = self.all_sessions()?.into_iter().map(|s| s.project_id).collect();
+        projects.retain(|p| mine.contains(&p.id) || used.contains(&p.id));
+        Ok(projects)
+    }
+
     /// A saved conversation's title and origin, read again only when the file changed.
     fn transcript_info(&self, path: &Path) -> Option<(TranscriptInfo, i64)> {
         let meta = std::fs::metadata(path).ok()?;
@@ -525,45 +603,52 @@ impl Agent {
         })
     }
 
-    /// Every session: Relay's own, then each project's saved conversations Relay hasn't used yet.
+    /// Every session: Relay's own, then the desktop app's sessions Relay hasn't used yet, as the
+    /// desktop app lists them. Archived ones are left out, here too once archived there.
     fn all_sessions(&self) -> Result<Vec<Session>> {
+        let desktop = self.desktop_sessions();
+        let archived: HashSet<&str> = desktop.iter().filter(|d| d.archived).map(|d| d.id.as_str()).collect();
         let stored = self.db(store::sessions)?;
         let known: HashSet<String> = stored.iter().map(|s| s.id.clone()).collect();
         // A new session from the Claude app starts in the mode Relay used last.
         let mode = stored.iter().find(|s| !s.hidden).map(|s| s.mode).unwrap_or(Mode::Supervised);
-        let mut out: Vec<Session> = stored.into_iter().filter(|s| !s.hidden).map(|s| self.view(s)).collect();
-        for project in self.db(store::projects)? {
-            let Some(dir) = Self::transcript_dir(&project) else { continue };
-            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                let Some((info, updated)) = self.transcript_info(&path) else { continue };
-                if known.contains(&info.id) {
-                    continue;
-                }
-                out.push(Session {
-                    id: info.id,
-                    project_id: project.id.clone(),
-                    title: info.title,
-                    mode,
-                    plan: false,
-                    started: true,
-                    model: None,
-                    created_at: updated,
-                    updated_at: updated,
-                    from_claude: true,
-                    renamed: false,
-                    hidden: false,
-                    live: false,
-                    running: false,
-                    waiting: 0,
-                    external: true,
-                    origin: Some(info.origin),
-                });
+        let mut out: Vec<Session> = stored
+            .into_iter()
+            .filter(|s| !s.hidden && !(s.from_claude && archived.contains(s.id.as_str())))
+            .map(|s| self.view(s))
+            .collect();
+        let projects: HashMap<String, Project> =
+            self.db(store::projects)?.into_iter().map(|p| (folder_key(&p.path), p)).collect();
+        for d in &desktop {
+            if d.archived || known.contains(&d.id) {
+                continue;
             }
+            let Some(project) = projects.get(&folder_key(&d.cwd)) else { continue };
+            let title = if d.title.is_empty() {
+                let file = claude::projects_dir().map(|dir| dir.join(claude::project_slug(&d.cwd)).join(format!("{}.jsonl", d.id)));
+                file.and_then(|f| self.transcript_info(&f)).map(|(i, _)| i.title).unwrap_or_default()
+            } else {
+                d.title.clone()
+            };
+            out.push(Session {
+                id: d.id.clone(),
+                project_id: project.id.clone(),
+                title,
+                mode,
+                plan: false,
+                started: true,
+                model: None,
+                created_at: d.updated_at,
+                updated_at: d.updated_at,
+                from_claude: true,
+                renamed: false,
+                hidden: false,
+                live: false,
+                running: false,
+                waiting: 0,
+                external: true,
+                origin: Some("Claude app".into()),
+            });
         }
         out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         Ok(out)
@@ -789,8 +874,12 @@ pub async fn agent_cli_status() -> CliStatus {
 }
 
 #[tauri::command]
-pub fn agent_projects(agent: Ag<'_>) -> Result<Vec<Project>> {
-    agent.db(store::projects)
+pub async fn agent_projects(agent: Ag<'_>) -> Result<Vec<Project>> {
+    // The folders of the Claude app's sessions, read from its session list, and the ones you added.
+    let agent = agent.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || agent.discover_projects())
+        .await
+        .map_err(|e| msg(e.to_string()))?
 }
 
 #[tauri::command]
@@ -801,11 +890,12 @@ pub fn agent_add_project(agent: Ag<'_>, path: String) -> Result<Project> {
     }
     let path = dir.display().to_string();
     if let Some(p) = agent.db(|c| store::project_by_path(c, &path))? {
+        agent.db(|c| store::mark_added(c, &p.id))?;
         return Ok(p);
     }
     let name = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
     let p = Project { id: new_id(), name, path, created_at: claude::now() };
-    agent.db(|c| store::insert_project(c, &p))?;
+    agent.db(|c| store::insert_project(c, &p).and_then(|_| store::mark_added(c, &p.id)))?;
     Ok(p)
 }
 
@@ -903,6 +993,8 @@ pub fn agent_set_mode(agent: Ag<'_>, session_id: String, mode: Mode, plan: bool)
 
 #[tauri::command]
 pub fn agent_rename_session(agent: Ag<'_>, session_id: String, title: String) -> Result<()> {
+    // One from the Claude app that Relay hasn't used yet gets a row to keep the name in.
+    agent.adopt(&session_id)?;
     agent.db(|c| {
         let mut s = store::session(c, &session_id)?;
         s.title = title.trim().to_string();
@@ -916,9 +1008,21 @@ pub fn agent_rename_session(agent: Ag<'_>, session_id: String, title: String) ->
 /// Removes the session from Relay's list. Claude Code's file of it stays where Claude keeps it, so
 /// it's remembered as hidden rather than forgotten, or it would come back as one from the Claude app.
 #[tauri::command]
-pub fn agent_delete_session(agent: Ag<'_>, session_id: String) -> Result<()> {
+/// Archives a session: Relay stops showing it, and Claude Code's saved conversation stays, so the
+/// Claude app still has it. With `forever`, that saved conversation is deleted too.
+pub fn agent_delete_session(agent: Ag<'_>, session_id: String, forever: Option<bool>) -> Result<()> {
     agent.stop_session_process(&session_id);
     agent.extras.lock().unwrap().remove(&session_id);
+    // One only seen in Claude Code's files (never used in Relay) is brought in first, so there's a
+    // row to remember it as hidden by (the Claude app still lists it).
+    agent.adopt(&session_id)?;
+    if forever.unwrap_or(false) {
+        if let Some((_, path)) = agent.find_transcript(&session_id) {
+            // Its subagents' conversations sit in a folder of the same name beside it.
+            let _ = std::fs::remove_dir_all(path.with_extension(""));
+            std::fs::remove_file(&path)?;
+        }
+    }
     agent.db(|c| {
         let mut s = store::session(c, &session_id)?;
         if !s.started {
@@ -967,14 +1071,26 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let events: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
         let log = events.clone();
-        let agent = Arc::new(Agent::new(Box::new(move |e, v| log.lock().unwrap().push((e.into(), v))), data.path()).unwrap());
-        let project = Project { id: new_id(), name: "relay".into(), path: "/work/relay".into(), created_at: 0 };
-        agent.db(|c| store::insert_project(c, &project)).unwrap();
+        let desktop = tempfile::tempdir().unwrap();
+        let mut agent = Agent::new(Box::new(move |e, v| log.lock().unwrap().push((e.into(), v))), data.path()).unwrap();
+        agent.desktop_dirs = vec![desktop.path().to_path_buf()];
+        let agent = Arc::new(agent);
+        let work = tempfile::tempdir().unwrap();
+        let cwd = work.path().display().to_string();
 
-        let dir = claude::projects_dir().unwrap().join(claude::project_slug(&project.path));
+        let dir = claude::projects_dir().unwrap().join(claude::project_slug(&cwd));
         std::fs::create_dir_all(&dir).unwrap();
         let id = "0a6c6b1e-1111-4222-8333-944455556666";
         let path = dir.join(format!("{id}.jsonl"));
+        // The desktop app's own record of it, and of an archived one in a scratch folder.
+        let record = |archived: bool, cli: &str, folder: &str| {
+            serde_json::json!({ "cliSessionId": cli, "cwd": folder, "title": "", "isArchived": archived, "lastActivityAt": 1 }).to_string()
+        };
+        std::fs::write(desktop.path().join("local_a.json"), record(false, id, &cwd)).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        std::fs::write(desktop.path().join("local_b.json"), record(true, "0a6c6b1e-2222-4222-8333-944455556666", &scratch.path().display().to_string())).unwrap();
+        // A conversation from the CLI alone, which the desktop app doesn't list.
+        std::fs::write(dir.join("0a6c6b1e-3333-4222-8333-944455556666.jsonl"), r#"{"type":"user","message":{"role":"user","content":"From the CLI"}}"#).unwrap();
         let mut lines = vec![
             r#"{"type":"user","message":{"role":"user","content":"Fix the sync bug"},"uuid":"u1","entrypoint":"claude-desktop","timestamp":"2026-11-23T10:00:00.000Z"}"#.to_string(),
             r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"cargo test"}}]},"uuid":"a1","timestamp":"2026-11-23T10:00:01.000Z"}"#.to_string(),
@@ -982,9 +1098,23 @@ mod tests {
         ];
         std::fs::write(&path, lines.join("\n")).unwrap();
 
-        // Listed from the file; adopted, it keeps the file's title and history.
+        // Only the desktop app's unarchived session's folder becomes a project, plus one you add
+        // yourself; an empty folder found earlier stays out of the list.
+        let stale = Project { id: new_id(), name: "old".into(), path: "/work/old".into(), created_at: 0 };
+        agent.db(|c| store::insert_project(c, &stale)).unwrap();
+        let projects = agent.discover_projects().unwrap();
+        assert_eq!(projects.iter().map(|p| p.path.as_str()).collect::<Vec<_>>(), [cwd.as_str()]);
+        let project = projects[0].clone();
+        let mine = tempfile::tempdir().unwrap();
+        let added = Project { id: new_id(), name: "mine".into(), path: mine.path().display().to_string(), created_at: 0 };
+        agent.db(|c| store::insert_project(c, &added).and_then(|_| store::mark_added(c, &added.id))).unwrap();
+        assert_eq!(agent.discover_projects().unwrap().len(), 2);
+
+        // Listed from the desktop app, titled from the file; the CLI's conversation isn't.
         let listed = agent.all_sessions().unwrap();
-        assert!(listed.iter().any(|s| s.id == id && s.external && s.title == "Calendar sync fix"));
+        assert!(listed.iter().any(|s| s.id == id && s.external && s.title == "Calendar sync fix" && s.project_id == project.id));
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        // Adopted, it keeps the file's title and history.
         agent.adopt(id).unwrap();
         let s = agent.view(agent.db(|c| store::session(c, id)).unwrap());
         assert_eq!((s.title.as_str(), s.origin.as_deref()), ("Calendar sync fix", Some("Claude app")));
@@ -1020,6 +1150,14 @@ mod tests {
             store::save_session(c, &s)
         }).unwrap();
         assert!(agent.all_sessions().unwrap().iter().any(|s| s.id == id && s.title == "Mine" && !s.external));
+
+        // Archived in the desktop app, it goes from Relay too, and its folder with it.
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(desktop.path().join("local_a.json"), record(true, id, &cwd)).unwrap();
+        assert!(!agent.all_sessions().unwrap().iter().any(|s| s.id == id));
+        assert!(!agent.discover_projects().unwrap().iter().any(|p| p.id == project.id));
+        std::fs::write(desktop.path().join("local_a.json"), record(false, id, &cwd)).unwrap();
+
         agent.db(|c| {
             let mut s = store::session(c, id)?;
             s.hidden = true;
@@ -1038,7 +1176,10 @@ mod tests {
         let _turn = super::CLAUDE_DIR.lock().unwrap_or_else(|e| e.into_inner());
         let data = tempfile::tempdir().unwrap();
         let work = tempfile::tempdir().unwrap();
-        let agent = Arc::new(Agent::new(Box::new(|_, _| {}), data.path()).unwrap());
+        let desktop = tempfile::tempdir().unwrap();
+        let mut agent = Agent::new(Box::new(|_, _| {}), data.path()).unwrap();
+        agent.desktop_dirs = vec![desktop.path().to_path_buf()];
+        let agent = Arc::new(agent);
         let project = Project { id: new_id(), name: "work".into(), path: work.path().display().to_string(), created_at: 0 };
         agent.db(|c| store::insert_project(c, &project)).unwrap();
         let s = Session {
@@ -1095,6 +1236,9 @@ mod tests {
             .output()
             .unwrap();
         assert!(ran.status.success(), "{}", String::from_utf8_lossy(&ran.stderr));
+        // As the desktop app lists it (Relay shows only the sessions it lists).
+        let record = serde_json::json!({ "cliSessionId": outside, "cwd": project.path, "title": "", "lastActivityAt": 1 });
+        std::fs::write(desktop.path().join("local_outside.json"), record.to_string()).unwrap();
         let listed = agent.all_sessions().unwrap();
         let ext = listed.iter().find(|x| x.id == outside).expect("the outside conversation is listed");
         assert!(ext.external && ext.from_claude && ext.title.contains("mango"), "{ext:?}");

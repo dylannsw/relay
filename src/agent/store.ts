@@ -60,12 +60,16 @@ function appendDelta(sessionId: string, itemId: string, text: string) {
 const loading = new Map<string, AgentEvent[]>();
 
 let listTimer: ReturnType<typeof setTimeout> | undefined;
-/** Reads the session list again, once for a burst of changes. */
+/**
+ * Reads the project and session lists again, once for a burst of changes: a session started or
+ * archived in the Claude app can add or empty a project.
+ */
 function refreshSessionsSoon() {
   clearTimeout(listTimer);
   listTimer = setTimeout(async () => {
     try {
-      set({ sessions: (await api.agent.sessions()).sort(byRecent) });
+      const projects = await api.agent.projects();
+      set({ projects, sessions: (await api.agent.sessions()).sort(byRecent) });
     } catch {
       // The next change tries again.
     }
@@ -100,8 +104,13 @@ export function startAgent() {
 
 export async function refresh() {
   try {
-    const [cli, projects, sessions] = await Promise.all([api.agent.cliStatus(), api.agent.projects(), api.agent.sessions()]);
+    // Projects first: listing them adds the folders of the Claude app's sessions, which the
+    // session list then places in them.
+    const [cli, projects] = await Promise.all([api.agent.cliStatus(), api.agent.projects()]);
+    const sessions = await api.agent.sessions();
     set({ cli, projects, sessions: sessions.sort(byRecent), loaded: true, error: null });
+    // Drafts left from before (Relay closed while one was open), except the one you're on.
+    for (const s of sessions) if (s.id !== state.selectedId) dropDraft(s.id);
   } catch (e) {
     set({ error: errorText(e), loaded: true });
   }
@@ -143,14 +152,32 @@ export async function removeProject(id: string) {
   set({ projects: state.projects.filter((p) => p.id !== id), sessions: state.sessions.filter((s) => s.projectId !== id) });
 }
 
+/**
+ * A new session you never wrote in. Sending sets its title straight away (it only counts as started
+ * once Claude answers), so no title, no messages and nothing running means nothing was sent.
+ */
+const isDraft = (s: AgentSession | undefined): s is AgentSession =>
+  !!s && !s.started && !s.title && !s.live && !s.running && !state.items[s.id]?.length;
+
+/** Drops `id` if it's a draft: like the Claude app, a new session you leave without writing in goes. */
+function dropDraft(id: string | null) {
+  const s = state.sessions.find((x) => x.id === id);
+  if (isDraft(s)) void deleteSession(s.id).catch(() => {});
+}
+
 export function selectSession(id: string | null) {
-  if (state.selectedId !== id) set({ selectedId: id });
+  const left = state.selectedId;
+  if (left === id) return;
+  set({ selectedId: id });
+  dropDraft(left);
 }
 
 export async function newSession(projectId: string, mode: AgentMode, plan: boolean): Promise<AgentSession> {
   const s = await api.agent.newSession(projectId, mode, plan);
+  const left = state.selectedId;
   set({ items: { ...state.items, [s.id]: [] }, selectedId: s.id });
   upsertSession(s);
+  dropDraft(left);
   return s;
 }
 
@@ -158,8 +185,26 @@ export async function setMode(sessionId: string, mode: AgentMode, plan: boolean)
   upsertSession(await api.agent.setMode(sessionId, mode, plan));
 }
 
-export async function deleteSession(sessionId: string) {
-  await api.agent.deleteSession(sessionId);
+/** Renames a session, showing the new name straight away. */
+export async function renameSession(sessionId: string, title: string) {
+  const name = title.trim();
+  const before = state.sessions.find((s) => s.id === sessionId);
+  if (!before || !name || name === before.title) return;
+  upsertSession({ ...before, title: name });
+  try {
+    await api.agent.rename(sessionId, name);
+  } catch (e) {
+    upsertSession(before);
+    throw e;
+  }
+}
+
+/**
+ * Takes a session out of Relay's list. Archived, Claude Code's saved conversation stays (the Claude
+ * app still has it); deleted `forever`, that conversation goes too.
+ */
+export async function deleteSession(sessionId: string, forever = false) {
+  await api.agent.deleteSession(sessionId, forever);
   const { [sessionId]: _, ...items } = state.items;
   set({
     sessions: state.sessions.filter((s) => s.id !== sessionId),

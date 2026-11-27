@@ -45,6 +45,12 @@ pub fn open(path: &Path) -> Result<Connection> {
             conn.execute_batch(&format!("ALTER TABLE sessions ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0;"))?;
         }
     }
+    // Projects you added yourself, which show even with no sessions. The ones found from the Claude
+    // app show only while they have one.
+    let has: bool = conn.prepare("SELECT 1 FROM pragma_table_info('projects') WHERE name = 'added'")?.exists([])?;
+    if !has {
+        conn.execute_batch("ALTER TABLE projects ADD COLUMN added INTEGER NOT NULL DEFAULT 0;")?;
+    }
     // Relay's own copy of each conversation, from before history was read from Claude Code's files.
     conn.execute_batch("DROP TABLE IF EXISTS items;")?;
     Ok(conn)
@@ -78,6 +84,19 @@ pub fn insert_project(conn: &Connection, p: &Project) -> Result<()> {
         params![p.id, p.name, p.path, p.created_at],
     )?;
     Ok(())
+}
+
+/// Marks a project as one you added yourself.
+pub fn mark_added(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("UPDATE projects SET added = 1 WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// The projects you added yourself.
+pub fn added_projects(conn: &Connection) -> Result<std::collections::HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM projects WHERE added = 1")?;
+    let rows = stmt.query_map([], |r| r.get(0))?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
 pub fn delete_project(conn: &Connection, id: &str) -> Result<()> {

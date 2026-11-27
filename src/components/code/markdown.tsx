@@ -1,15 +1,21 @@
-import { memo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { code } from "@streamdown/code";
+import { defaultRehypePlugins, type Components } from "streamdown";
 import { api } from "@/api";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
 
 /**
- * Claude's replies. Raw HTML in the text is shown as text, never rendered (react-markdown's
- * default), and links open in the browser rather than in Relay's window.
+ * Claude's replies, through AI Elements' Response (Streamdown). Raw HTML in the text is shown as
+ * text, never rendered (Streamdown's `raw` step is left out), and links open in the browser rather
+ * than in Relay's window.
  */
+const rehypePlugins = Object.entries(defaultRehypePlugins)
+  .filter(([name]) => name !== "raw")
+  .map(([, plugin]) => plugin);
+
+const plugins = { code };
+
 const components: Components = {
-  p: ({ node: _, ...p }) => <p className="my-2 first:mt-0 last:mb-0" {...p} />,
   a: ({ node: _, href, children }) => (
     <a
       href={href}
@@ -22,43 +28,23 @@ const components: Components = {
       {children}
     </a>
   ),
-  // GFM gives task lists their own classes (contains-task-list, task-list-item), so ours are merged in,
-  // not replaced. A task item shows its checkbox where the bullet would be, as Obsidian does.
-  ul: ({ node: _, className, ...p }) => <ul className={cn("my-2 list-disc space-y-1 pl-5", className)} {...p} />,
-  ol: ({ node: _, className, ...p }) => <ol className={cn("my-2 list-decimal space-y-1 pl-5", className)} {...p} />,
-  li: ({ node: _, className, ...p }) => (
-    <li className={cn(className, className?.includes("task-list-item") && "-ml-5 list-none [&>ul]:ml-5")} {...p} />
-  ),
-  input: ({ node: _, className, ...p }) => (
-    <input className={cn("mr-1.5 size-3.5 translate-y-0.5 accent-primary", className)} {...p} />
-  ),
-  h1: ({ node: _, ...p }) => <h3 className="mt-4 mb-2 text-base font-semibold first:mt-0" {...p} />,
-  h2: ({ node: _, ...p }) => <h3 className="mt-4 mb-2 text-base font-semibold first:mt-0" {...p} />,
-  h3: ({ node: _, ...p }) => <h4 className="mt-3 mb-1.5 font-semibold first:mt-0" {...p} />,
-  h4: ({ node: _, ...p }) => <h4 className="mt-3 mb-1.5 font-semibold first:mt-0" {...p} />,
-  blockquote: ({ node: _, ...p }) => <blockquote className="my-2 border-l-2 pl-3 text-muted-foreground" {...p} />,
-  hr: () => <hr className="my-4 border-border" />,
-  table: ({ node: _, ...p }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-[13px]" {...p} />
-    </div>
-  ),
-  th: ({ node: _, ...p }) => <th className="border-b px-2 py-1 text-left font-semibold" {...p} />,
-  td: ({ node: _, ...p }) => <td className="border-b border-border/60 px-2 py-1 align-top" {...p} />,
-  pre: ({ node: _, ...p }) => (
-    <pre className="my-2 overflow-x-auto rounded-lg bg-muted/70 px-3 py-2.5 font-mono text-[12.5px] leading-relaxed [&_code]:bg-transparent [&_code]:p-0" {...p} />
-  ),
-  code: ({ node: _, className, ...p }) => (
-    <code className={cn("rounded bg-muted/70 px-1 py-0.5 font-mono text-[0.9em]", className)} {...p} />
-  ),
 };
 
-export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
+export function Markdown({ text, streaming = false, className }: { text: string; streaming?: boolean; className?: string }) {
   return (
-    <div className={cn("text-sm leading-relaxed break-words", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {text}
-      </ReactMarkdown>
-    </div>
+    <MessageResponse
+      // Headings stay close to body size, as they were before: a reply isn't a document.
+      className={cn(
+        "text-sm leading-relaxed break-words [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_h4]:text-sm [&_h4]:font-semibold",
+        className,
+      )}
+      rehypePlugins={rehypePlugins}
+      plugins={plugins}
+      components={components}
+      linkSafety={{ enabled: false }}
+      isAnimating={streaming}
+    >
+      {text}
+    </MessageResponse>
   );
-});
+}
