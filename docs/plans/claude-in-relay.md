@@ -1,12 +1,12 @@
 # Plan: Claude Code inside Relay
 
-Status: phase 1 built, history now read from Claude Code's files, waiting for a check on Windows.
-Phase 2 next.
+Status: phase 1 built, history read from Claude Code's files, Code mode in the sidebar. Waiting
+for a check on Windows. Phase 2 next.
 
 ## Progress log
 
 Phase 1 merged into `main` (PR #1) and shipped in v2.1.2. Reading history from Claude Code's files
-is on branch `claude/friendly-hopper-wy6coy`.
+and the sidebar's Code mode are on `main` too, not yet in a release.
 
 | Date | Done |
 | --- | --- |
@@ -16,12 +16,14 @@ is on branch `claude/friendly-hopper-wy6coy`.
 | 2026-11-24 | Conversations from the Claude app: listed under their project, history read from Claude Code's saved files, continued in Relay on the first message. |
 | 2026-11-24 | First run on Windows: the Code page loads and finds Claude Code (2.1.299, older than the 2.1.330 tested here). Nothing beyond that tried yet. |
 | 2026-11-25 | Relay no longer keeps its own copy of conversations: history is read from Claude Code's files for every session, and a watcher picks up changes made in the Claude app or the CLI. See "One source: Claude Code's files". |
+| 2026-11-26 | Code mode in the sidebar: a Hub / Code switch at the top of the sidebar replaces the Code page's own session list, search moved to the middle of the window strip, and a glowing accent dot on the Code tab shows a session waiting for you. See "Sidebar modes". |
 
 ### Where to pick up
 
 1. **Windows check** (list under "To check on Windows" below). Before it, on the PC: pull the
    branch, `npm install` (new packages: `react-markdown`, `remark-gfm`), and `claude update`, since
-   2.1.299 may lack options Relay uses. Fix whatever it turns up first.
+   2.1.299 may lack options Relay uses. Fix whatever it turns up first. Also try the Hub / Code
+   switch there: dragging the window either side of the search field, and Ctrl+Tab through Code.
 2. **Then phase 2:** usage meter, "Always allow" on approvals, model menu and slash-command picker,
    subagent activity in the Agent card.
 3. **Open questions to settle on Windows:**
@@ -200,10 +202,20 @@ question, stop, close Relay, reopen, see the history and continue the same sessi
 ### Sidebar modes
 
 The Code page used to have its own session list beside the app sidebar, so two sidebars showed at
-once. Now a **Hub / Code** switch sits at the top of the sidebar, where the search field was (search moved to the middle of the window strip). Code swaps the sidebar's contents for the
-projects and their sessions and opens the Code page, which shows only the conversation; Hub goes
-back to the page you were on. A softly glowing dot in the accent colour on the Code tab shows a session is waiting for you, and the tab is the
-first Ctrl+Tab stop (it sits above Home). The open session lives in the agent store (`selectedId`) so both halves share it.
+once. Now a **Hub / Code** switch sits at the top of the sidebar, where the search field was.
+
+- **Code** swaps the sidebar's contents for the projects and their sessions (with + and Remove per
+  project, and Add Project) and opens the Code page, which shows only the conversation.
+- **Hub** goes back to the page you were on before. The Code item under Overview is gone; the
+  command bar's "Code" still opens it.
+- **Search** moved to the middle of the window strip, between the sidebar toggle and the window
+  controls.
+- **Waiting:** a small dot in the accent colour, glowing softly (still with reduced motion), shows on
+  the Code tab while a session waits for you. Hovering it gives the number.
+- **Ctrl+Tab:** the Code tab is the first stop, since it sits above Home. In Code mode, Ctrl+Tab
+  steps on through Hub's items as they were last shown.
+- The open session lives in the agent store (`selectedId`), so the sidebar and the page share it.
+- **Open:** the sessions' own "waiting" dots are still star yellow, not the accent colour.
 
 ### Conversations from the Claude app
 
