@@ -187,6 +187,18 @@ function sameRun(a: TgMessage | undefined, b: TgMessage | undefined): boolean {
   return Math.abs(b.date - a.date) < RUN_GAP_MS && sameDay(a.date, b.date);
 }
 
+/** Stickers and round videos, drawn without a bubble. */
+const bare = (m: TgMessage) => !!m.media && ((m.media.kind === "sticker" && !!m.media.mime) || (m.media.kind === "video" && !!m.media.round));
+
+/**
+ * Whether a's bubble sits straight on top of b's: the same run, with no time line or reaction badges
+ * under a. Their touching corners on the sender's side then tighten, so the run reads as one stack.
+ */
+function stacked(a: Shown | undefined, b: Shown | undefined): boolean {
+  if (!a || !b || !sameRun(a, b) || bare(a) || bare(b)) return false;
+  return !a.pending && !a.edited && a.reactions.length === 0;
+}
+
 function subtitle(c: TgChat): string | null {
   switch (c.kind) {
     case "group":
@@ -879,6 +891,9 @@ export function Conversation({ chat }: { chat: TgChat }) {
                         m={m}
                         first={first}
                         last={last}
+                        // The unread line splits a stack, so the bubbles either side of it keep their full corners.
+                        joinTop={stacked(prev, m) && m.id !== unreadFrom}
+                        joinBottom={stacked(m, next) && next?.id !== unreadFrom}
                         showName={group && !m.outgoing && first}
                         showAvatar={group && !m.outgoing}
                         onReply={() => startReply(m)}
@@ -1466,6 +1481,9 @@ function Bubble(props: {
   m: Shown;
   first: boolean;
   last: boolean;
+  /** Another bubble of the run sits right above / below this one: those corners on the sender's side tighten. */
+  joinTop: boolean;
+  joinBottom: boolean;
   showName: boolean;
   /** Group chats: the sender's picture beside their run (only drawn on its last bubble). */
   showAvatar: boolean;
@@ -1494,8 +1512,14 @@ function Bubble(props: {
   const otherMedia = media && !photo && !sticker ? media : null;
   const hasText = m.text.trim().length > 0;
   const photoOnly = photo && !hasText && !m.reply && m.forwardedFrom === null && !props.showName;
-  // Every bubble is fully rounded; each run has its name above and its time and ticks below.
-  const corners = "rounded-bubble";
+  // A run stacks: where a bubble touches the one above or below, its corners on the sender's side
+  // tighten; the ends of the run, and the side away from the sender, keep the full round.
+  // Each run has its name above and its time and ticks below.
+  const corners = cn(
+    "rounded-bubble",
+    props.joinTop && (out ? "rounded-tr-bubble-tight" : "rounded-tl-bubble-tight"),
+    props.joinBottom && (out ? "rounded-br-bubble-tight" : "rounded-bl-bubble-tight"),
+  );
   const showTime = last || !!m.pending || m.edited;
   // Group chats: the sender's picture and name above their run, lined up with the bubble's left edge.
   const nameLine = props.showName && (
@@ -1523,7 +1547,7 @@ function Bubble(props: {
 
   return (
     <>
-    <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-4" : "pt-2", out ? "justify-end" : "justify-start")}>
+    <div data-msg-id={m.id} className={cn("group/msg flex items-end gap-2 rounded-lg", first ? "pt-4" : props.joinTop ? "pt-1" : "pt-2", out ? "justify-end" : "justify-start")}>
       {failed && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1578,7 +1602,7 @@ function Bubble(props: {
               // max-w-full: a long quoted line would otherwise size the bubble past the column's cap.
               "relative max-w-full min-w-0 overflow-hidden border text-sm leading-[1.4] break-words text-foreground",
               corners,
-              out ? "bubble-out border-bubble-out-border bg-bubble-out" : "border-bubble-border bg-bubble",
+              out ? "bubble-out border-bubble-out-border bg-bubble-out" : "bubble-in border-bubble-border bg-bubble",
               !photoOnly && "px-3 py-[9px]",
               // Reacted: the badge sinks 12px into the bubble's bottom, so the text ends 10px higher to clear
               // it. A photo at the bottom stays flush (the badge just sits over its corner), with no strip under it.
@@ -1596,7 +1620,15 @@ function Bubble(props: {
                 onClick={() => m.reply && props.onJump(m.reply.id)}
                 // 5px from the bubble's edge on three sides (its corners 9px, the bubble's 14 less that gap), padded like the
                 // bubble's own text (12px sides, 9px top and bottom), and 9px above the text (the bubble's bottom padding).
-                className={cn("-mx-[7px] mb-[9px] flex w-[calc(100%+14px)] min-w-0 flex-col rounded-[9px] border px-3 py-[9px] text-left text-sm leading-snug", m.forwardedFrom === null ? "-mt-[4px]" : "mt-0.5", out ? quoteOut : "bg-tint-hover")}
+                // At the top of a stacked bubble both its sender-side corners tighten to 4px, so the quote keeps one
+                // flatter side toward the sender like a stacked bubble. Strictly concentric would be 1px (the bubble's
+                // 6px less the 5px gap), which reads as a square corner.
+                className={cn(
+                  "-mx-[7px] mb-[9px] flex w-[calc(100%+14px)] min-w-0 flex-col rounded-[9px] border px-3 py-[9px] text-left text-sm leading-snug",
+                  m.forwardedFrom === null ? "-mt-[4px]" : "mt-0.5",
+                  m.forwardedFrom === null && props.joinTop && (out ? "rounded-r-[4px]" : "rounded-l-[4px]"),
+                  out ? quoteOut : "bg-tint-hover",
+                )}
               >
                 <QuoteLines chat={chat} reply={m.reply} out={out} />
               </button>
